@@ -143,7 +143,7 @@
         margin-right = 12;
         modules-left = ["hyprland/workspaces" "hyprland/submap"];
         modules-center = ["clock" "custom/pomodoro" "clock#date"];
-        modules-right = ["mpris" "idle_inhibitor" "disk" "custom/sysinfo" "memory" "pulseaudio" "network" "tray" "custom/power"];
+        modules-right = ["mpris" "idle_inhibitor" "custom/sysinfo" "memory" "disk" "pulseaudio" "network" "tray" "custom/power"];
 
         "hyprland/workspaces" = {
           disable-scroll = true;
@@ -328,8 +328,8 @@
         color: @secondary;
       }
 
-      #cpu {
-        color: @tertiary;
+      #custom-sysinfo {
+        color: @primary;
       }
 
       #idle_inhibitor {
