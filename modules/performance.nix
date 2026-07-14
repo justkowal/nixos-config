@@ -80,4 +80,7 @@
 
   # 9. LACT Daemon for GPU tuning (overclocking, fan curves, undervolting)
   services.lact.enable = true;
+
+  # 10. Enable GameScope (compositor for games)
+  programs.gamescope.enable = true;
 }

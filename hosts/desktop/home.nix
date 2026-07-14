@@ -143,7 +143,7 @@
         margin-right = 12;
         modules-left = ["hyprland/workspaces" "hyprland/submap"];
         modules-center = ["clock" "custom/pomodoro" "clock#date"];
-        modules-right = ["mpris" "idle_inhibitor" "disk" "cpu" "memory" "pulseaudio" "network" "tray" "custom/power"];
+        modules-right = ["mpris" "idle_inhibitor" "disk" "custom/sysinfo" "memory" "pulseaudio" "network" "tray" "custom/power"];
 
         "hyprland/workspaces" = {
           disable-scroll = true;
@@ -205,8 +205,11 @@
           on-click = "kitty --class network_tui -e nmtui";
         };
 
-        "cpu" = {
-          format = " {usage}%";
+        "custom/sysinfo" = {
+          exec = "bash /home/justkowal/.config/hypr/scripts/sys_info.sh";
+          interval = 2;
+          return-type = "json";
+          format = "{}";
         };
 
         "memory" = {
@@ -397,6 +400,11 @@
           animation = workspaces, 1, 5, default
       }
 
+      misc {
+          vrr = 1
+          no_direct_scanout = false
+      }
+
       # Autostart
       exec-once = waybar
       exec-once = awww-daemon
@@ -544,6 +552,11 @@
       windowrule = float 1, match:class ^(scratchpad)$
       windowrule = size 2176 1008, match:class ^(scratchpad)$
       windowrule = center 1, match:class ^(scratchpad)$
+
+      # Window rules for Steam games to bypass shadows, blur, and animations
+      windowrule = noanim 1, match:class ^(steam_app_.*)$
+      windowrule = noshadow 1, match:class ^(steam_app_.*)$
+      windowrule = noblur 1, match:class ^(steam_app_.*)$
     '';
   };
 
@@ -760,6 +773,66 @@
         "Lock") hyprlock ;;
         "Exit") hyprctl dispatch exit ;;
       esac
+    '';
+  };
+
+  xdg.configFile."hypr/scripts/sys_info.sh" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      # Unified System Sensor monitor for Waybar
+
+      # 1. Calculate CPU usage over 0.5 seconds
+      read -r _ user nice system idle iowait irq softirq steal guest guest_nice < /proc/stat
+      prev_idle=$((idle + iowait))
+      prev_non_idle=$((user + nice + system + irq + softirq + steal))
+      prev_total=$((prev_idle + prev_non_idle))
+
+      sleep 0.5
+
+      read -r _ user nice system idle iowait irq softirq steal guest guest_nice < /proc/stat
+      idle=$((idle + iowait))
+      non_idle=$((user + nice + system + irq + softirq + steal))
+      total=$((idle + non_idle))
+
+      total_diff=$((total - prev_total))
+      idle_diff=$((idle - prev_idle))
+
+      if [ "$total_diff" -ne 0 ]; then
+          CPU_UTIL=$(( (total_diff - idle_diff) * 100 / total_diff ))
+      else
+          CPU_UTIL=0
+      fi
+
+      # 2. Resolve Sensor Paths
+      GPU_BUSY_PATH="/sys/class/drm/card1/device/gpu_busy_percent"
+      GPU_TEMP_FILE=$(find /sys/class/drm/card1/device/hwmon/ -name "temp1_input" 2>/dev/null | head -n 1)
+      CPU_TEMP_FILE=$(find /sys/class/hwmon/ -name "temp1_input" | grep -v "amdgpu" | grep -v "nvme" | head -n 1)
+
+      CPU_TEMP_DIR=$(grep -l "k10temp" /sys/class/hwmon/hwmon*/name 2>/dev/null | awk -F/ '{print "/sys/class/hwmon/" $5 "/temp1_input"}')
+      if [ -f "$CPU_TEMP_DIR" ]; then
+          CPU_TEMP_FILE="$CPU_TEMP_DIR"
+      fi
+
+      CPU_TEMP=0
+      if [ -f "$CPU_TEMP_FILE" ]; then
+          CPU_TEMP=$(( $(cat "$CPU_TEMP_FILE") / 1000 ))
+      fi
+
+      GPU_UTIL=0
+      if [ -f "$GPU_BUSY_PATH" ]; then
+          GPU_UTIL=$(cat "$GPU_BUSY_PATH")
+      fi
+
+      GPU_TEMP=0
+      if [ -f "$GPU_TEMP_FILE" ]; then
+          GPU_TEMP=$(( $(cat "$GPU_TEMP_FILE") / 1000 ))
+      fi
+
+      TEXT=" ''${CPU_UTIL}% (''${CPU_TEMP}°C)  󰾲 ''${GPU_UTIL}% (''${GPU_TEMP}°C)"
+      TOOLTIP="System Status:\n\nCPU Usage: ''${CPU_UTIL}%\nCPU Temp: ''${CPU_TEMP}°C\n\nGPU Usage: ''${GPU_UTIL}%\nGPU Temp: ''${GPU_TEMP}°C"
+
+      echo "{\"text\": \"$TEXT\", \"tooltip\": \"$TOOLTIP\"}"
     '';
   };
 
@@ -2422,6 +2495,30 @@
 
   # Let Home Manager manage itself
   programs.home-manager.enable = true;
+
+  programs.mangohud = {
+    enable = true;
+    settings = {
+      legacy_layout = 0;
+      horizontal = true;
+      hud_no_margin = true;
+      font_size = 14;
+      font_family = "JetBrainsMono Nerd Font";
+      table_columns = 3;
+      background_alpha = "0.5";
+      round_corners = 10;
+      # Performance Stats
+      fps = true;
+      cpu_stats = true;
+      cpu_temp = true;
+      gpu_stats = true;
+      gpu_temp = true;
+      ram = true;
+      vram = true;
+    };
+  };
+
+  home.file.".steam/root/compatibilitytools.d/proton-ge-custom".source = "${pkgs.proton-ge-bin}";
 
   home.stateVersion = "26.05";
 }
