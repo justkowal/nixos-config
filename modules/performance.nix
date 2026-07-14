@@ -46,10 +46,12 @@
   boot.kernelParams = [
     "amd_pstate=active"
     "quiet"
-    "udev.log_level=3"
-    "transparent_hugepage=always"      # Reduces TLB page table lookup overhead for large apps/games
+    "loglevel=3"
+    "systemd.show_status=auto"
+    "rd.udev.log_level=3"
+    "rd.systemd.show_status=false"
+    "fastboot"
     "nowatchdog"                       # Disables kernel watchdogs to eliminate regular polling interrupts
-    "amdgpu.ppfeaturemask=0xffffffff"  # Unlocks all AMD GPU power management features (overclocking/fan control/undervolt)
   ];
 
   # 7. Feral GameMode (auto-optimizes CPU governor and GPU clock limits for games)
@@ -75,4 +77,7 @@
     # NVMe scheduler (none/no-op lets the NVMe controller do all queuing directly)
     ACTION=="add|change", KERNEL=="nvme[0-9]*", ATTR{queue/scheduler}="none"
   '';
+
+  # 9. LACT Daemon for GPU tuning (overclocking, fan curves, undervolting)
+  services.lact.enable = true;
 }

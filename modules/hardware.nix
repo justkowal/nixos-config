@@ -1,6 +1,9 @@
 { config, pkgs, ... }:
 
 {
+  # Unlock overclocking/undervolting features
+  boot.kernelParams = [ "amdgpu.ppfeaturemask=0xffffffff" ];
+
   # 1. Hardware Firmware (essential for Wi-Fi, Ethernet, and GPU drivers)
   hardware.enableRedistributableFirmware = true;
 
@@ -24,6 +27,9 @@
   # 5. Mouse Customization (libratbag/Piper daemon for gaming mice)
   services.ratbagd.enable = true;
 
-  # 6. Printing Services (CUPS printer support)
-  services.printing.enable = true;
+  # 6. Printing Services (CUPS printer support - socket activated on demand)
+  services.printing = {
+    enable = true;
+    startWhenNeeded = true;
+  };
 }

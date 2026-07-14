@@ -1,6 +1,8 @@
-{ config, pkgs, ... }:
-
 {
+  config,
+  pkgs,
+  ...
+}: {
   imports = [
     ./hardware-configuration.nix
     ../../modules/kernel.nix
@@ -13,11 +15,23 @@
     ../../modules/networking.nix
   ];
 
+  home-manager.backupFileExtension = "backup";
+
   # Bootloader setup (UEFI)
   boot.loader.systemd-boot.enable = true;
+  boot.loader.timeout = 0;
   boot.loader.efi.canTouchEfiVariables = true;
   boot.loader.efi.efiSysMountPoint = "/boot/efi";
-  boot.supportedFilesystems = [ "bcachefs" ];
+  boot.supportedFilesystems = ["bcachefs"];
+
+  # Stage 1 Initrd and Kernel Logging Optimizations
+  boot.initrd.systemd.enable = true;
+  boot.initrd.compressor = "zstd";
+  boot.initrd.verbose = false;
+  boot.consoleLogLevel = 0;
+
+  # Disable ESP random seed updates to avoid slow early boot VFAT write syncs
+  systemd.services.systemd-boot-random-seed.enable = false;
 
   # Hostname
   networking.hostName = "nixos-desktop";
@@ -29,18 +43,20 @@
   time.timeZone = "Europe/Warsaw"; # Based on user's timezone offset (+02:00)
 
   # Select internationalisation properties
-  i18n.defaultLocale = "pl_PL.UTF-8"; # Based on Polish folders ("Jasełka", "SieniuStrona") in home directories
+  i18n.defaultLocale = "en_US.UTF-8";
   i18n.extraLocaleSettings = {
-    LC_ADDRESS = "pl_PL.UTF-8";
-    LC_IDENTIFICATION = "pl_PL.UTF-8";
-    LC_MEASUREMENT = "pl_PL.UTF-8";
-    LC_MONETARY = "pl_PL.UTF-8";
-    LC_NAME = "pl_PL.UTF-8";
-    LC_NUMERIC = "pl_PL.UTF-8";
-    LC_PAPER = "pl_PL.UTF-8";
-    LC_TELEPHONE = "pl_PL.UTF-8";
-    LC_TIME = "pl_PL.UTF-8";
+    LC_ADDRESS = "en_US.UTF-8";
+    LC_IDENTIFICATION = "en_US.UTF-8";
+    LC_MEASUREMENT = "en_US.UTF-8";
+    LC_MONETARY = "en_US.UTF-8";
+    LC_NAME = "en_US.UTF-8";
+    LC_NUMERIC = "en_US.UTF-8";
+    LC_PAPER = "en_US.UTF-8";
+    LC_TELEPHONE = "en_US.UTF-8";
+    LC_TIME = "en_US.UTF-8";
   };
+
+  i18n.supportedLocales = [ "en_US.UTF-8/UTF-8" "pl_PL.UTF-8/UTF-8" ];
 
   # Configure console keymap
   console.keyMap = "pl2";
@@ -49,14 +65,14 @@
   users.users.justkowal = {
     isNormalUser = true;
     description = "justkowal";
-    extraGroups = [ "networkmanager" "wheel" "video" "render" "docker" ];
+    extraGroups = ["networkmanager" "wheel" "video" "render" "docker"];
   };
 
   # Allow unfree packages (needed for Steam, VS Code, etc.)
   nixpkgs.config.allowUnfree = true;
 
   # Experimental features (Flakes & Nix profile)
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings.experimental-features = ["nix-command" "flakes"];
 
   # Optimize Nix compilation resource utilization (especially for LTO kernel build)
   nix.settings.max-jobs = "auto";
@@ -75,11 +91,32 @@
   # Enable nix-ld to run pre-compiled non-Nix binaries seamlessly
   programs.nix-ld.enable = true;
 
-  # Enable Docker container virtualization service
-  virtualisation.docker.enable = true;
+  # Allow Home Manager GTK/dconf settings to apply system-wide
+  programs.dconf.enable = true;
+
+  # Enable Docker container virtualization service with on-demand socket activation
+  virtualisation.docker = {
+    enable = true;
+    enableOnBoot = false;
+  };
 
   # Enable the system-wide SSH agent for credential caching
   programs.ssh.startAgent = true;
+
+  # Enable the OpenSSH secure shell daemon (SSH server)
+  services.openssh = {
+    enable = true;
+    settings = {
+      PasswordAuthentication = true;
+      PermitRootLogin = "no";
+    };
+  };
+
+  # Enable GNOME Online Accounts & Evolution Data Server for Google Calendar sync
+  services.gnome.evolution-data-server.enable = true;
+  services.gnome.gnome-online-accounts.enable = true;
+  services.gnome.gnome-keyring.enable = true;
+  services.gnome.gcr-ssh-agent.enable = false;
 
   # Basic system packages (core tools)
   environment.systemPackages = with pkgs; [

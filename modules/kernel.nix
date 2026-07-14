@@ -1,46 +1,55 @@
-{ config, pkgs, lib, ... }:
-
 {
-  # Custom kernel packages override
+  config,
+  pkgs,
+  lib,
+  ...
+}: {
+  # Unified Optimized & Trimmed Kernel Configuration
   boot.kernelPackages = let
-    # Start from the latest XanMod kernel channel (optimized for latency & desktop scheduling)
+    # Start from the latest XanMod kernel channel
     baseKernel = pkgs.linuxPackages_xanmod_latest.kernel;
 
-    # Apply the custom overrides
     customKernel = baseKernel.override {
-      # Use Clang and LLVM tools (required for Kernel LTO)
+      # Use full LLVM toolchain for Kernel Link-Time Optimization (LTO)
       stdenv = pkgs.llvmPackages_latest.stdenv;
 
-      # Enable specific CPU flags and compile-time optimization
+      # Suppress configuration errors caused by unreachable child options after pruning
+      ignoreConfigErrors = true;
+
+      # Target architecture compilation flags
       extraMakeFlags = [
         "KCFLAGS+=-march=znver3"
         "KCFLAGS+=-mtune=znver3"
-        "KCFLAGS+=-O3"
       ];
 
-      # Kernel configuration flags
+      # Single consolidated evaluation block
       structuredExtraConfig = with lib.kernel; {
-        # Link Time Optimization (LTO) via Clang
+        # --- 1. COMPILER & RUNTIME OPTIMIZATIONS ---
         LTO = yes;
         LTO_CLANG = yes;
         LTO_CLANG_THIN = yes;
+        MODULES = yes; # Safe base target to avoid tristate prompt loops
+        NUMA = no; # Optimizes for your single-CCD Ryzen 5700X
 
-        # Compile statically (disable loadable modules, building drivers directly in)
-        MODULES = no;
+        TRANSPARENT_HUGEPAGE = yes;
+        TRANSPARENT_HUGEPAGE_ALWAYS = yes;
 
-        # Desktop responsiveness tweaks (1000Hz ticks + full preemption)
+        # Latency & Scheduler Tuning
         HZ_1000 = yes;
         PREEMPT = yes;
+        SCHED_AUTOGROUP = no;
+        RCU_EXPERT = yes;
+        RCU_BOOST = yes;
 
-        # --- MINIMAL KERNEL OPTIMIZATIONS (Disable Unused Drivers/Subsystems) ---
+        # --- 2. HARDWARE SUBSYSTEM PRUNING ---
 
-        # 1. Disable Wireless Core and Wi-Fi drivers (system uses ethernet only)
+        # Disable Wireless Entirely
         WLAN = no;
         WIRELESS = no;
         CFG80211 = no;
         MAC80211 = no;
 
-        # 2. Disable Graphics Drivers (Keep AMDGPU only)
+        # GPU Selection (Keep AMDGPU Only)
         DRM_AMDGPU = yes;
         DRM_I915 = no;
         DRM_NOUVEAU = no;
@@ -50,21 +59,12 @@
         DRM_GMA500 = no;
         DRM_HYPERV = no;
 
-        # 3. Disable Virtualization Hypervisors (System runs on bare metal)
+        # Disable Virtualization Hypervisors
         HYPERVISOR_GUEST = no;
         XEN = no;
         HYPERV = no;
 
-        # 4. Disable Unused Filesystems (Root is bcachefs, Boot is vfat)
-        BTRFS_FS = no;
-        XFS_FS = no;
-        F2FS_FS = no;
-        JFS_FS = no;
-        REISERFS_FS = no;
-        NFS_FS = no;
-        CIFS = no;
-
-        # 5. Disable Non-Realtek Ethernet Vendors
+        # Wired Ethernet (Keep Realtek r8169 Only)
         NET_VENDOR_REALTEK = yes;
         R8169 = yes;
         NET_VENDOR_3COM = no;
@@ -127,7 +127,7 @@
         NET_VENDOR_WIZNET = no;
         NET_VENDOR_XILINX = no;
 
-        # 6. Disable Unused Communication/Hardware Buses
+        # Disable Unused Communication Buses
         PCCARD = no;
         CARDBUS = no;
         INFINIBAND = no;
@@ -135,7 +135,7 @@
         CAN = no;
         ISDN = no;
 
-        # 7. Disable TV/Radio/SDR (Keep camera/webcam support)
+        # Media Subsystem (Keep Cameras/Webcams, Drop TV/SDR Tuners)
         MEDIA_SUPPORT = yes;
         MEDIA_CAMERA_SUPPORT = yes;
         MEDIA_ANALOG_TV_SUPPORT = no;
@@ -143,9 +143,44 @@
         MEDIA_RADIO_SUPPORT = no;
         MEDIA_SDR_SUPPORT = no;
         MEDIA_TEST_SUPPORT = no;
+
+        # Core USB Support
+        USB_SUPPORT = yes;
+        USB = yes;
+        USB_XHCI_HCD = module;
+        USB_EHCI_HCD = module;
+        USB_OHCI_HCD = module;
+        USB_STORAGE = module;
+        USB_HID = module;
+        USB_HIDDEV = yes;
+
+        # USB Serial Adapters (Statically Allowed Embedded Layouts)
+        USB_SERIAL = module;
+        USB_SERIAL_GENERIC = yes;
+        USB_SERIAL_FTDI_SIO = module;
+        USB_SERIAL_CP210X = module;
+        USB_SERIAL_CH341 = module;
+        USB_SERIAL_PL2303 = module;
+        USB_ACM = module;
+
+        # USB Networking
+        USB_NET_DRIVERS = module;
+        USB_USBNET = module;
+        USB_NET_CDC_EEM = module;
+        USB_NET_CDC_SUBSET = module;
+        USB_NET_CDCETHER = module;
+        USB_NET_AX8817X = module;
+        USB_NET_AX88179_178A = module;
+        USB_NET_RNDIS_HOST = module;
       };
     };
   in
-    # Generate complete set of kernel packages (modules, etc.) for our custom kernel
     pkgs.linuxPackagesFor customKernel;
+
+  # Runtime Sysctl/Kernel Parameters
+  boot.kernelParams = [
+    "mitigations=off"
+    "transparent_hugepage=always"
+    "preempt=full"
+  ];
 }

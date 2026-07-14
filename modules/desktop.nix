@@ -1,6 +1,8 @@
-{ config, pkgs, ... }:
-
 {
+  config,
+  pkgs,
+  ...
+}: {
   # Enable Hyprland Window Manager
   programs.hyprland = {
     enable = true;
@@ -24,6 +26,13 @@
 
   # Flatpak support
   services.flatpak.enable = true;
+
+  # XDG portals for graphical settings, themes, and screen sharing
+  xdg.portal = {
+    enable = true;
+    extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+    config.common.default = "*";
+  };
 
   # Audio support via Pipewire
   security.rtkit.enable = true;
@@ -51,7 +60,7 @@
     enable = true;
     settings = {
       default_session = {
-        command = "${pkgs.greetd.tuigreet}/bin/tuigreet --time --remember --cmd Hyprland";
+        command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd Hyprland";
         user = "greeter";
       };
     };
