@@ -276,7 +276,7 @@
         background-color: @surface_variant;
       }
 
-      #clock, #pulseaudio, #cpu, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-power, #custom-pomodoro {
+      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-power, #custom-pomodoro {
         padding: 0 16px;
         margin: 4px 2px;
         background-color: alpha(@surface_variant, 0.82);
@@ -816,8 +816,22 @@
           CPU_TEMP=$(( $(cat "$CPU_TEMP_FILE") / 1000 ))
       fi
 
-      TEXT=" ''${CPU_UTIL}% (''${CPU_TEMP}°C)"
-      TOOLTIP="System Status:\n\nCPU Usage: ''${CPU_UTIL}%\nCPU Temp: ''${CPU_TEMP}°C"
+      # 3. Resolve GPU Sensor Paths
+      GPU_BUSY_PATH="/sys/class/drm/card1/device/gpu_busy_percent"
+      GPU_TEMP_FILE=$(find /sys/class/drm/card1/device/hwmon/ -name "temp1_input" 2>/dev/null | head -n 1)
+
+      GPU_UTIL=0
+      if [ -f "$GPU_BUSY_PATH" ]; then
+          GPU_UTIL=$(cat "$GPU_BUSY_PATH")
+      fi
+
+      GPU_TEMP=0
+      if [ -f "$GPU_TEMP_FILE" ]; then
+          GPU_TEMP=$(( $(cat "$GPU_TEMP_FILE") / 1000 ))
+      fi
+
+      TEXT=" ''${CPU_UTIL}% (''${CPU_TEMP}°C)  󰾲 ''${GPU_UTIL}% (''${GPU_TEMP}°C)"
+      TOOLTIP="System Status:\n\nCPU Usage: ''${CPU_UTIL}%\nCPU Temp: ''${CPU_TEMP}°C\n\nGPU Usage: ''${GPU_UTIL}%\nGPU Temp: ''${GPU_TEMP}°C"
 
       echo "{\"text\": \"$TEXT\", \"tooltip\": \"$TOOLTIP\"}"
     '';
