@@ -833,7 +833,7 @@
       TEXT=" ''${CPU_UTIL}% (''${CPU_TEMP}°C)  󰾲 ''${GPU_UTIL}% (''${GPU_TEMP}°C)"
       TOOLTIP="System Status:\n\nCPU Usage: ''${CPU_UTIL}%\nCPU Temp: ''${CPU_TEMP}°C\n\nGPU Usage: ''${GPU_UTIL}%\nGPU Temp: ''${GPU_TEMP}°C"
 
-      echo "{\"text\": \"$TEXT\", \"tooltip\": \"$TOOLTIP\"}"
+      printf '{"text": "%s", "tooltip": "%s"}\n' "$TEXT" "$TOOLTIP"
     '';
   };
 
