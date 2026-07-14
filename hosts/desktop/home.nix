@@ -401,8 +401,7 @@
       }
 
       misc {
-          vrr = 1
-          no_direct_scanout = false
+          vrr = 0
       }
 
       # Autostart
@@ -554,9 +553,9 @@
       windowrule = center 1, match:class ^(scratchpad)$
 
       # Window rules for Steam games to bypass shadows, blur, and animations
-      windowrule = noanim 1, match:class ^(steam_app_.*)$
-      windowrule = noshadow 1, match:class ^(steam_app_.*)$
-      windowrule = noblur 1, match:class ^(steam_app_.*)$
+      windowrule = no_anim 1, match:class ^(steam_app_.*)$
+      windowrule = no_shadow 1, match:class ^(steam_app_.*)$
+      windowrule = no_blur 1, match:class ^(steam_app_.*)$
     '';
   };
 
@@ -804,9 +803,7 @@
           CPU_UTIL=0
       fi
 
-      # 2. Resolve Sensor Paths
-      GPU_BUSY_PATH="/sys/class/drm/card1/device/gpu_busy_percent"
-      GPU_TEMP_FILE=$(find /sys/class/drm/card1/device/hwmon/ -name "temp1_input" 2>/dev/null | head -n 1)
+      # 2. Resolve CPU Sensor Path
       CPU_TEMP_FILE=$(find /sys/class/hwmon/ -name "temp1_input" | grep -v "amdgpu" | grep -v "nvme" | head -n 1)
 
       CPU_TEMP_DIR=$(grep -l "k10temp" /sys/class/hwmon/hwmon*/name 2>/dev/null | awk -F/ '{print "/sys/class/hwmon/" $5 "/temp1_input"}')
@@ -819,18 +816,8 @@
           CPU_TEMP=$(( $(cat "$CPU_TEMP_FILE") / 1000 ))
       fi
 
-      GPU_UTIL=0
-      if [ -f "$GPU_BUSY_PATH" ]; then
-          GPU_UTIL=$(cat "$GPU_BUSY_PATH")
-      fi
-
-      GPU_TEMP=0
-      if [ -f "$GPU_TEMP_FILE" ]; then
-          GPU_TEMP=$(( $(cat "$GPU_TEMP_FILE") / 1000 ))
-      fi
-
-      TEXT=" ''${CPU_UTIL}% (''${CPU_TEMP}°C)  󰾲 ''${GPU_UTIL}% (''${GPU_TEMP}°C)"
-      TOOLTIP="System Status:\n\nCPU Usage: ''${CPU_UTIL}%\nCPU Temp: ''${CPU_TEMP}°C\n\nGPU Usage: ''${GPU_UTIL}%\nGPU Temp: ''${GPU_TEMP}°C"
+      TEXT=" ''${CPU_UTIL}% (''${CPU_TEMP}°C)"
+      TOOLTIP="System Status:\n\nCPU Usage: ''${CPU_UTIL}%\nCPU Temp: ''${CPU_TEMP}°C"
 
       echo "{\"text\": \"$TEXT\", \"tooltip\": \"$TOOLTIP\"}"
     '';
