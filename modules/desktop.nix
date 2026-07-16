@@ -24,6 +24,11 @@
     HSA_OVERRIDE_GFX_VERSION = "10.3.0";
   };
 
+  # Create a symlink to the ROCm HIP library for Blender to detect HIP correctly
+  systemd.tmpfiles.rules = [
+    "L+ /opt/rocm/hip - - - - ${pkgs.rocmPackages.clr}"
+  ];
+
   # Flatpak support
   services.flatpak.enable = true;
 
