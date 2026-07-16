@@ -24,8 +24,24 @@
     prismlauncher # Minecraft launcher
     spotify # Music streaming client
     freecad # 3D CAD modeler
-    pkgsRocm.blender # 3D creation suite
-    lycheeslicer # Lychee Slicer for 3D printing
+    (symlinkJoin {
+      name = "blender";
+      paths = [ pkgsRocm.blender ];
+      nativeBuildInputs = [ makeWrapper ];
+      postBuild = ''
+        wrapProgram $out/bin/blender \
+          --set LD_PRELOAD "${rocmPackages.rocm-comgr}/lib/libamd_comgr.so.3"
+      '';
+    }) # 3D creation suite (wrapped with LD_PRELOAD to fix ROCm/HIP compiler crashes)
+    (lycheeslicer.overrideAttrs (oldAttrs: {
+      buildCommand = (oldAttrs.buildCommand or "") + ''
+        # Add support for the lycheeslicer:// protocol handler to allow browser login authentication
+        chmod +w $out/share/applications/*.desktop
+        substituteInPlace $out/share/applications/*.desktop \
+          --replace "MimeType=model/stl;" "MimeType=model/stl;x-scheme-handler/lycheeslicer;" \
+          --replace "Exec=lycheeslicer" "Exec=lycheeslicer %u"
+      '';
+    })) # Lychee Slicer for 3D printing (with custom protocol handler enabled for browser authentication)
     loupe # Modern GTK4 image viewer
     kicad # EDA suite for schematics and PCB design
 
