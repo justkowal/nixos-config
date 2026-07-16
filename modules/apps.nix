@@ -24,11 +24,7 @@
     prismlauncher # Minecraft launcher
     spotify # Music streaming client
     freecad # 3D CAD modeler
-    (pkgsRocm.blender.overrideAttrs (oldAttrs: {
-      cmakeFlags = oldAttrs.cmakeFlags ++ [
-        "-DWITH_CYCLES_DEVICE_HIPRT=OFF"
-      ];
-    })) # 3D creation suite (HIP RT disabled for stability on RX 6700 XT)
+    pkgsRocm.blender # 3D creation suite
     lycheeslicer # Lychee Slicer for 3D printing
     loupe # Modern GTK4 image viewer
     kicad # EDA suite for schematics and PCB design
