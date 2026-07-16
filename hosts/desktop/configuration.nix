@@ -1,6 +1,7 @@
 {
   config,
   pkgs,
+  inputs,
   ...
 }: {
   imports = [
@@ -70,6 +71,23 @@
 
   # Allow unfree packages (needed for Steam, VS Code, etc.)
   nixpkgs.config.allowUnfree = true;
+
+  # Workaround for minizip-ng test failure and custom millennium packages definition to inherit overlays
+  nixpkgs.overlays = [
+    (final: prev: {
+      minizip-ng = prev.minizip-ng.overrideAttrs (oldAttrs: {
+        doCheck = false;
+      });
+
+      millennium = final.callPackage "${inputs.millennium.outPath}/millennium.nix" {
+        millennium-src = inputs.millennium.inputs.millennium-src;
+      };
+
+      millennium-steam = final.callPackage "${inputs.millennium.outPath}/steam.nix" {
+        inherit (final) millennium;
+      };
+    })
+  ];
 
   # Experimental features (Flakes & Nix profile)
   nix.settings.experimental-features = ["nix-command" "flakes"];

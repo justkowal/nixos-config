@@ -6,6 +6,7 @@
   # Enable Steam gaming platform
   programs.steam = {
     enable = true;
+    package = pkgs.millennium-steam;
     remotePlay.openFirewall = true;
     dedicatedServer.openFirewall = true;
   };
@@ -23,7 +24,8 @@
     prismlauncher # Minecraft launcher
     spotify # Music streaming client
     freecad # 3D CAD modeler
-    blender # 3D creation suite
+    pkgsRocm.blender # 3D creation suite
+    lycheeslicer # Lychee Slicer for 3D printing
     loupe # Modern GTK4 image viewer
     kicad # EDA suite for schematics and PCB design
 

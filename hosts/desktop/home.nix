@@ -13,6 +13,12 @@
     createCadEdaDirs = lib.hm.dag.entryAfter ["writeBoundary"] ''
       mkdir -p /home/justkowal/.local/share/FreeCAD/v1-1/Gui/Stylesheets
       mkdir -p /home/justkowal/.config/kicad/10.0/colors
+      mkdir -p /home/justkowal/.local/share/Steam/steamui/skins
+
+      THEME_DIR="/home/justkowal/.local/share/Steam/steamui/skins/Material-Theme"
+      if [ ! -d "$THEME_DIR" ]; then
+        ${pkgs.git}/bin/git clone https://github.com/kuska1/Material-Theme.git "$THEME_DIR"
+      fi
     '';
   };
 
@@ -2330,6 +2336,16 @@
     }
   '';
 
+  xdg.configFile."matugen/templates/steam.css".text = ''
+    :root {
+        --theme-color: "Matugen";
+        --hue-rotate: 220deg;
+        <* for name, value in colors *>
+        --md-sys-color-{{name | replace: "_", "-" }}: {{value.default.rgb}};
+        <* endfor *>
+    }
+  '';
+
   xdg.configFile."matugen/config.toml".text = ''
     [config]
     source_color_index = 0
@@ -2397,6 +2413,10 @@
     [templates.kicad]
     input_path = "~/.config/matugen/templates/kicad.json"
     output_path = "~/.config/kicad/10.0/colors/matugen.json"
+
+    [templates.steam]
+    input_path = "~/.config/matugen/templates/steam.css"
+    output_path = "~/.local/share/Steam/steamui/skins/Material-Theme/css/main/colors/matugen.css"
   '';
 
   # 12. Declarative VS Code configuration (extensions + theme)
