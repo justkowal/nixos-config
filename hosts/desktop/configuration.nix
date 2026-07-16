@@ -89,6 +89,12 @@
     })
   ];
 
+  # XDG MIME associations
+  xdg.mime.enable = true;
+  xdg.mime.defaultApplications = {
+    "x-scheme-handler/lycheeslicer" = [ "Lychee Slicer.desktop" ];
+  };
+
   # Experimental features (Flakes & Nix profile)
   nix.settings.experimental-features = ["nix-command" "flakes"];
 
