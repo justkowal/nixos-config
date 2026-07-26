@@ -1026,7 +1026,7 @@
       TEXT=" ''${CPU_UTIL}% (''${CPU_TEMP}°C)  󰾲 ''${GPU_UTIL}% (''${GPU_TEMP}°C)"
       TOOLTIP="System Status:\n\nCPU Usage: ''${CPU_UTIL}%\nCPU Temp: ''${CPU_TEMP}°C\n\nGPU Usage: ''${GPU_UTIL}%\nGPU Temp: ''${GPU_TEMP}°C"
 
-      ${pkgs.jq}/bin/jq -n --arg text "$TEXT" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}'
+      ${pkgs.jq}/bin/jq -n -c --arg text "$TEXT" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}'
     '';
   };
 
@@ -1199,7 +1199,7 @@
         fi
 
         FULL_TOOLTIP=$(printf "%s\nCycle: %s" "$tooltip" "$cycles")
-        ${pkgs.jq}/bin/jq -n --arg text "$display_text" --arg tooltip "$FULL_TOOLTIP" --arg class "$class" '{text: $text, tooltip: $tooltip, class: $class}'
+        ${pkgs.jq}/bin/jq -n -c --arg text "$display_text" --arg tooltip "$FULL_TOOLTIP" --arg class "$class" '{text: $text, tooltip: $tooltip, class: $class}'
       }
 
       case "$1" in

@@ -1204,7 +1204,7 @@
 
       # Gather context
       HOUR=$(date +%H)
-      UPTIME=$(uptime -p | sed 's/up //')
+      UPTIME=$(${pkgs.procps}/bin/uptime -p 2>/dev/null | sed 's/up //' || echo "active")
       RAM_PCT=$(free | awk '/Mem:/ {printf "%.0f", $3/$2*100}')
       DISK_PCT=$(df / | awk 'NR==2 {print $5}')
       WORKSPACES=$(${pkgs.hyprland}/bin/hyprctl workspaces -j 2>/dev/null | ${pkgs.jq}/bin/jq 'length' 2>/dev/null || echo "?")
@@ -1233,7 +1233,7 @@
 
       TOOLTIP="System: Up $UPTIME | RAM ''${RAM_PCT}% | Disk $DISK_PCT\nWorkspaces: $WORKSPACES | Last commit: $LAST_GIT"
 
-      OUTPUT=$(${pkgs.jq}/bin/jq -n --arg text "✨ $TIP" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}')
+      OUTPUT=$(${pkgs.jq}/bin/jq -n -c --arg text "✨ $TIP" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}')
       echo "$OUTPUT" > "$CACHE_FILE"
       echo "$OUTPUT"
     '';
