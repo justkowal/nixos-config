@@ -19,8 +19,9 @@
     vlc
     gnome-software # Graphical store for Flatpaks
     discord # Chat & Social (with Discord Rich Presence support)
-    lutris # Gaming Launcher wrapper
     heroic # GOG & Epic Games Launcher client
+    lutris # Open Source gaming platform for Windows/Linux games
+    protonup-qt # Graphical manager for Proton-GE and Wine-GE
     prismlauncher # Minecraft launcher
     spotify # Music streaming client
     freecad # 3D CAD modeler
@@ -33,16 +34,14 @@
           --set LD_PRELOAD "${rocmPackages.rocm-comgr}/lib/libamd_comgr.so.3"
       '';
     }) # 3D creation suite (wrapped with LD_PRELOAD to fix ROCm/HIP compiler crashes)
-    (lycheeslicer.overrideAttrs (oldAttrs: {
-      buildCommand = (oldAttrs.buildCommand or "") + ''
-        # Add support for the lycheeslicer:// protocol handler to allow browser login authentication
-        chmod +w $out/share/applications/*.desktop
-        substituteInPlace $out/share/applications/*.desktop \
-          --replace "MimeType=model/stl;" "MimeType=model/stl;x-scheme-handler/lycheeslicer;" \
-          --replace "Exec=lycheeslicer" "Exec=lycheeslicer %u"
-      '';
-    })) # Lychee Slicer for 3D printing (with custom protocol handler enabled for browser authentication)
     loupe # Modern GTK4 image viewer
+    zathura # Minimalist keyboard-driven PDF viewer
+    libreoffice-fresh # Modern Office Suite for docx/odt/xlsx/pptx
+    mods # CLI AI assistant tool by Charmbracelet
+    fd # Ultra-fast file search CLI tool
+    rofi-calc # Calculator plugin for Rofi
+    restic # High-performance encrypted backup framework
+    tesseract # Optical Character Recognition (OCR) engine for AI screenshot parsing
     kicad # EDA suite for schematics and PCB design
 
     # LaTeX typesetting stack (medium scheme provides most standard packages)

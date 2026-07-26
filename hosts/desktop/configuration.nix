@@ -14,6 +14,8 @@
     ../../modules/performance.nix
     ../../modules/hardware.nix
     ../../modules/networking.nix
+    ../../modules/vpn.nix
+    ../../modules/ai.nix
   ];
 
   home-manager.backupFileExtension = "backup";
@@ -28,8 +30,44 @@
   # Stage 1 Initrd and Kernel Logging Optimizations
   boot.initrd.systemd.enable = true;
   boot.initrd.compressor = "zstd";
+  boot.initrd.includeDefaultModules = false;
   boot.initrd.verbose = false;
   boot.consoleLogLevel = 0;
+
+  # Disable NetworkManager wait online service to prevent boot delays
+  systemd.services.NetworkManager-wait-online.enable = false;
+
+  # Weekly Bcachefs Filesystem Scrub / Integrity Check Timer
+  systemd.services.bcachefs-scrub = {
+    description = "Weekly Bcachefs Filesystem Scrub & Check";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.bcachefs-tools}/bin/bcachefs fsck /dev/disk/by-uuid/91169176-2eea-4719-8327-2e0bbc3cc0c1";
+    };
+  };
+  systemd.timers.bcachefs-scrub = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "weekly";
+      Persistent = true;
+    };
+  };
+
+  # Automated Hourly AI File Organizer Service & Timer
+  systemd.user.services.ai-organize = {
+    description = "Hourly AI File Organizer Daemon";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.python3}/bin/python3 /home/justkowal/.config/hypr/scripts/ai_organize.py /home/justkowal/Downloads";
+    };
+  };
+  systemd.user.timers.ai-organize = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "hourly";
+      Persistent = true;
+    };
+  };
 
   # Disable ESP random seed updates to avoid slow early boot VFAT write syncs
   systemd.services.systemd-boot-random-seed.enable = false;
@@ -89,27 +127,67 @@
     })
   ];
 
-  # XDG MIME associations
+  # XDG MIME associations (Default Applications)
   xdg.mime.enable = true;
   xdg.mime.defaultApplications = {
+    "application/pdf" = [ "org.pwmt.zathura.desktop" ];
+    "image/png" = [ "org.gnome.Loupe.desktop" ];
+    "image/jpeg" = [ "org.gnome.Loupe.desktop" ];
+    "image/webp" = [ "org.gnome.Loupe.desktop" ];
+    "image/gif" = [ "org.gnome.Loupe.desktop" ];
+    "image/svg+xml" = [ "org.gnome.Loupe.desktop" ];
+    "video/mp4" = [ "vlc.desktop" ];
+    "video/x-matroska" = [ "vlc.desktop" ];
+    "video/webm" = [ "vlc.desktop" ];
+    "video/quicktime" = [ "vlc.desktop" ];
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document" = [ "libreoffice-writer.desktop" ];
+    "application/msword" = [ "libreoffice-writer.desktop" ];
+    "application/vnd.oasis.opendocument.text" = [ "libreoffice-writer.desktop" ];
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" = [ "libreoffice-calc.desktop" ];
+    "application/vnd.ms-excel" = [ "libreoffice-calc.desktop" ];
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation" = [ "libreoffice-impress.desktop" ];
+    "x-scheme-handler/http" = [ "firefox.desktop" ];
+    "x-scheme-handler/https" = [ "firefox.desktop" ];
     "x-scheme-handler/lycheeslicer" = [ "Lychee Slicer.desktop" ];
   };
 
-  # Experimental features (Flakes & Nix profile)
-  nix.settings.experimental-features = ["nix-command" "flakes"];
+  # High-speed Nix binary caches
+  nix.settings = {
+    experimental-features = ["nix-command" "flakes"];
+    max-jobs = "auto";
+    cores = 0; # Use all CPU threads
+    auto-optimise-store = true;
+    connect-timeout = 5;
+    substituters = [
+      "https://cache.nixos.org"
+      "https://hyprland.cachix.org"
+      "https://nix-community.cachix.org"
+    ];
+    trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
+  };
 
-  # Optimize Nix compilation resource utilization (especially for LTO kernel build)
-  nix.settings.max-jobs = "auto";
-  nix.settings.cores = 0; # Use all CPU threads
+  # Real-time PAM limits for ultra-low latency audio processing (PipeWire)
+  security.pam.loginLimits = [
+    { domain = "@audio"; item = "rtprio"; type = "-"; value = "99"; }
+    { domain = "@audio"; item = "memlock"; type = "-"; value = "unlimited"; }
+    { domain = "@audio"; item = "nice"; type = "-"; value = "-19"; }
+  ];
 
-  # Auto-optimise store (deduplicates identical files in the store to save space)
-  nix.settings.auto-optimise-store = true;
+  # NH CLI Helper (Visual diff previews, automatic generation retention & rebuild management)
+  programs.nh = {
+    enable = true;
+    clean.enable = true;
+    clean.extraArgs = "--keep 5";
+    flake = "/etc/nixos";
+  };
 
-  # Automatic Garbage Collection (keeps system clean by deleting older builds)
+  # Automatic Garbage Collection fallback
   nix.gc = {
-    automatic = true;
-    dates = "weekly";
-    options = "--delete-older-than 7d";
+    automatic = false; # Handled dynamically by nh clean
   };
 
   # Enable nix-ld to run pre-compiled non-Nix binaries seamlessly
@@ -124,12 +202,18 @@
     enableOnBoot = false;
   };
 
+  # Enable Podman for rootless container execution
+  virtualisation.podman = {
+    enable = true;
+  };
+
   # Enable the system-wide SSH agent for credential caching
   programs.ssh.startAgent = true;
 
   # Enable the OpenSSH secure shell daemon (SSH server)
   services.openssh = {
     enable = true;
+    startWhenNeeded = true;
     settings = {
       PasswordAuthentication = true;
       PermitRootLogin = "no";
@@ -152,8 +236,8 @@
     usbutils
   ];
 
-  # CPU Frequency Governor (Force performance mode for maximum responsiveness on desktop)
-  powerManagement.cpuFreqGovernor = "performance";
+  # CPU Frequency Governor (Dynamic amd_pstate balance_performance mode; GameMode locks performance when gaming)
+  powerManagement.cpuFreqGovernor = "powersave";
 
   # NixOS State Version
   system.stateVersion = "26.05";
