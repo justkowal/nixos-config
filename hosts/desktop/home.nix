@@ -482,6 +482,9 @@
       }
 
       # Autostart
+      exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+      exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+      exec-once = ${pkgs.gnome-keyring}/bin/gnome-keyring-daemon --start --components=secrets,pkcs11,ssh
       exec-once = waybar
       exec-once = awww-daemon
       # nm-applet is disabled to avoid duplicate network tray/bar icons
@@ -1023,7 +1026,7 @@
       TEXT=" ''${CPU_UTIL}% (''${CPU_TEMP}°C)  󰾲 ''${GPU_UTIL}% (''${GPU_TEMP}°C)"
       TOOLTIP="System Status:\n\nCPU Usage: ''${CPU_UTIL}%\nCPU Temp: ''${CPU_TEMP}°C\n\nGPU Usage: ''${GPU_UTIL}%\nGPU Temp: ''${GPU_TEMP}°C"
 
-      printf '{"text": "%s", "tooltip": "%s"}\n' "$TEXT" "$TOOLTIP"
+      ${pkgs.jq}/bin/jq -n --arg text "$TEXT" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}'
     '';
   };
 
@@ -1195,7 +1198,8 @@
           display_text="$icon"
         fi
 
-        printf '{"text": "%s", "tooltip": "%s\\nCycle: %s", "class": "%s"}\n' "$display_text" "$tooltip" "$cycles" "$class"
+        FULL_TOOLTIP=$(printf "%s\nCycle: %s" "$tooltip" "$cycles")
+        ${pkgs.jq}/bin/jq -n --arg text "$display_text" --arg tooltip "$FULL_TOOLTIP" --arg class "$class" '{text: $text, tooltip: $tooltip, class: $class}'
       }
 
       case "$1" in

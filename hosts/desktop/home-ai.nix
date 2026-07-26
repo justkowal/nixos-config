@@ -1233,7 +1233,7 @@
 
       TOOLTIP="System: Up $UPTIME | RAM ''${RAM_PCT}% | Disk $DISK_PCT\nWorkspaces: $WORKSPACES | Last commit: $LAST_GIT"
 
-      OUTPUT=$(printf '{"text": "✨ %s", "tooltip": "%s"}\n' "$TIP" "$TOOLTIP")
+      OUTPUT=$(${pkgs.jq}/bin/jq -n --arg text "✨ $TIP" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}')
       echo "$OUTPUT" > "$CACHE_FILE"
       echo "$OUTPUT"
     '';

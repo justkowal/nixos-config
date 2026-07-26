@@ -73,6 +73,7 @@
 
   # Security policies & PAM authenticators
   security.polkit.enable = true;
+  security.pam.services.greetd.enableGnomeKeyring = true;
   security.pam.services.hyprlock = {};
 
   # Basic fonts for interface styling
