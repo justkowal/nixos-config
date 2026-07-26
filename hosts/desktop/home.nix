@@ -170,7 +170,7 @@
         margin-left = 12;
         margin-right = 12;
         modules-left = ["hyprland/workspaces" "hyprland/submap"];
-        modules-center = ["custom/ai-ambient" "clock" "custom/pomodoro" "clock#date"];
+        modules-center = ["clock" "custom/ai-ambient" "custom/pomodoro" "clock#date"];
         modules-right = ["mpris" "idle_inhibitor" "custom/sysinfo" "memory" "disk" "pulseaudio" "network" "custom/notification" "tray" "custom/power"];
 
         "hyprland/workspaces" = {
@@ -339,6 +339,14 @@
       #custom-ai-ambient {
         color: @tertiary;
         font-style: italic;
+        min-width: 14px;
+        transition: min-width 0.4s cubic-bezier(0.1, 1, 0.1, 1), background-color 0.3s ease;
+      }
+
+      #custom-ai-ambient:hover {
+        min-width: 280px;
+        background-color: alpha(@primary_container, 0.9);
+        color: @on_primary_container;
       }
 
       #custom-notification {
