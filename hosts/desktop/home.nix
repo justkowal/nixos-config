@@ -4,6 +4,11 @@
   lib,
   ...
 }: {
+  imports = [
+    ./home-theming.nix
+    ./home-ai.nix
+  ];
+
   home.username = "justkowal";
   home.homeDirectory = "/home/justkowal";
   home.enableNixpkgsReleaseCheck = false;
@@ -20,24 +25,38 @@
         ${pkgs.git}/bin/git clone https://github.com/kuska1/Material-Theme.git "$THEME_DIR"
       fi
     '';
+
+    copyMangoHud = lib.hm.dag.entryAfter ["linkGeneration"] ''
+      if [ -L /home/justkowal/.config/MangoHud/MangoHud.conf ]; then
+        TARGET_PATH=$(readlink -f /home/justkowal/.config/MangoHud/MangoHud.conf)
+        if [ -n "$TARGET_PATH" ] && [ -f "$TARGET_PATH" ]; then
+          rm -f /home/justkowal/.config/MangoHud/MangoHud.conf
+          cp -L "$TARGET_PATH" /home/justkowal/.config/MangoHud/MangoHud.conf
+          chmod 644 /home/justkowal/.config/MangoHud/MangoHud.conf
+        fi
+      fi
+    '';
   };
 
   # Global developer session variables
   home.sessionVariables = {
+    TZ = "Europe/Warsaw";
     RUSTC_WRAPPER = "${pkgs.sccache}/bin/sccache";
     STARSHIP_CONFIG = "/home/justkowal/.config/starship.toml";
     GTK_THEME = "Adwaita:dark";
+    MANGOHUD_CONFIGFILE = "/home/justkowal/.config/MangoHud/MangoHud.conf";
   };
 
   # User packages
   home.packages = with pkgs; [
     awww # Animated wallpaper daemon
     wl-clipboard # Wayland clipboard utilities
-    #outfit                 # Modern sans-serif font for MD3 layouts
     playerctl # CLI media player controller
     grim # Screen grabber
     slurp # Region selector
     libnotify # Notification sender (notify-send)
+    libcanberra-gtk3 # Event sound player (canberra-gtk-play)
+    glow # Terminal markdown renderer
     sccache # Shared compilation cache for C++/Rust
     matugen
     gnome-calendar
@@ -57,6 +76,9 @@
       background_opacity = "0.85";
       enable_audio_bell = false;
       confirm_os_window_close = 0;
+      window_padding_width = 10;
+      tab_bar_edge = "top";
+      tab_bar_style = "powerline";
     };
     extraConfig = ''
       include colors.conf
@@ -149,7 +171,7 @@
         margin-right = 12;
         modules-left = ["hyprland/workspaces" "hyprland/submap"];
         modules-center = ["clock" "custom/pomodoro" "clock#date"];
-        modules-right = ["mpris" "idle_inhibitor" "custom/sysinfo" "memory" "disk" "pulseaudio" "network" "tray" "custom/power"];
+        modules-right = ["mpris" "idle_inhibitor" "custom/ai-ambient" "custom/sysinfo" "memory" "disk" "pulseaudio" "network" "custom/notification" "tray" "custom/power"];
 
         "hyprland/workspaces" = {
           disable-scroll = true;
@@ -222,9 +244,33 @@
           format = " {percentage}%";
         };
 
+        "custom/notification" = {
+          tooltip = false;
+          format = "🔔 {icon}";
+          format-icons = {
+            notification = "󱅫";
+            none = "󰂜";
+            dnd-notification = "󰂛";
+            dnd-none = "󰂛";
+          };
+          return-type = "json";
+          exec = "${pkgs.swaynotificationcenter}/bin/swaync-client -swb";
+          on-click = "${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw";
+          on-click-right = "${pkgs.swaynotificationcenter}/bin/swaync-client -d -sw";
+          escape = true;
+        };
+
         "custom/power" = {
           format = "⏻ ";
           on-click = "bash /home/justkowal/.config/hypr/scripts/power_menu.sh";
+        };
+
+        "custom/ai-ambient" = {
+          format = "{}";
+          return-type = "json";
+          exec = "bash /home/justkowal/.config/waybar/scripts/ai_ambient.sh";
+          interval = 300;
+          tooltip = true;
         };
 
         "custom/pomodoro" = {
@@ -282,11 +328,20 @@
         background-color: @surface_variant;
       }
 
-      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-power, #custom-pomodoro {
+      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-power, #custom-pomodoro, #custom-ai-ambient {
         padding: 0 16px;
         margin: 4px 2px;
         background-color: alpha(@surface_variant, 0.82);
         border-radius: 12px;
+      }
+
+      #custom-ai-ambient {
+        color: @tertiary;
+        font-style: italic;
+      }
+
+      #custom-notification {
+        color: @primary;
       }
 
       #custom-pomodoro.work {
@@ -375,39 +430,55 @@
           gaps_in = 6
           gaps_out = 12
           border_size = 2
-          col.active_border = $primary $secondary 45deg
+          col.active_border = $primary $tertiary 45deg
           col.inactive_border = $outline
           layout = dwindle
       }
 
       decoration {
-          rounding = 14
+          rounding = 12
+          active_opacity = 1.0
+          inactive_opacity = 0.92
+
           blur {
               enabled = true
-              size = 3
+              size = 6
               passes = 3
               new_optimizations = true
           }
           shadow {
-              enabled = true
-              range = 15
-              render_power = 3
-              color = rgba(11111b66)
+              enabled = false
           }
       }
 
+
+
       animations {
           enabled = true
-          bezier = myBezier, 0.05, 0.9, 0.1, 1.05
-          animation = windows, 1, 5, myBezier
-          animation = windowsOut, 1, 5, default, popin 80%
-          animation = border, 1, 10, default
-          animation = fade, 1, 7, default
-          animation = workspaces, 1, 5, default
+          bezier = md3_decel, 0.05, 0.7, 0.1, 1.0
+          bezier = bouncy, 0.175, 0.885, 0.32, 1.275
+          bezier = win_decel, 0.05, 0.9, 0.1, 1.05
+
+          animation = windows, 1, 4, bouncy, popin 85%
+          animation = windowsIn, 1, 4, bouncy, popin 85%
+          animation = windowsOut, 1, 3, md3_decel, popin 80%
+          animation = windowsMove, 1, 4, win_decel
+          animation = border, 1, 6, md3_decel
+          animation = fade, 1, 4, md3_decel
+          animation = workspaces, 1, 5, md3_decel, slide
+          animation = specialWorkspace, 1, 4, bouncy, slidevert
       }
 
       misc {
           vrr = 0
+      }
+
+      cursor {
+          no_hardware_cursors = true
+      }
+
+      render {
+          direct_scanout = true
       }
 
       # Autostart
@@ -421,9 +492,12 @@
       # Binds
       $mod = SUPER
       bind = $mod, RETURN, exec, kitty
-      bind = $mod, grave, togglespecialworkspace, term
       bind = $mod, B, exec, firefox
-      bind = $mod, D, exec, rofi -show drun
+      bind = $mod, ESCAPE, exec, bash ~/.config/hypr/scripts/power_menu.sh
+      bind = $mod, grave, togglespecialworkspace, term
+      bind = $mod, D, exec, bash ~/.config/hypr/scripts/spotlight.sh
+      bind = $mod, SPACE, exec, bash ~/.config/hypr/scripts/spotlight.sh
+      bind = $mod, A, exec, bash ~/.config/hypr/scripts/rofi_ai.sh
       bind = $mod, Q, killactive,
       bind = $mod, M, exit,
       bind = $mod, F, togglefloating,
@@ -465,30 +539,32 @@
       bind = $mod SHIFT, mouse:275, movetoworkspace, r-1
       bind = $mod SHIFT, mouse:276, movetoworkspace, r+1
 
-      # Clipboard & Screenshots
-      bind = $mod, V, exec, cliphist list | rofi -dmenu | cliphist decode | wl-copy
+      # Clipboard & AI Notifications
+      bind = $mod, V, exec, bash ~/.config/hypr/scripts/cliphist_picker.sh
+      bind = $mod ALT, N, exec, bash ~/.config/ai/notification_digest.sh
+      bind = $mod SHIFT, S, exec, bash ~/.config/hypr/scripts/ai_ocr_screenshot.sh
       # Print: Region screenshot to clipboard
-      bind = , Print, exec, grim -g "$(slurp)" - | wl-copy && notify-send "Screenshot" "Region copied to clipboard"
+      bind = , Print, exec, ${pkgs.grim}/bin/grim -g "$(${pkgs.slurp}/bin/slurp)" - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.libnotify}/bin/notify-send "Screenshot" "Region copied to clipboard"
       # Shift+Print: Fullscreen screenshot to clipboard
-      bind = SHIFT, Print, exec, grim - | wl-copy && notify-send "Screenshot" "Fullscreen copied to clipboard"
+      bind = SHIFT, Print, exec, ${pkgs.grim}/bin/grim - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.libnotify}/bin/notify-send "Screenshot" "Fullscreen copied to clipboard"
       # Ctrl+Print: Focused window screenshot to clipboard
-      bind = CTRL, Print, exec, grim -g "$(hyprctl activewindow -j | jq -r '([.at[0],.at[1]]|join(",")) + " " + ([.size[0],.size[1]]|join("x"))')" - | wl-copy && notify-send "Screenshot" "Focused window copied to clipboard"
+      bind = CTRL, Print, exec, ${pkgs.grim}/bin/grim -g "$(${pkgs.hyprland}/bin/hyprctl activewindow -j | ${pkgs.jq}/bin/jq -r '([.at[0],.at[1]]|join(",")) + " " + ([.size[0],.size[1]]|join("x"))')" - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.libnotify}/bin/notify-send "Screenshot" "Focused window copied to clipboard"
 
       # Style Refresh
       bind = $mod SHIFT, W, exec, ~/.config/hypr/scripts/change_wallpaper.sh
 
-      # Hardware Media Keys
-      bindl = , XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+      # Hardware Media & Volume Keys with Graphical OSD
+      bindl = , XF86AudioMute, exec, bash ~/.config/hypr/scripts/volume_osd.sh mute
       bindl = , XF86AudioPlay, exec, playerctl play-pause
       bindl = , XF86AudioNext, exec, playerctl next
       bindl = , XF86AudioPrev, exec, playerctl previous
 
-      bindle = , XF86AudioRaiseVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
-      bindle = , XF86AudioLowerVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+      bindle = , XF86AudioRaiseVolume, exec, bash ~/.config/hypr/scripts/volume_osd.sh up
+      bindle = , XF86AudioLowerVolume, exec, bash ~/.config/hypr/scripts/volume_osd.sh down
 
-      # Brightness keys (SUPER + ALT + Page_Up/Page_Down)
-      bindle = $mod ALT, Page_Up, exec, ${pkgs.ddcutil}/bin/ddcutil setvcp 10 + 5
-      bindle = $mod ALT, Page_Down, exec, ${pkgs.ddcutil}/bin/ddcutil setvcp 10 - 5
+      # Brightness keys with Graphical OSD (SUPER + ALT + Page_Up/Page_Down)
+      bindle = $mod ALT, Page_Up, exec, bash ~/.config/hypr/scripts/brightness_osd.sh up
+      bindle = $mod ALT, Page_Down, exec, bash ~/.config/hypr/scripts/brightness_osd.sh down
 
       # Swap window positions in tiling mode (arrows & Vim keys)
       bind = $mod SHIFT, left, swapwindow, l
@@ -515,6 +591,20 @@
       # Mouse binds
       bindm = $mod, mouse:272, movewindow
       bindm = $mod, mouse:273, resizewindow
+
+      # TTY Switching (Virtual Terminals)
+      bind = CTRL ALT, F1, exec, chvt 1
+      bind = CTRL ALT, F2, exec, chvt 2
+      bind = CTRL ALT, F3, exec, chvt 3
+      bind = CTRL ALT, F4, exec, chvt 4
+      bind = CTRL ALT, F5, exec, chvt 5
+      bind = CTRL ALT, F6, exec, chvt 6
+      bind = CTRL ALT, F7, exec, chvt 7
+      bind = CTRL ALT, F8, exec, chvt 8
+      bind = CTRL ALT, F9, exec, chvt 9
+      bind = CTRL ALT, F10, exec, chvt 10
+      bind = CTRL ALT, F11, exec, chvt 11
+      bind = CTRL ALT, F12, exec, chvt 12
 
       # Split/Resize submap (SUPER + R to trigger)
       bind = $mod, R, submap, split
@@ -603,11 +693,11 @@
     settings = {
       listener = [
         {
-          timeout = 300; # Lock screen after 5 minutes
+          timeout = 900; # Lock screen after 15 minutes
           on-timeout = "hyprlock";
         }
         {
-          timeout = 600; # Turn off screens after 10 minutes
+          timeout = 1800; # Turn off screens after 30 minutes
           on-timeout = "hyprctl dispatch dpms off";
           on-resume = "hyprctl dispatch dpms on";
         }
@@ -662,10 +752,18 @@
     platformTheme.name = "gtk3";
   };
 
-  # 10. Firefox palette integration driven by matugen-generated colors
+  # 10. Firefox palette integration driven by matugen-generated colors & high performance tuning
   programs.firefox = {
     enable = true;
     package = pkgs.firefox;
+    policies = {
+      DisableTelemetry = true;
+      DisableFirefoxStudies = true;
+      DisablePocket = true;
+      DisableFirefoxAccounts = false;
+      OverrideFirstRunPage = "";
+      OverridePostUpdatePage = "";
+    };
   };
 
   # Declaratively populate files inside active Firefox default profile without profile reset
@@ -676,6 +774,25 @@
     user_pref("browser.in-content.dark-mode", true);
     user_pref("layout.css.prefers-color-scheme.content-override", 0);
     user_pref("ui.systemUsesDarkTheme", 1);
+
+    /* Hardware GPU WebRender Acceleration */
+    user_pref("gfx.webrender.all", true);
+    user_pref("gfx.webrender.compositor", true);
+
+    /* VA-API Hardware Video Decoding on AMD GPU */
+    user_pref("media.hardware-video-decoding.enabled", true);
+    user_pref("media.ffmpeg.vaapi.enabled", true);
+
+    /* 1GB High-Speed RAM Cache for instant navigation & tab switching */
+    user_pref("browser.cache.memory.enable", true);
+    user_pref("browser.cache.memory.capacity", 1048576);
+    user_pref("browser.tabs.remote.warmup.enabled", true);
+
+    /* Disable startup telemetry & first-run delay overlays */
+    user_pref("browser.startup.homepage_override.mstone", "ignore");
+    user_pref("toolkit.telemetry.enabled", false);
+    user_pref("browser.newtabpage.activity-stream.telemetry", false);
+    user_pref("browser.ping-centre.telemetry", false);
   '';
 
   home.file.".mozilla/firefox/1arj8uom.default/chrome/userChrome.css".text = ''
@@ -765,21 +882,88 @@
     '';
   };
 
+  xdg.configFile."hypr/scripts/volume_osd.sh" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      case "$1" in
+        up) ${pkgs.wireplumber}/bin/wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+ ;;
+        down) ${pkgs.wireplumber}/bin/wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- ;;
+        mute) ${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+      esac
+
+      VOL=$(${pkgs.wireplumber}/bin/wpctl get-volume @DEFAULT_AUDIO_SINK@ | ${pkgs.gawk}/bin/awk '{print int($2 * 100)}')
+      MUTED=$(${pkgs.wireplumber}/bin/wpctl get-volume @DEFAULT_AUDIO_SINK@ | ${pkgs.gnugrep}/bin/grep -i MUTED)
+
+      if [ -n "$MUTED" ]; then
+        ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:osd -h int:value:0 -i audio-volume-muted "Volume" "Muted (0%)"
+      else
+        ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:osd -h int:value:"$VOL" -i audio-volume-high "Volume" "$VOL%"
+      fi
+    '';
+  };
+
+  xdg.configFile."hypr/scripts/brightness_osd.sh" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      case "$1" in
+        up) ${pkgs.ddcutil}/bin/ddcutil setvcp 10 + 5 ;;
+        down) ${pkgs.ddcutil}/bin/ddcutil setvcp 10 - 5 ;;
+      esac
+
+      BRIGHT=$(${pkgs.ddcutil}/bin/ddcutil getvcp 10 2>/dev/null | ${pkgs.gnugrep}/bin/grep -oP 'current value =\s*\K\d+' || echo "50")
+      ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:osd -h int:value:"$BRIGHT" -i display-brightness "Monitor Brightness" "$BRIGHT%"
+    '';
+  };
+
   xdg.configFile."hypr/scripts/power_menu.sh" = {
     executable = true;
     text = ''
-      #!/bin/bash
-      options="Shutdown\nReboot\nSuspend\nLock\nExit"
-      selected=$(echo -e "$options" | rofi -dmenu -i -p "Power Menu")
+      #!/usr/bin/env bash
+      options="🔒 Lock Screen\n💤 Suspend\n🔄 Reboot System\n⚡ Shutdown System\n🚪 Exit Hyprland Session"
+      selected=$(echo -e "$options" | rofi -dmenu -i -p "Power Menu" -font "Outfit 12" -theme-str 'window {width: 450px;}')
       case "$selected" in
-        "Shutdown") systemctl poweroff ;;
-        "Reboot") systemctl reboot ;;
-        "Suspend") systemctl suspend ;;
-        "Lock") hyprlock ;;
-        "Exit") hyprctl dispatch exit ;;
+        *"Shutdown"*) systemctl poweroff ;;
+        *"Reboot"*) systemctl reboot ;;
+        *"Suspend"*) systemctl suspend ;;
+        *"Lock"*) ${pkgs.hyprlock}/bin/hyprlock ;;
+        *"Exit"*) ${pkgs.hyprland}/bin/hyprctl dispatch exit ;;
       esac
     '';
   };
+
+  # IDE Continue Extension pre-configured with local Ollama ROCm backend
+  home.file.".continue/config.json".text = ''
+    {
+      "models": [
+        {
+          "title": "Huihui Gemma 4 12B IT (Abliterated)",
+          "provider": "ollama",
+          "model": "huihui-ai/Huihui-gemma-4-12B-it-abliterated",
+          "apiBase": "http://127.0.0.1:11434"
+        },
+        {
+          "title": "Huihui Gemma 4 E4B IT (Abliterated)",
+          "provider": "ollama",
+          "model": "huihui-ai/Huihui-gemma-4-E4B-it-abliterated",
+          "apiBase": "http://127.0.0.1:11434"
+        },
+        {
+          "title": "Huihui Gemma 4 12B Coder (Abliterated)",
+          "provider": "ollama",
+          "model": "huihui-ai/Huihui-gemma-4-12B-coder-fable5-composer2.5-v1-abliterated",
+          "apiBase": "http://127.0.0.1:11434"
+        }
+      ],
+      "tabAutocompleteModel": {
+        "title": "Huihui Gemma 4 E2B Autocomplete (Fast)",
+        "provider": "ollama",
+        "model": "huihui-ai/Huihui-gemma-4-E2B-it-abliterated",
+        "apiBase": "http://127.0.0.1:11434"
+      }
+    }
+  '';
 
   xdg.configFile."hypr/scripts/sys_info.sh" = {
     executable = true;
@@ -1062,1362 +1246,7 @@
              ▝▀▀▀    ▀▀▀▀▘         ▀▀▀▘
   '';
 
-  xdg.configFile."matugen/templates/starship.toml".text = ''
-    "$schema" = 'https://starship.rs/config-schema.json'
-
-    format = """
-    []({{ colors.primary.default.hex }})\
-    $os\
-    $username\
-    [](bg:{{ colors.secondary.default.hex }} fg:{{ colors.primary.default.hex }})\
-    $directory\
-    [](bg:{{ colors.tertiary.default.hex }} fg:{{ colors.secondary.default.hex }})\
-    $git_branch\
-    $git_status\
-    [](bg:{{ colors.primary_container.default.hex }} fg:{{ colors.tertiary.default.hex }})\
-    $c\
-    $rust\
-    $golang\
-    $nodejs\
-    $bun\
-    $php\
-    $java\
-    $kotlin\
-    $haskell\
-    $python\
-    [](bg:{{ colors.secondary_container.default.hex }} fg:{{ colors.primary_container.default.hex }})\
-    $conda\
-    [](bg:{{ colors.tertiary_container.default.hex }} fg:{{ colors.secondary_container.default.hex }})\
-    $time\
-    [ ](fg:{{ colors.tertiary_container.default.hex }})\
-    $cmd_duration\
-    $line_break\
-    $character"""
-
-    [os]
-    disabled = false
-    style = "bg:{{ colors.primary.default.hex }} fg:{{ colors.on_primary.default.hex }}"
-
-    [os.symbols]
-    NixOS = " "
-    Windows = " "
-    Ubuntu = "󰕈 "
-    SUSE = " "
-    Raspbian = "󰐿 "
-    Mint = "󰣭 "
-    Macos = "󰀵 "
-    Manjaro = " "
-    Linux = "󰌽 "
-    Gentoo = "󰣨 "
-    Fedora = "󰣛 "
-    Alpine = " "
-    Amazon = " "
-    Android = " "
-    AOSC = " "
-    Arch = "󰣇 "
-    Artix = "󰣇 "
-    CentOS = " "
-    Debian = "󰣚 "
-    Redhat = "󱄛 "
-    RedHatEnterprise = "󱄛 "
-
-    [username]
-    show_always = true
-    style_user = "bg:{{ colors.primary.default.hex }} fg:{{ colors.on_primary.default.hex }}"
-    style_root = "bg:{{ colors.primary.default.hex }} fg:{{ colors.on_primary.default.hex }}"
-    format = '[ $user]($style)'
-
-    [directory]
-    style = "bg:{{ colors.secondary.default.hex }} fg:{{ colors.on_secondary.default.hex }}"
-    format = "[ $path ]($style)"
-    truncation_length = 3
-    truncation_symbol = "…/"
-
-    [directory.substitutions]
-    "Documents" = "󰈙 "
-    "Downloads" = " "
-    "Music" = "󰝚 "
-    "Pictures" = " "
-    "Developer" = "󰲋 "
-
-    [git_branch]
-    symbol = ""
-    style = "bg:{{ colors.tertiary.default.hex }} fg:{{ colors.on_tertiary.default.hex }}"
-    format = '[[ $symbol $branch ](fg:{{ colors.on_tertiary.default.hex }} bg:{{ colors.tertiary.default.hex }})]($style)'
-
-    [git_status]
-    style = "bg:{{ colors.tertiary.default.hex }} fg:{{ colors.on_tertiary.default.hex }}"
-    format = '[[($all_status$ahead_behind )](fg:{{ colors.on_tertiary.default.hex }} bg:{{ colors.tertiary.default.hex }})]($style)'
-
-    [nodejs]
-    symbol = ""
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [bun]
-    symbol = ""
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [c]
-    symbol = " "
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [rust]
-    symbol = ""
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [golang]
-    symbol = ""
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [php]
-    symbol = ""
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [java]
-    symbol = " "
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [kotlin]
-    symbol = ""
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [haskell]
-    symbol = ""
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [python]
-    symbol = ""
-    style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
-    format = '[[ $symbol( $version)(\\(#$virtualenv\\)) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
-
-    [docker_context]
-    symbol = ""
-    style = "bg:{{ colors.secondary_container.default.hex }} fg:{{ colors.on_secondary_container.default.hex }}"
-    format = '[[ $symbol( $context) ](fg:{{ colors.on_secondary_container.default.hex }} bg:{{ colors.secondary_container.default.hex }})]($style)'
-
-    [conda]
-    symbol = "  "
-    style = "bg:{{ colors.secondary_container.default.hex }} fg:{{ colors.on_secondary_container.default.hex }}"
-    format = '[$symbol$environment ]($style)'
-    ignore_base = false
-
-    [time]
-    disabled = false
-    time_format = "%R"
-    style = "bg:{{ colors.tertiary_container.default.hex }} fg:{{ colors.on_tertiary_container.default.hex }}"
-    format = '[[  $time ](fg:{{ colors.on_tertiary_container.default.hex }} bg:{{ colors.tertiary_container.default.hex }})]($style)'
-
-    [line_break]
-    disabled = true
-
-    [character]
-    disabled = false
-    success_symbol = '[❯](bold fg:{{ colors.primary.default.hex }})'
-    error_symbol = '[❯](bold fg:{{ colors.error.default.hex }})'
-    vimcmd_symbol = '[❮](bold fg:{{ colors.primary.default.hex }})'
-    vimcmd_replace_one_symbol = '[❮](bold fg:{{ colors.tertiary_container.default.hex }})'
-    vimcmd_replace_symbol = '[❮](bold fg:{{ colors.tertiary_container.default.hex }})'
-    vimcmd_visual_symbol = '[❮](bold fg:{{ colors.secondary.default.hex }})'
-
-    [cmd_duration]
-    show_milliseconds = true
-    format = " in $duration "
-    style = "fg:{{ colors.on_background.default.hex }}"
-    disabled = false
-    show_notifications = true
-    min_time_to_notify = 45000
-  '';
-
-  xdg.configFile."matugen/templates/vscode-theme.json".text = ''
-    {
-      "name": "Matugen",
-      "type": "dark",
-      "colors": {
-        "activityBar.background": "{{ colors.surface.default.hex }}",
-        "activityBar.foreground": "{{ colors.on_surface.default.hex }}",
-        "activityBarBadge.background": "{{ colors.primary.default.hex }}",
-        "activityBarBadge.foreground": "{{ colors.on_primary.default.hex }}",
-        "editor.background": "{{ colors.background.default.hex }}",
-        "editor.foreground": "{{ colors.on_background.default.hex }}",
-        "editor.selectionBackground": "{{ colors.primary.default.hex }}",
-        "editor.inactiveSelectionBackground": "{{ colors.surface_variant.default.hex }}",
-        "editor.lineHighlightBackground": "{{ colors.surface_variant.default.hex }}",
-        "editorCursor.foreground": "{{ colors.primary.default.hex }}",
-        "editorIndentGuide.background1": "{{ colors.outline.default.hex }}",
-        "editorIndentGuide.activeBackground1": "{{ colors.primary.default.hex }}",
-        "editorLineNumber.foreground": "{{ colors.on_surface_variant.default.hex }}",
-        "editorLineNumber.activeForeground": "{{ colors.on_background.default.hex }}",
-        "editorWidget.background": "{{ colors.surface.default.hex }}",
-        "editorWidget.foreground": "{{ colors.on_surface.default.hex }}",
-        "focusBorder": "{{ colors.primary.default.hex }}",
-        "input.background": "{{ colors.surface.default.hex }}",
-        "input.foreground": "{{ colors.on_surface.default.hex }}",
-        "input.border": "{{ colors.outline.default.hex }}",
-        "list.activeSelectionBackground": "{{ colors.primary.default.hex }}",
-        "list.activeSelectionForeground": "{{ colors.on_primary.default.hex }}",
-        "list.hoverBackground": "{{ colors.surface_variant.default.hex }}",
-        "list.inactiveSelectionBackground": "{{ colors.surface_variant.default.hex }}",
-        "menu.background": "{{ colors.surface.default.hex }}",
-        "menu.foreground": "{{ colors.on_surface.default.hex }}",
-        "panel.background": "{{ colors.surface.default.hex }}",
-        "panel.border": "{{ colors.outline.default.hex }}",
-        "peekView.border": "{{ colors.primary.default.hex }}",
-        "peekViewEditor.background": "{{ colors.background.default.hex }}",
-        "peekViewResult.background": "{{ colors.surface.default.hex }}",
-        "statusBar.background": "{{ colors.background.default.hex }}",
-        "statusBar.foreground": "{{ colors.on_background.default.hex }}",
-        "statusBar.debuggingBackground": "{{ colors.tertiary.default.hex }}",
-        "sideBar.background": "{{ colors.background.default.hex }}",
-        "sideBar.foreground": "{{ colors.on_background.default.hex }}",
-        "sideBarSectionHeader.background": "{{ colors.surface.default.hex }}",
-        "sideBarSectionHeader.foreground": "{{ colors.on_surface.default.hex }}",
-        "tab.activeBackground": "{{ colors.surface.default.hex }}",
-        "tab.activeForeground": "{{ colors.on_surface.default.hex }}",
-        "tab.border": "{{ colors.outline.default.hex }}",
-        "tab.inactiveBackground": "{{ colors.background.default.hex }}",
-        "terminal.background": "{{ colors.background.default.hex }}",
-        "terminal.foreground": "{{ colors.on_background.default.hex }}",
-        "terminalCursor.foreground": "{{ colors.primary.default.hex }}",
-        "titleBar.activeBackground": "{{ colors.background.default.hex }}",
-        "titleBar.activeForeground": "{{ colors.on_background.default.hex }}",
-        "titleBar.border": "{{ colors.outline.default.hex }}",
-        "window.activeBorder": "{{ colors.primary.default.hex }}",
-        "window.inactiveBorder": "{{ colors.outline.default.hex }}"
-      },
-      "tokenColors": [
-        {
-          "scope": ["comment", "punctuation.definition.comment"],
-          "settings": {
-            "foreground": "{{ colors.on_surface_variant.default.hex }}"
-          }
-        },
-        {
-          "scope": ["string", "constant.other.symbol"],
-          "settings": {
-            "foreground": "{{ colors.secondary.default.hex }}"
-          }
-        },
-        {
-          "scope": ["constant.numeric", "constant.language"],
-          "settings": {
-            "foreground": "{{ colors.tertiary.default.hex }}"
-          }
-        },
-        {
-          "scope": ["keyword", "storage"],
-          "settings": {
-            "foreground": "{{ colors.primary.default.hex }}"
-          }
-        },
-        {
-          "scope": ["entity.name.function", "support.function"],
-          "settings": {
-            "foreground": "{{ colors.primary_container.default.hex }}"
-          }
-        }
-      ]
-    }
-  '';
-
-  # 11. Git Credentials Configuration
-  programs.git = {
-    enable = true;
-    settings = {
-      user = {
-        name = "justkowal";
-        email = "justkowal@users.noreply.github.com";
-      };
-      init.defaultBranch = "main";
-      pull.rebase = true;
-    };
-  };
-
-  # GitHub CLI
-  programs.gh = {
-    enable = true;
-    settings = {
-      git_protocol = "ssh";
-    };
-  };
-
-  # Zathura PDF Viewer (wrapped with poppler PDF backend)
-  programs.zathura = {
-    enable = true;
-    package = pkgs.zathura.override {
-      plugins = [ pkgs.zathuraPkgs.zathura_pdf_poppler ];
-    };
-    options = {
-      default-bg = "#0f0f11"; # Sleek dark background
-      default-fg = "#e0e0e0";
-      statusbar-bg = "#151517";
-      statusbar-fg = "#e0e0e0";
-      recolor = true;        # Recolors documents to dark mode by default
-      recolor-keephue = true;
-    };
-  };
-
-  # Yazi TUI File Manager (fully integrated with Nushell)
-  programs.yazi = {
-    enable = true;
-    enableNushellIntegration = true;
-  };
-
-  # Declarative FreeCAD 1.1 Preference Pack wrapper to make the stylesheet selectable in Themes
-  home.file.".local/share/FreeCAD/v1-1/SavedPreferencePacks/package.xml".text = ''
-    <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-    <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
-      <name>Matugen</name>
-      <description>Dynamic Matugen theme matching system wallpaper colors</description>
-      <license>MIT</license>
-      <content>
-        <preferencepack>
-          <name>Matugen</name>
-        </preferencepack>
-      </content>
-    </package>
-  '';
-
-  home.file.".local/share/FreeCAD/v1-1/SavedPreferencePacks/Matugen/Matugen.cfg".text = ''
-    <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-    <FCParameters>
-      <Group Name="Root">
-        <Group Name="BaseApp">
-          <Group Name="Preferences">
-            <Group Name="General">
-              <FCText Name="StyleSheet">matugen.qss</FCText>
-            </Group>
-          </Group>
-        </Group>
-      </Group>
-    </FCParameters>
-  '';
-
-  home.file."Pictures/wallpaper.png".source = ./wallpaper.png;
-
-  xdg.configFile."hypr/scripts/change_wallpaper.sh" = {
-    executable = true;
-    text = ''
-      #!/usr/bin/env bash
-      # Wallpaper selection and Matugen re-theme script
-
-      WALLPAPER_DIR="$HOME/Pictures/Wallpapers"
-      DEFAULT_WALLPAPER="$HOME/Pictures/wallpaper.png"
-
-      if [ -d "$WALLPAPER_DIR" ] && [ "$(ls -A "$WALLPAPER_DIR")" ]; then
-          WALLPAPER=$(find "$WALLPAPER_DIR" -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.webp" \) | shuf -n 1)
-      else
-          PICTURES_DIR="$HOME/Pictures"
-          if [ -d "$PICTURES_DIR" ]; then
-              WALLPAPER=$(find "$PICTURES_DIR" -maxdepth 1 -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.webp" \) | shuf -n 1)
-          fi
-      fi
-
-      if [ -z "$WALLPAPER" ] || [ ! -f "$WALLPAPER" ]; then
-          WALLPAPER="$DEFAULT_WALLPAPER"
-      fi
-
-      if [ -f "$WALLPAPER" ]; then
-          awww img "$WALLPAPER" --transition-type wipe
-          matugen image -m dark --source-color-index 0 "$WALLPAPER"
-      else
-          echo "No wallpaper image found!" >&2
-          exit 1
-      fi
-    '';
-  };
-
-  home.file.".local/bin/start-hyprland" = {
-    executable = true;
-    text = ''
-      #!${pkgs.bash}/bin/bash
-      set -e
-
-      ${pkgs.matugen}/bin/matugen image -m dark --source-color-index 0 /home/justkowal/Pictures/wallpaper.png
-      exec ${pkgs.hyprland}/bin/Hyprland
-    '';
-  };
-
-  home.file.".vscode/extensions/matugen-theme/package.json".text = ''
-    {
-      "name": "matugen-theme",
-      "displayName": "Matugen Theme",
-      "description": "A generated theme driven by matugen.",
-      "version": "0.0.1",
-      "publisher": "local",
-      "engines": {
-        "vscode": "^1.90.0"
-      },
-      "contributes": {
-        "themes": [
-          {
-            "label": "Matugen",
-            "uiTheme": "vs-dark",
-            "path": "./themes/matugen-theme.json"
-          }
-        ]
-      }
-    }
-  '';
-
-  xdg.configFile."matugen/templates/theme-material-blue.css".text = ''
-    @media -moz-pref("userChrome.theme-material") {
-      :root {
-        --md-sys-color-primary: {{ colors.primary.default.hex }};
-        --md-sys-color-surface-tint: {{ colors.surface_tint.default.hex }};
-        --md-sys-color-on-primary: {{ colors.on_primary.default.hex }};
-        --md-sys-color-primary-container: {{ colors.primary_container.default.hex }};
-        --md-sys-color-on-primary-container: {{ colors.on_primary_container.default.hex }};
-        --md-sys-color-secondary: {{ colors.secondary.default.hex }};
-        --md-sys-color-on-secondary: {{ colors.on_secondary.default.hex }};
-        --md-sys-color-secondary-container: {{ colors.secondary_container.default.hex }};
-        --md-sys-color-on-secondary-container: {{ colors.on_secondary_container.default.hex }};
-        --md-sys-color-tertiary: {{ colors.tertiary.default.hex }};
-        --md-sys-color-on-tertiary: {{ colors.on_tertiary.default.hex }};
-        --md-sys-color-tertiary-container: {{ colors.tertiary_container.default.hex }};
-        --md-sys-color-on-tertiary-container: {{ colors.on_tertiary_container.default.hex }};
-        --md-sys-color-error: {{ colors.error.default.hex }};
-        --md-sys-color-on-error: {{ colors.on_error.default.hex }};
-        --md-sys-color-error-container: {{ colors.error_container.default.hex }};
-        --md-sys-color-on-error-container: {{ colors.on_error_container.default.hex }};
-        --md-sys-color-background: {{ colors.background.default.hex }};
-        --md-sys-color-on-background: {{ colors.on_background.default.hex }};
-        --md-sys-color-surface: {{ colors.surface.default.hex }};
-        --md-sys-color-on-surface: {{ colors.on_surface.default.hex }};
-        --md-sys-color-surface-variant: {{ colors.surface_variant.default.hex }};
-        --md-sys-color-on-surface-variant: {{ colors.on_surface_variant.default.hex }};
-        --md-sys-color-outline: {{ colors.outline.default.hex }};
-        --md-sys-color-outline-variant: {{ colors.outline_variant.default.hex }};
-        --md-sys-color-shadow: {{ colors.shadow.default.hex }};
-        --md-sys-color-scrim: {{ colors.scrim.default.hex }};
-        --md-sys-color-inverse-surface: {{ colors.inverse_surface.default.hex }};
-        --md-sys-color-inverse-on-surface: {{ colors.inverse_on_surface.default.hex }};
-        --md-sys-color-inverse-primary: {{ colors.inverse_primary.default.hex }};
-        --md-sys-color-primary-fixed: {{ colors.primary_fixed.default.hex }};
-        --md-sys-color-on-primary-fixed: {{ colors.on_primary_fixed.default.hex }};
-        --md-sys-color-primary-fixed-dim: {{ colors.primary_fixed_dim.default.hex }};
-        --md-sys-color-on-primary-fixed-variant: {{ colors.on_primary_fixed_variant.default.hex }};
-        --md-sys-color-secondary-fixed: {{ colors.secondary_fixed.default.hex }};
-        --md-sys-color-on-secondary-fixed: {{ colors.on_secondary_fixed.default.hex }};
-        --md-sys-color-secondary-fixed-dim: {{ colors.secondary_fixed_dim.default.hex }};
-        --md-sys-color-on-secondary-fixed-variant: {{ colors.on_secondary_fixed_variant.default.hex }};
-        --md-sys-color-tertiary-fixed: {{ colors.tertiary_fixed.default.hex }};
-        --md-sys-color-on-tertiary-fixed: {{ colors.on_tertiary_fixed.default.hex }};
-        --md-sys-color-tertiary-fixed-dim: {{ colors.tertiary_fixed_dim.default.hex }};
-        --md-sys-color-on-tertiary-fixed-variant: {{ colors.on_tertiary_fixed_variant.default.hex }};
-        --md-sys-color-surface-dim: {{ colors.surface_dim.default.hex }};
-        --md-sys-color-surface-bright: {{ colors.surface_bright.default.hex }};
-        --md-sys-color-surface-container-lowest: {{ colors.surface_container_lowest.default.hex }};
-        --md-sys-color-surface-container-low: {{ colors.surface_container_low.default.hex }};
-        --md-sys-color-surface-container: {{ colors.surface_container.default.hex }};
-        --md-sys-color-surface-container-high: {{ colors.surface_container_high.default.hex }};
-        --md-sys-color-surface-container-highest: {{ colors.surface_container_highest.default.hex }};
-      }
-
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --md-sys-color-primary: {{ colors.primary.default.hex }};
-          --md-sys-color-surface-tint: {{ colors.surface_tint.default.hex }};
-          --md-sys-color-on-primary: {{ colors.on_primary.default.hex }};
-          --md-sys-color-primary-container: {{ colors.primary_container.default.hex }};
-          --md-sys-color-on-primary-container: {{ colors.on_primary_container.default.hex }};
-          --md-sys-color-secondary: {{ colors.secondary.default.hex }};
-          --md-sys-color-on-secondary: {{ colors.on_secondary.default.hex }};
-          --md-sys-color-secondary-container: {{ colors.secondary_container.default.hex }};
-          --md-sys-color-on-secondary-container: {{ colors.on_secondary_container.default.hex }};
-          --md-sys-color-tertiary: {{ colors.tertiary.default.hex }};
-          --md-sys-color-on-tertiary: {{ colors.on_tertiary.default.hex }};
-          --md-sys-color-tertiary-container: {{ colors.tertiary_container.default.hex }};
-          --md-sys-color-on-tertiary-container: {{ colors.on_tertiary_container.default.hex }};
-          --md-sys-color-error: {{ colors.error.default.hex }};
-          --md-sys-color-on-error: {{ colors.on_error.default.hex }};
-          --md-sys-color-error-container: {{ colors.error_container.default.hex }};
-          --md-sys-color-on-error-container: {{ colors.on_error_container.default.hex }};
-          --md-sys-color-background: {{ colors.background.default.hex }};
-          --md-sys-color-on-background: {{ colors.on_background.default.hex }};
-          --md-sys-color-surface: {{ colors.surface.default.hex }};
-          --md-sys-color-on-surface: {{ colors.on_surface.default.hex }};
-          --md-sys-color-surface-variant: {{ colors.surface_variant.default.hex }};
-          --md-sys-color-on-surface-variant: {{ colors.on_surface_variant.default.hex }};
-          --md-sys-color-outline: {{ colors.outline.default.hex }};
-          --md-sys-color-outline-variant: {{ colors.outline_variant.default.hex }};
-          --md-sys-color-shadow: {{ colors.shadow.default.hex }};
-          --md-sys-color-scrim: {{ colors.scrim.default.hex }};
-          --md-sys-color-inverse-surface: {{ colors.inverse_surface.default.hex }};
-          --md-sys-color-inverse-on-surface: {{ colors.inverse_on_surface.default.hex }};
-          --md-sys-color-inverse-primary: {{ colors.inverse_primary.default.hex }};
-          --md-sys-color-primary-fixed: {{ colors.primary_fixed.default.hex }};
-          --md-sys-color-on-primary-fixed: {{ colors.on_primary_fixed.default.hex }};
-          --md-sys-color-primary-fixed-dim: {{ colors.primary_fixed_dim.default.hex }};
-          --md-sys-color-on-primary-fixed-variant: {{ colors.on_primary_fixed_variant.default.hex }};
-          --md-sys-color-secondary-fixed: {{ colors.secondary_fixed.default.hex }};
-          --md-sys-color-on-secondary-fixed: {{ colors.on_secondary_fixed.default.hex }};
-          --md-sys-color-secondary-fixed-dim: {{ colors.secondary_fixed_dim.default.hex }};
-          --md-sys-color-on-secondary-fixed-variant: {{ colors.on_secondary_fixed_variant.default.hex }};
-          --md-sys-color-tertiary-fixed: {{ colors.tertiary_fixed.default.hex }};
-          --md-sys-color-on-tertiary-fixed: {{ colors.on_tertiary_fixed.default.hex }};
-          --md-sys-color-tertiary-fixed-dim: {{ colors.tertiary_fixed_dim.default.hex }};
-          --md-sys-color-on-tertiary-fixed-variant: {{ colors.on_tertiary_fixed_variant.default.hex }};
-          --md-sys-color-surface-dim: {{ colors.surface_dim.default.hex }};
-          --md-sys-color-surface-bright: {{ colors.surface_bright.default.hex }};
-          --md-sys-color-surface-container-lowest: {{ colors.surface_container_lowest.default.hex }};
-          --md-sys-color-surface-container-low: {{ colors.surface_container_low.default.hex }};
-          --md-sys-color-surface-container: {{ colors.surface_container.default.hex }};
-          --md-sys-color-surface-container-high: {{ colors.surface_container_high.default.hex }};
-          --md-sys-color-surface-container-highest: {{ colors.surface_container_highest.default.hex }};
-        }
-      }
-    }
-  '';
-
-  xdg.configFile."matugen/templates/waybar-colors.css".text = ''
-    @define-color background {{ colors.background.default.hex }};
-    @define-color on_background {{ colors.on_background.default.hex }};
-    @define-color surface {{ colors.surface.default.hex }};
-    @define-color surface_variant {{ colors.surface_variant.default.hex }};
-    @define-color on_surface {{ colors.on_surface.default.hex }};
-    @define-color on_surface_variant {{ colors.on_surface_variant.default.hex }};
-    @define-color primary {{ colors.primary.default.hex }};
-    @define-color primary_container {{ colors.primary_container.default.hex }};
-    @define-color on_primary {{ colors.on_primary.default.hex }};
-    @define-color secondary {{ colors.secondary.default.hex }};
-    @define-color tertiary {{ colors.tertiary.default.hex }};
-    @define-color outline {{ colors.outline.default.hex }};
-  '';
-
-  xdg.configFile."matugen/templates/hyprland-colors.conf".text = ''
-    $background = rgba({{ colors.background.default.hex_stripped }}ff)
-    $background_transparent = rgba({{ colors.background.default.hex_stripped }}cc)
-    $surface = rgba({{ colors.surface.default.hex_stripped }}ff)
-    $surface_variant = rgba({{ colors.surface_variant.default.hex_stripped }}ff)
-    $on_surface = rgba({{ colors.on_surface.default.hex_stripped }}ff)
-    $primary = rgba({{ colors.primary.default.hex_stripped }}ff)
-    $secondary = rgba({{ colors.secondary.default.hex_stripped }}ff)
-    $tertiary = rgba({{ colors.tertiary.default.hex_stripped }}ff)
-    $outline = rgba({{ colors.outline.default.hex_stripped }}ff)
-  '';
-
-  xdg.configFile."matugen/templates/kitty-colors.conf".text = ''
-    # Matugen generated colors for Kitty
-    background {{ colors.background.default.hex }}
-    foreground {{ colors.on_background.default.hex }}
-    cursor {{ colors.primary.default.hex }}
-    cursor_text_color {{ colors.on_primary.default.hex }}
-    selection_background {{ colors.primary_container.default.hex }}
-    selection_foreground {{ colors.on_primary_container.default.hex }}
-
-    # black
-    color0 {{ colors.surface.default.hex }}
-    color8 {{ colors.surface_variant.default.hex }}
-
-    # red
-    color1 {{ colors.error.default.hex }}
-    color9 {{ colors.error.default.hex }}
-
-    # green
-    color2 {{ colors.primary.default.hex }}
-    color10 {{ colors.primary.default.hex }}
-
-    # yellow
-    color3 {{ colors.secondary.default.hex }}
-    color11 {{ colors.secondary.default.hex }}
-
-    # blue
-    color4 {{ colors.tertiary.default.hex }}
-    color12 {{ colors.tertiary.default.hex }}
-
-    # magenta
-    color5 {{ colors.primary_container.default.hex }}
-    color13 {{ colors.primary_container.default.hex }}
-
-    # cyan
-    color6 {{ colors.outline.default.hex }}
-    color14 {{ colors.outline.default.hex }}
-
-    # white
-    color7 {{ colors.on_surface.default.hex }}
-    color15 {{ colors.on_surface_variant.default.hex }}
-  '';
-
-  xdg.configFile."matugen/templates/rofi-colors.rasi".text = ''
-    * {
-        bg-col: {{ colors.background.default.hex }};
-        border-col: {{ colors.outline.default.hex }};
-        selected-col: {{ colors.surface_variant.default.hex }};
-        text-col: {{ colors.on_background.default.hex }};
-        accent-col: {{ colors.primary.default.hex }};
-    }
-  '';
-
-  xdg.configFile."matugen/templates/swaync-colors.css".text = ''
-    @define-color background {{ colors.background.default.hex }};
-    @define-color on_background {{ colors.on_background.default.hex }};
-    @define-color surface {{ colors.surface.default.hex }};
-    @define-color surface_variant {{ colors.surface_variant.default.hex }};
-    @define-color on_surface {{ colors.on_surface.default.hex }};
-    @define-color on_surface_variant {{ colors.on_surface_variant.default.hex }};
-    @define-color primary {{ colors.primary.default.hex }};
-    @define-color primary_container {{ colors.primary_container.default.hex }};
-    @define-color on_primary {{ colors.on_primary.default.hex }};
-    @define-color secondary {{ colors.secondary.default.hex }};
-    @define-color tertiary {{ colors.tertiary.default.hex }};
-    @define-color outline {{ colors.outline.default.hex }};
-  '';
-
-  xdg.configFile."matugen/templates/vscode-colors".text = ''
-    {{ colors.background.default.hex }}
-    {{ colors.on_surface.default.hex | saturate: 70.0, hsl }}
-    {{ colors.secondary.default.hex | saturate: 20.0, hsl }}
-    {{ colors.tertiary.default.hex | saturate: 15.0, hsl }}
-    {{ colors.primary.default.hex }}
-    {{ colors.tertiary.default.hex }}
-    {{ colors.secondary_container.default.hex | saturate: 20.0, hsl }}
-    {{ colors.on_surface_variant.default.hex }}
-    {{ colors.surface_variant.default.hex }}
-    {{ colors.surface_tint.default.hex | saturate: 15.0, hsl }}
-    {{ colors.secondary.default.hex | auto_lightness: 10.0 | saturate: 20.0, hsl }}
-    {{ colors.tertiary.default.hex | auto_lightness: 10.0 | saturate: 15.0, hsl }}
-    {{ colors.primary.default.hex | auto_lightness: 10.0 }}
-    {{ colors.tertiary.default.hex | auto_lightness: 10.0 }}
-    {{ colors.primary_container.default.hex | saturate: 10.0, hsl }}
-    {{ colors.on_background.default.hex }}
-  '';
-
-  xdg.configFile."matugen/templates/vscode-colors.json".text = ''
-    {
-      "checksum": ":)",
-      "wallpaper": "{{ image }}",
-      "alpha": "100",
-      "special": {
-        "background": "{{ colors.background.default.hex }}",
-        "foreground": "{{ colors.on_background.default.hex }}",
-        "cursor": "{{ colors.primary.default.hex }}"
-      },
-      "colors": {
-        "color0": "{{ colors.background.default.hex }}",
-        "color1": "{{ colors.on_surface.default.hex | saturate: 70.0, hsl }}",
-        "color2": "{{ colors.secondary.default.hex | saturate: 20.0, hsl }}",
-        "color3": "{{ colors.tertiary.default.hex | saturate: 15.0, hsl }}",
-        "color4": "{{ colors.primary.default.hex }}",
-        "color5": "{{ colors.tertiary.default.hex }}",
-        "color6": "{{ colors.secondary_container.default.hex | saturate: 20.0, hsl }}",
-        "color7": "{{ colors.on_surface_variant.default.hex }}",
-        "color8": "{{ colors.surface_variant.default.hex }}",
-        "color9": "{{ colors.surface_tint.default.hex | saturate: 15.0, hsl }}",
-        "color10": "{{ colors.secondary.default.hex | auto_lightness: 10.0 | saturate: 20.0, hsl }}",
-        "color11": "{{ colors.tertiary.default.hex | auto_lightness: 10.0 | saturate: 15.0, hsl }}",
-        "color12": "{{ colors.primary.default.hex | auto_lightness: 10.0 }}",
-        "color13": "{{ colors.tertiary.default.hex | auto_lightness: 10.0 }}",
-        "color14": "{{ colors.primary_container.default.hex | saturate: 10.0, hsl }}",
-        "color15": "{{ colors.on_background.default.hex }}"
-      }
-    }
-  '';
-
-  xdg.configFile."matugen/templates/gtk3.css".text = ''
-    /* GTK3/GTK4 standard colors */
-    @define-color theme_bg_color {{ colors.background.default.hex }};
-    @define-color theme_fg_color {{ colors.on_background.default.hex }};
-    @define-color theme_base_color {{ colors.surface.default.hex }};
-    @define-color theme_text_color {{ colors.on_surface.default.hex }};
-    @define-color theme_selected_bg_color {{ colors.primary.default.hex }};
-    @define-color theme_selected_fg_color {{ colors.on_primary.default.hex }};
-    @define-color tooltip_bg_color {{ colors.surface_variant.default.hex }};
-    @define-color tooltip_fg_color {{ colors.on_surface_variant.default.hex }};
-
-    /* Libadwaita / GTK4 specific colors */
-    @define-color accent_color {{ colors.primary.default.hex }};
-    @define-color accent_bg_color {{ colors.primary.default.hex }};
-    @define-color accent_fg_color {{ colors.on_primary.default.hex }};
-    @define-color window_bg_color {{ colors.background.default.hex }};
-    @define-color window_fg_color {{ colors.on_background.default.hex }};
-    @define-color view_bg_color {{ colors.surface.default.hex }};
-    @define-color view_fg_color {{ colors.on_surface.default.hex }};
-    @define-color headerbar_bg_color {{ colors.background.default.hex }};
-    @define-color headerbar_fg_color {{ colors.on_background.default.hex }};
-    @define-color headerbar_border_color {{ colors.outline.default.hex }};
-    @define-color card_bg_color {{ colors.surface_variant.default.hex }};
-    @define-color card_fg_color {{ colors.on_surface_variant.default.hex }};
-    @define-color dialog_bg_color {{ colors.background.default.hex }};
-    @define-color dialog_fg_color {{ colors.on_background.default.hex }};
-    @define-color popover_bg_color {{ colors.surface_variant.default.hex }};
-    @define-color popover_fg_color {{ colors.on_surface_variant.default.hex }};
-  '';
-
-  xdg.configFile."matugen/templates/gtk4.css".text = ''
-    /* GTK3/GTK4 standard colors */
-    @define-color theme_bg_color {{ colors.background.default.hex }};
-    @define-color theme_fg_color {{ colors.on_background.default.hex }};
-    @define-color theme_base_color {{ colors.surface.default.hex }};
-    @define-color theme_text_color {{ colors.on_surface.default.hex }};
-    @define-color theme_selected_bg_color {{ colors.primary.default.hex }};
-    @define-color theme_selected_fg_color {{ colors.on_primary.default.hex }};
-    @define-color tooltip_bg_color {{ colors.surface_variant.default.hex }};
-    @define-color tooltip_fg_color {{ colors.on_surface_variant.default.hex }};
-
-    /* Libadwaita / GTK4 specific colors */
-    @define-color accent_color {{ colors.primary.default.hex }};
-    @define-color accent_bg_color {{ colors.primary.default.hex }};
-    @define-color accent_fg_color {{ colors.on_primary.default.hex }};
-    @define-color window_bg_color {{ colors.background.default.hex }};
-    @define-color window_fg_color {{ colors.on_background.default.hex }};
-    @define-color view_bg_color {{ colors.surface.default.hex }};
-    @define-color view_fg_color {{ colors.on_surface.default.hex }};
-    @define-color headerbar_bg_color {{ colors.background.default.hex }};
-    @define-color headerbar_fg_color {{ colors.on_background.default.hex }};
-    @define-color headerbar_border_color {{ colors.outline.default.hex }};
-    @define-color card_bg_color {{ colors.surface_variant.default.hex }};
-    @define-color card_fg_color {{ colors.on_surface_variant.default.hex }};
-    @define-color dialog_bg_color {{ colors.background.default.hex }};
-    @define-color dialog_fg_color {{ colors.on_background.default.hex }};
-    @define-color popover_bg_color {{ colors.surface_variant.default.hex }};
-    @define-color popover_fg_color {{ colors.on_surface_variant.default.hex }};
-  '';
-
-  xdg.configFile."matugen/templates/btop.theme".text = ''
-    # btop Matugen dynamic colors
-
-    theme[main_bg]=""
-    theme[main_fg]="{{ colors.on_background.default.hex }}"
-    theme[title]="{{ colors.primary.default.hex }}"
-    theme[hi_fg]="{{ colors.secondary.default.hex }}"
-    theme[selected_bg]="{{ colors.primary_container.default.hex }}"
-    theme[selected_fg]="{{ colors.on_primary_container.default.hex }}"
-    theme[inactive_fg]="{{ colors.outline.default.hex }}"
-    theme[graph_text]="{{ colors.on_surface_variant.default.hex }}"
-    theme[meter_bg]="{{ colors.surface_variant.default.hex }}"
-    theme[proc_misc]="{{ colors.tertiary.default.hex }}"
-
-    theme[cpu_box]="{{ colors.primary.default.hex }}"
-    theme[mem_box]="{{ colors.secondary.default.hex }}"
-    theme[net_box]="{{ colors.tertiary.default.hex }}"
-    theme[proc_box]="{{ colors.outline.default.hex }}"
-    theme[div_line]="{{ colors.outline_variant.default.hex }}"
-
-    # Temperature graph
-    theme[temp_start]="{{ colors.primary.default.hex }}"
-    theme[temp_mid]="{{ colors.secondary.default.hex }}"
-    theme[temp_end]="{{ colors.error.default.hex }}"
-
-    # CPU graph
-    theme[cpu_start]="{{ colors.primary.default.hex }}"
-    theme[cpu_mid]="{{ colors.secondary.default.hex }}"
-    theme[cpu_end]="{{ colors.tertiary.default.hex }}"
-
-    # Memory/Disk meters
-    theme[free_start]="{{ colors.primary.default.hex }}"
-    theme[free_mid]="{{ colors.secondary.default.hex }}"
-    theme[free_end]="{{ colors.tertiary.default.hex }}"
-    theme[cached_start]="{{ colors.secondary.default.hex }}"
-    theme[cached_mid]="{{ colors.tertiary.default.hex }}"
-    theme[cached_end]="{{ colors.primary.default.hex }}"
-    theme[available_start]="{{ colors.primary.default.hex }}"
-    theme[available_mid]="{{ colors.secondary.default.hex }}"
-    theme[available_end]="{{ colors.tertiary.default.hex }}"
-    theme[used_start]="{{ colors.secondary.default.hex }}"
-    theme[used_mid]="{{ colors.tertiary.default.hex }}"
-    theme[used_end]="{{ colors.error.default.hex }}"
-
-    # Network graphs
-    theme[download_start]="{{ colors.primary.default.hex }}"
-    theme[download_mid]="{{ colors.secondary.default.hex }}"
-    theme[download_end]="{{ colors.tertiary.default.hex }}"
-    theme[upload_start]="{{ colors.tertiary.default.hex }}"
-    theme[upload_mid]="{{ colors.secondary.default.hex }}"
-    theme[upload_end]="{{ colors.error.default.hex }}"
-
-    # Process gradient
-    theme[process_start]="{{ colors.primary.default.hex }}"
-    theme[process_mid]="{{ colors.secondary.default.hex }}"
-    theme[process_end]="{{ colors.tertiary.default.hex }}"
-  '';
-
-  xdg.configFile."matugen/templates/freecad.qss".text = ''
-    /*
-     * Matugen Premium Dynamic Theme for FreeCAD
-     */
-
-    QMainWindow, QDialog, QDockWidget, QToolBar, QMenuBar, QMenu {
-        background-color: {{ colors.background.default.hex }};
-        color: {{ colors.on_background.default.hex }};
-    }
-
-    QWidget {
-        color: {{ colors.on_background.default.hex }};
-        font-family: "Outfit", "Segoe UI", sans-serif;
-    }
-
-    QFrame {
-        background-color: transparent;
-        border: none;
-    }
-
-    /* Container panels, dialog pages, and scroll areas */
-    QScrollArea, QScrollArea QWidget, QScrollArea::viewport,
-    QStackedWidget, QStackedWidget QWidget,
-    QTabWidget, QTabWidget::pane {
-        background-color: {{ colors.background.default.hex }};
-        border: none;
-    }
-
-    /* Prevent text styling from bleeding into 3D view and graphics */
-    QGLWidget, QOpenGLWidget, Gui--View3DInventor, Gui--View3DInventorViewer {
-        background-color: transparent;
-    }
-
-    /* Menu Bar */
-    QMenuBar {
-        background-color: {{ colors.background.default.hex }};
-        color: {{ colors.on_background.default.hex }};
-        border-bottom: 1px solid {{ colors.outline.default.hex }};
-    }
-
-    QMenuBar::item {
-        background: transparent;
-        padding: 4px 10px;
-    }
-
-    QMenuBar::item:selected {
-        background-color: {{ colors.surface_variant.default.hex }};
-        border-radius: 4px;
-    }
-
-    /* Menus */
-    QMenu {
-        background-color: {{ colors.surface.default.hex }};
-        color: {{ colors.on_surface.default.hex }};
-        border: 1px solid {{ colors.outline.default.hex }};
-        border-radius: 6px;
-        padding: 4px;
-    }
-
-    QMenu::item {
-        padding: 6px 24px;
-        border-radius: 4px;
-    }
-
-    QMenu::item:selected {
-        background-color: {{ colors.primary.default.hex }};
-        color: {{ colors.on_primary.default.hex }};
-    }
-
-    QMenu::separator {
-        height: 1px;
-        background-color: {{ colors.outline.default.hex }};
-        margin: 6px 4px;
-    }
-
-    /* Toolbars */
-    QToolBar {
-        background-color: {{ colors.background.default.hex }};
-        border: none;
-        border-bottom: 1px solid {{ colors.outline.default.hex }};
-        spacing: 4px;
-        padding: 4px;
-    }
-
-    QToolButton {
-        background-color: transparent;
-        border: 1px solid transparent;
-        border-radius: 6px;
-        padding: 4px;
-    }
-
-    QToolButton:hover {
-        background-color: {{ colors.surface_variant.default.hex }};
-        border: 1px solid {{ colors.outline.default.hex }};
-    }
-
-    QToolButton:checked {
-        background-color: {{ colors.primary_container.default.hex }};
-        color: {{ colors.on_primary_container.default.hex }};
-        border: 1px solid {{ colors.primary.default.hex }};
-    }
-
-    /* Dock Widgets */
-    QDockWidget {
-        titlebar-close-icon: none;
-        titlebar-normal-icon: none;
-        border: 1px solid {{ colors.outline.default.hex }};
-    }
-
-    QDockWidget::title {
-        background-color: {{ colors.surface.default.hex }};
-        padding: 6px;
-        font-weight: bold;
-        border-bottom: 1px solid {{ colors.outline.default.hex }};
-    }
-
-    /* QSint collapsible panels (TaskPanel boxes) */
-    QSint--ActionGroup {
-        background-color: transparent;
-        border: none;
-    }
-
-    QSint--ActionGroup QFrame[class="header"] {
-        background-color: {{ colors.surface_variant.default.hex }};
-        border: 1px solid {{ colors.outline.default.hex }};
-        border-radius: 6px;
-        padding: 2px 6px;
-        margin-top: 4px;
-    }
-
-    QSint--ActionGroup QFrame[class="header"]:hover {
-        background-color: {{ colors.primary_container.default.hex }};
-        border: 1px solid {{ colors.primary.default.hex }};
-    }
-
-    QSint--ActionGroup QFrame[class="header"] QLabel,
-    QSint--ActionGroup QFrame[class="header"] QToolButton,
-    QSint--ActionGroup QFrame[class="header"] QPushButton {
-        color: {{ colors.on_surface_variant.default.hex }};
-        background: transparent;
-        font-weight: bold;
-    }
-
-    QSint--ActionGroup QFrame[class="header"]:hover QLabel,
-    QSint--ActionGroup QFrame[class="header"]:hover QToolButton,
-    QSint--ActionGroup QFrame[class="header"]:hover QPushButton {
-        color: {{ colors.on_primary_container.default.hex }};
-    }
-
-    QSint--ActionGroup QFrame[class="content"] {
-        background-color: {{ colors.surface.default.hex }};
-        border: 1px solid {{ colors.outline.default.hex }};
-        border-top: none;
-        border-bottom-left-radius: 6px;
-        border-bottom-right-radius: 6px;
-        padding: 8px;
-        margin-bottom: 8px;
-    }
-
-    /* Tree, List, Table Views */
-    QTreeView, QListView, QTableView {
-        background-color: {{ colors.surface.default.hex }};
-        color: {{ colors.on_surface.default.hex }};
-        alternate-background-color: {{ colors.surface_variant.default.hex }};
-        border: 1px solid {{ colors.outline.default.hex }};
-        border-radius: 6px;
-        selection-background-color: {{ colors.primary.default.hex }};
-        selection-color: {{ colors.on_primary.default.hex }};
-        padding: 4px;
-    }
-
-    QTreeView::item, QListView::item, QTableView::item {
-        background-color: {{ colors.surface.default.hex }};
-        color: {{ colors.on_surface.default.hex }};
-        padding: 4px;
-        border-radius: 4px;
-    }
-
-    QTreeView::item:alternate, QListView::item:alternate, QTableView::item:alternate {
-        background-color: {{ colors.surface_variant.default.hex }};
-    }
-
-    QTreeView::item:hover, QListView::item:hover, QTableView::item:hover {
-        background-color: {{ colors.surface_variant.default.hex }};
-    }
-
-    QTreeView::item:selected, QListView::item:selected, QTableView::item:selected {
-        background-color: {{ colors.primary.default.hex }};
-        color: {{ colors.on_primary.default.hex }};
-    }
-
-    /* Header View (for Tables) */
-    QHeaderView::section {
-        background-color: {{ colors.surface_variant.default.hex }};
-        color: {{ colors.on_surface_variant.default.hex }};
-        padding: 6px;
-        border: 1px solid {{ colors.outline.default.hex }};
-    }
-
-    /* Tab Widgets */
-    QTabWidget::pane {
-        border: 1px solid {{ colors.outline.default.hex }};
-        background-color: {{ colors.surface.default.hex }};
-        border-radius: 6px;
-        top: -1px;
-    }
-
-    QTabBar::tab {
-        background-color: {{ colors.background.default.hex }};
-        color: {{ colors.on_background.default.hex }};
-        padding: 6px 16px;
-        border: 1px solid {{ colors.outline.default.hex }};
-        border-bottom: none;
-        border-top-left-radius: 6px;
-        border-top-right-radius: 6px;
-        margin-right: 4px;
-    }
-
-    QTabBar::tab:selected {
-        background-color: {{ colors.surface.default.hex }};
-        color: {{ colors.primary.default.hex }};
-        border-bottom: 2px solid {{ colors.primary.default.hex }};
-        font-weight: bold;
-    }
-
-    /* Buttons */
-    QPushButton {
-        background-color: {{ colors.surface_variant.default.hex }};
-        color: {{ colors.on_surface_variant.default.hex }};
-        border: 1px solid {{ colors.outline.default.hex }};
-        border-radius: 6px;
-        padding: 6px 16px;
-    }
-
-    QPushButton:hover {
-        background-color: {{ colors.primary_container.default.hex }};
-        color: {{ colors.on_primary_container.default.hex }};
-        border: 1px solid {{ colors.primary.default.hex }};
-    }
-
-    QPushButton:pressed {
-        background-color: {{ colors.primary.default.hex }};
-        color: {{ colors.on_primary.default.hex }};
-    }
-
-    /* Input Fields */
-    QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-        background-color: {{ colors.surface.default.hex }};
-        color: {{ colors.on_surface.default.hex }};
-        border: 1px solid {{ colors.outline.default.hex }};
-        border-radius: 6px;
-        padding: 6px;
-    }
-
-    QLineEdit:focus, QTextEdit:focus, QComboBox:focus {
-        border: 1px solid {{ colors.primary.default.hex }};
-    }
-
-    /* Checkboxes & Radio Buttons */
-    QCheckBox, QRadioButton {
-        spacing: 8px;
-    }
-
-    QCheckBox::indicator, QRadioButton::indicator {
-        width: 16px;
-        height: 16px;
-        border: 1px solid {{ colors.outline.default.hex }};
-        border-radius: 4px;
-        background-color: {{ colors.surface.default.hex }};
-    }
-
-    QCheckBox::indicator:checked, QRadioButton::indicator:checked {
-        background-color: {{ colors.primary.default.hex }};
-        border-color: {{ colors.primary.default.hex }};
-    }
-
-    /* Scrollbars */
-    QScrollBar:vertical {
-        background-color: {{ colors.background.default.hex }};
-        width: 12px;
-        margin: 0px;
-    }
-
-    QScrollBar::handle:vertical {
-        background-color: {{ colors.outline.default.hex }};
-        min-height: 20px;
-        border-radius: 6px;
-        margin: 2px;
-    }
-
-    QScrollBar::handle:vertical:hover {
-        background-color: {{ colors.primary.default.hex }};
-    }
-
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-        border: none;
-        background: none;
-    }
-
-    QScrollBar:horizontal {
-        background-color: {{ colors.background.default.hex }};
-        height: 12px;
-        margin: 0px;
-    }
-
-    QScrollBar::handle:horizontal {
-        background-color: {{ colors.outline.default.hex }};
-        min-width: 20px;
-        border-radius: 6px;
-        margin: 2px;
-    }
-
-    QScrollBar::handle:horizontal:hover {
-        background-color: {{ colors.primary.default.hex }};
-    }
-
-    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-        border: none;
-        background: none;
-    }
-  '';
-
-  xdg.configFile."matugen/templates/kicad.json".text = ''
-    {
-      "board": {
-        "anchor": "rgb(0, 0, 132)",
-        "aux_items": "rgb(255, 255, 255)",
-        "b_adhes": "rgb(0, 0, 132)",
-        "b_crtyd": "rgb(149, 219, 223)",
-        "b_fab": "rgb(141, 210, 114)",
-        "b_mask": "rgba(54, 132, 109, 0.698)",
-        "b_paste": "rgb(0, 194, 194)",
-        "b_silks": "rgb(121, 101, 150)",
-        "background": "{{ colors.background.default.rgb }}",
-        "cmts_user": "rgb(65, 160, 66)",
-        "copper": {
-          "b": "rgba(101, 162, 229, 0.800)",
-          "f": "rgba(194, 96, 101, 0.800)",
-          "in1": "rgba(194, 107, 170, 0.600)",
-          "in10": "rgb(132, 0, 132)",
-          "in11": "rgb(132, 0, 0)",
-          "in12": "rgb(132, 132, 0)",
-          "in13": "rgb(194, 194, 194)",
-          "in14": "rgb(0, 0, 132)",
-          "in15": "rgb(0, 132, 0)",
-          "in16": "rgb(132, 0, 0)",
-          "in17": "rgb(194, 194, 0)",
-          "in18": "rgb(194, 0, 194)",
-          "in19": "rgb(194, 0, 0)",
-          "in2": "rgba(127, 194, 161, 0.600)",
-          "in20": "rgb(0, 132, 132)",
-          "in21": "rgb(0, 132, 0)",
-          "in22": "rgb(0, 0, 132)",
-          "in23": "rgb(132, 132, 132)",
-          "in24": "rgb(132, 0, 132)",
-          "in25": "rgb(194, 194, 194)",
-          "in26": "rgb(132, 0, 132)",
-          "in27": "rgb(132, 0, 0)",
-          "in28": "rgb(132, 132, 0)",
-          "in29": "rgb(194, 194, 194)",
-          "in3": "rgb(194, 0, 0)",
-          "in30": "rgb(0, 0, 132)",
-          "in4": "rgb(0, 132, 132)",
-          "in5": "rgb(0, 132, 0)",
-          "in6": "rgb(0, 0, 132)",
-          "in7": "rgb(132, 132, 132)",
-          "in8": "rgb(132, 0, 132)",
-          "in9": "rgb(194, 194, 194)"
-        },
-        "cursor": "{{ colors.on_background.default.rgb }}",
-        "dwgs_user": "rgb(165, 165, 165)",
-        "eco1_user": "rgb(0, 132, 0)",
-        "eco2_user": "rgb(255, 87, 98)",
-        "edge_cuts": "rgb(200, 163, 57)",
-        "f_adhes": "rgb(132, 0, 132)",
-        "f_crtyd": "rgb(201, 169, 249)",
-        "f_fab": "rgb(240, 216, 121)",
-        "f_mask": "rgba(180, 74, 76, 0.698)",
-        "f_paste": "rgb(255, 0, 255)",
-        "f_silks": "rgb(129, 190, 190)",
-        "footprint_text_back": "rgb(0, 0, 132)",
-        "footprint_text_front": "rgb(194, 194, 194)",
-        "footprint_text_invisible": "rgb(132, 132, 132)",
-        "grid": "{{ colors.outline.default.rgb }}",
-        "no_connect": "rgb(0, 0, 132)",
-        "pad_back": "rgba(82, 127, 185, 0.698)",
-        "pad_front": "rgba(194, 118, 97, 0.698)",
-        "plated_hole": "rgb(194, 194, 0)",
-        "ratsnest": "rgb(179, 179, 179)",
-        "via_blind_buried": "rgb(132, 132, 0)",
-        "via_micro": "rgb(0, 132, 132)",
-        "via_through": "rgb(194, 194, 194)",
-        "worksheet": "rgb(72, 0, 0)"
-      },
-      "fpedit": {
-        "anchor": "rgb(0, 0, 132)",
-        "aux_items": "rgb(255, 255, 255)",
-        "b_adhes": "rgb(0, 0, 132)",
-        "b_crtyd": "rgb(149, 219, 223)",
-        "b_fab": "rgb(141, 210, 114)",
-        "b_mask": "rgba(0, 245, 223, 0.600)",
-        "b_paste": "rgb(0, 194, 194)",
-        "b_silks": "rgb(121, 101, 150)",
-        "background": "{{ colors.background.default.rgb }}",
-        "cmts_user": "rgb(0, 0, 132)",
-        "copper": {
-          "b": "rgba(82, 127, 185, 0.800)",
-          "f": "rgba(236, 144, 118, 0.800)",
-          "in1": "rgb(194, 194, 0)",
-          "in10": "rgb(132, 0, 132)",
-          "in11": "rgb(132, 0, 0)",
-          "in12": "rgb(132, 132, 0)",
-          "in13": "rgb(194, 194, 194)",
-          "in14": "rgb(0, 0, 132)",
-          "in15": "rgb(0, 132, 0)",
-          "in16": "rgb(132, 0, 0)",
-          "in17": "rgb(194, 194, 0)",
-          "in18": "rgb(194, 0, 194)",
-          "in19": "rgb(194, 0, 0)",
-          "in2": "rgb(194, 0, 194)",
-          "in20": "rgb(0, 132, 132)",
-          "in21": "rgb(0, 132, 0)",
-          "in22": "rgb(0, 0, 132)",
-          "in23": "rgb(132, 132, 132)",
-          "in24": "rgb(132, 0, 132)",
-          "in25": "rgb(194, 194, 194)",
-          "in26": "rgb(132, 0, 132)",
-          "in27": "rgb(132, 0, 0)",
-          "in28": "rgb(132, 132, 0)",
-          "in29": "rgb(194, 194, 194)",
-          "in3": "rgb(194, 0, 0)",
-          "in30": "rgb(0, 0, 132)",
-          "in4": "rgb(0, 132, 132)",
-          "in5": "rgb(0, 132, 0)",
-          "in6": "rgb(0, 0, 132)",
-          "in7": "rgb(132, 132, 132)",
-          "in8": "rgb(132, 0, 132)",
-          "in9": "rgb(194, 194, 194)"
-        },
-        "cursor": "{{ colors.on_background.default.rgb }}",
-        "dwgs_user": "rgb(194, 194, 194)",
-        "eco1_user": "rgb(0, 132, 0)",
-        "eco2_user": "rgb(194, 194, 0)",
-        "edge_cuts": "rgb(194, 194, 0)",
-        "f_adhes": "rgb(132, 0, 132)",
-        "f_crtyd": "rgb(201, 164, 249)",
-        "f_fab": "rgb(240, 216, 121)",
-        "f_mask": "rgba(180, 74, 76, 0.600)",
-        "f_paste": "rgba(211, 67, 187, 0.600)",
-        "f_silks": "rgb(102, 150, 150)",
-        "footprint_text_back": "rgb(0, 0, 132)",
-        "footprint_text_front": "rgb(194, 194, 194)",
-        "footprint_text_invisible": "rgb(132, 132, 132)",
-        "grid": "{{ colors.outline.default.rgb }}",
-        "pad_back": "rgba(82, 127, 185, 0.698)",
-        "pad_front": "rgba(194, 118, 97, 0.698)",
-        "pad_through_hole": "rgba(200, 200, 121, 0.698)",
-        "plated_hole": "rgb(194, 194, 0)",
-        "worksheet": "rgb(72, 0, 0)"
-      },
-      "meta": {
-        "filename": "matugen",
-        "name": "Matugen Theme",
-        "version": 0
-      },
-      "schematic": {
-        "background": "{{ colors.background.default.rgb }}",
-        "brightened": "rgb(201, 169, 249)",
-        "bus": "{{ colors.secondary.default.rgb }}",
-        "component_body": "{{ colors.surface_variant.default.rgb }}",
-        "component_outline": "{{ colors.primary.default.rgb }}",
-        "erc_error": "{{ colors.error.default.rgb }}",
-        "erc_warning": "{{ colors.tertiary.default.rgb }}",
-        "fields": "rgb(120, 101, 150)",
-        "grid": "{{ colors.outline.default.rgb }}",
-        "junction": "{{ colors.primary.default.rgb }}",
-        "label_global": "rgb(196, 108, 45)",
-        "label_hier": "rgb(195, 174, 114)",
-        "label_local": "{{ colors.secondary.default.rgb }}",
-        "net_name": "rgb(202, 202, 202)",
-        "no_connect": "rgb(149, 219, 223)",
-        "note": "{{ colors.secondary.default.rgb }}",
-        "pin": "{{ colors.primary.default.rgb }}",
-        "pin_name": "{{ colors.on_surface_variant.default.rgb }}",
-        "pin_number": "{{ colors.primary.default.rgb }}",
-        "reference": "{{ colors.primary.default.rgb }}",
-        "sheet": "rgb(133, 111, 165)",
-        "sheet_filename": "rgb(133, 111, 165)",
-        "sheet_label": "rgb(196, 122, 79)",
-        "sheet_name": "{{ colors.on_surface_variant.default.rgb }}",
-        "value": "{{ colors.on_surface_variant.default.rgb }}",
-        "wire": "{{ colors.primary.default.rgb }}"
-      }
-    }
-  '';
-
-  xdg.configFile."matugen/templates/steam.css".text = ''
-    :root {
-        --theme-color: "Matugen";
-        --hue-rotate: 220deg;
-        <* for name, value in colors *>
-        --md-sys-color-{{name | replace: "_", "-" }}: {{value.default.rgb}};
-        <* endfor *>
-    }
-  '';
-
-  xdg.configFile."matugen/config.toml".text = ''
-    [config]
-    source_color_index = 0
-
-    [templates.theme-material-blue]
-    input_path = "~/.config/matugen/templates/theme-material-blue.css"
-    output_path = "~/.mozilla/firefox/1arj8uom.default/chrome/theme-material-blue.css"
-
-    [templates.waybar-colors]
-    input_path = "~/.config/matugen/templates/waybar-colors.css"
-    output_path = "~/.config/waybar/colors.css"
-    post_hook = "pkill -SIGUSR2 waybar"
-
-    [templates.hyprland-colors]
-    input_path = "~/.config/matugen/templates/hyprland-colors.conf"
-    output_path = "~/.config/hypr/matugen.conf"
-    post_hook = "hyprctl reload"
-
-    [templates.vscode-theme]
-    input_path = "~/.config/matugen/templates/vscode-theme.json"
-    output_path = "~/.vscode/extensions/matugen-theme/themes/matugen-theme.json"
-
-    [templates.kitty-colors]
-    input_path = "~/.config/matugen/templates/kitty-colors.conf"
-    output_path = "~/.config/kitty/colors.conf"
-    post_hook = "pkill -USR1 kitty"
-
-    [templates.rofi-colors]
-    input_path = "~/.config/matugen/templates/rofi-colors.rasi"
-    output_path = "~/.config/rofi/colors.rasi"
-
-    [templates.swaync-colors]
-    input_path = "~/.config/matugen/templates/swaync-colors.css"
-    output_path = "~/.config/swaync/colors.css"
-    post_hook = "swaync-client -R; swaync-client -rs"
-
-    [templates.vscode-raw]
-    input_path = "~/.config/matugen/templates/vscode-colors"
-    output_path = "~/.cache/matugen/vscode-colors"
-
-    [templates.vscode-json]
-    input_path = "~/.config/matugen/templates/vscode-colors.json"
-    output_path = "~/.cache/matugen/vscode-colors.json"
-
-    [templates.gtk3]
-    input_path = "~/.config/matugen/templates/gtk3.css"
-    output_path = "~/.config/gtk-3.0/gtk.css"
-
-    [templates.gtk4]
-    input_path = "~/.config/matugen/templates/gtk4.css"
-    output_path = "~/.config/gtk-4.0/gtk.css"
-
-    [templates.starship]
-    input_path = "~/.config/matugen/templates/starship.toml"
-    output_path = "~/.config/starship.toml"
-
-    [templates.btop]
-    input_path = "~/.config/matugen/templates/btop.theme"
-    output_path = "~/.config/btop/themes/matugen.theme"
-
-    [templates.freecad]
-    input_path = "~/.config/matugen/templates/freecad.qss"
-    output_path = "~/.local/share/FreeCAD/v1-1/Gui/Stylesheets/matugen.qss"
-
-    [templates.kicad]
-    input_path = "~/.config/matugen/templates/kicad.json"
-    output_path = "~/.config/kicad/10.0/colors/matugen.json"
-
-    [templates.steam]
-    input_path = "~/.config/matugen/templates/steam.css"
-    output_path = "~/.local/share/Steam/steamui/skins/Material-Theme/css/main/colors/matugen.css"
-  '';
+  # 12. Declarative VS Code configuration (extensions + theme)
 
   # 12. Declarative VS Code configuration (extensions + theme)
   programs.vscode = {
@@ -2439,18 +1268,7 @@
     };
   };
 
-  # 13. Nushell Profile Configuration (disable banner, auto-run macchina)
-  programs.nushell = {
-    enable = true;
-    extraConfig = ''
-      # Disable Nushell welcome banner
-      $env.config = ($env.config | merge { show_banner: false })
-      # Welcome user with system statistics on startup
-      macchina
-    '';
-  };
-
-  # 14. Starship Prompt Configuration
+  # Starship Prompt Configuration
   programs.starship = {
     enable = true;
     enableNushellIntegration = true;
@@ -2466,9 +1284,20 @@
     };
   };
 
-  # SwayNC notification center setup (MD3 glassmorphic design)
+  # SwayNC notification center setup (MD3 glassmorphic design with floating margins)
   services.swaync = {
     enable = true;
+    settings = {
+      positionX = "right";
+      positionY = "top";
+      control-center-margin-top = 12;
+      control-center-margin-bottom = 20;
+      control-center-margin-right = 16;
+      control-center-width = 420;
+      control-center-height = 680;
+      fit-to-screen = false;
+      layer = "top";
+    };
     style = ''
       @import "colors.css";
 
@@ -2477,13 +1306,21 @@
         font-size: 13px;
       }
 
+      .control-center {
+        background-color: alpha(@background, 0.90);
+        border: 1px solid alpha(@outline, 0.75);
+        border-radius: 20px;
+        padding: 15px;
+        margin: 12px 16px 20px 16px;
+      }
+
       .notification {
         background-color: alpha(@surface_variant, 0.85);
         border: 1px solid alpha(@outline, 0.75);
-        border-radius: 12px;
+        border-radius: 14px;
         color: @on_background;
         padding: 10px;
-        margin: 5px;
+        margin: 6px;
       }
 
       .notification-content {
@@ -2498,13 +1335,6 @@
       .notification-body {
         color: @on_surface;
       }
-
-      .control-center {
-        background-color: alpha(@background, 0.90);
-        border: 1px solid alpha(@outline, 0.75);
-        border-radius: 16px;
-        padding: 15px;
-      }
     '';
   };
 
@@ -2517,29 +1347,78 @@
   # Let Home Manager manage itself
   programs.home-manager.enable = true;
 
+  xdg.configFile."MangoHud/MangoHud.conf".force = true;
+
   programs.mangohud = {
     enable = true;
     settings = {
+      toggle_hud = "Shift_R+F12";
       legacy_layout = 0;
       horizontal = true;
       hud_no_margin = true;
-      font_size = 14;
-      font_family = "JetBrainsMono Nerd Font";
+      font_size = 28;
       table_columns = 3;
       background_alpha = "0.5";
       round_corners = 10;
       # Performance Stats
       fps = true;
+      fps_metrics = "avg,0.01,0.05";
+      frametime = true;
       cpu_stats = true;
       cpu_temp = true;
+      cpu_mhz = true;
+      cpu_power = true;
       gpu_stats = true;
       gpu_temp = true;
+      gpu_core_clock = true;
+      gpu_power = true;
       ram = true;
       vram = true;
+      vulkan_driver = true;
+      wine = true;
     };
   };
 
   home.file.".steam/root/compatibilitytools.d/proton-ge-custom".source = "${pkgs.proton-ge-bin}";
+
+  # Carapace multi-shell completer for 500+ CLI tools (Git, Nix, Docker, Cargo, Systemctl, etc.)
+  programs.carapace = {
+    enable = true;
+    enableNushellIntegration = true;
+  };
+
+  # FZF fuzzy history and file finder integration
+  programs.fzf = {
+    enable = true;
+    enableNushellIntegration = false;
+  };
+
+  # Nushell configuration with IDE-like completion menus & intellisense
+  programs.nushell = {
+    enable = true;
+    extraConfig = ''
+      $env.TZ = "Europe/Warsaw"
+      macchina
+
+      $env.config = {
+        show_banner: false
+        completions: {
+          case_sensitive: false
+          quick: true
+          partial: true
+          algorithm: "fuzzy"
+          external: {
+            enable: true
+            max_results: 100
+            completer: {|spans|
+              carapace $spans.0 nushell ...$spans | from json
+            }
+          }
+        }
+      }
+
+    '';
+  };
 
   home.stateVersion = "26.05";
 }
