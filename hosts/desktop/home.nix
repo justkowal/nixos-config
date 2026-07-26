@@ -266,7 +266,8 @@
         };
 
         "custom/ai-ambient" = {
-          format = "{}";
+          format = "✨";
+          format-alt = "{}";
           return-type = "json";
           exec = "bash /home/justkowal/.config/waybar/scripts/ai_ambient.sh";
           interval = 300;
@@ -338,12 +339,6 @@
       #custom-ai-ambient {
         color: @tertiary;
         font-style: italic;
-        max-width: 24px;
-        transition: all 0.35s cubic-bezier(0.1, 1, 0.1, 1);
-      }
-
-      #custom-ai-ambient:hover {
-        max-width: 600px;
       }
 
       #custom-notification {
