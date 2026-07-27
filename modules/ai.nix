@@ -18,6 +18,14 @@
     ];
   };
 
+  # Ensure ollama user has GPU device permissions (/dev/kfd, /dev/dri)
+  users.users.ollama = {
+    isSystemUser = true;
+    group = "ollama";
+    extraGroups = [ "render" "video" ];
+  };
+  users.groups.ollama = {};
+
   # 2. Local SearXNG privacy-respecting Meta-Search Engine (for LLM Web Search RAG)
   services.searx = {
     enable = true;

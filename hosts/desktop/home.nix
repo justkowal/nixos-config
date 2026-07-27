@@ -170,7 +170,7 @@
         margin-left = 12;
         margin-right = 12;
         modules-left = ["hyprland/workspaces" "hyprland/submap"];
-        modules-center = ["clock" "custom/ai-ambient" "custom/pomodoro" "clock#date"];
+        modules-center = ["clock" "custom/pomodoro" "clock#date"];
         modules-right = ["mpris" "idle_inhibitor" "custom/sysinfo" "memory" "disk" "pulseaudio" "network" "custom/notification" "tray" "custom/power"];
 
         "hyprland/workspaces" = {
@@ -265,15 +265,6 @@
           on-click = "bash /home/justkowal/.config/hypr/scripts/power_menu.sh";
         };
 
-        "custom/ai-ambient" = {
-          format = "✨";
-          format-alt = "{}";
-          return-type = "json";
-          exec = "bash /home/justkowal/.config/waybar/scripts/ai_ambient.sh";
-          interval = 300;
-          tooltip = true;
-        };
-
         "custom/pomodoro" = {
           format = "{}";
           return-type = "json";
@@ -329,24 +320,11 @@
         background-color: @surface_variant;
       }
 
-      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-power, #custom-pomodoro, #custom-ai-ambient {
+      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-power, #custom-pomodoro {
         padding: 0 16px;
         margin: 4px 2px;
         background-color: alpha(@surface_variant, 0.82);
         border-radius: 12px;
-      }
-
-      #custom-ai-ambient {
-        color: @tertiary;
-        font-style: italic;
-        min-width: 14px;
-        transition: min-width 0.4s cubic-bezier(0.1, 1, 0.1, 1), background-color 0.3s ease;
-      }
-
-      #custom-ai-ambient:hover {
-        min-width: 280px;
-        background-color: alpha(@primary_container, 0.9);
-        color: @on_primary_container;
       }
 
       #custom-notification {
@@ -495,7 +473,7 @@
       exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
       exec-once = ${pkgs.gnome-keyring}/bin/gnome-keyring-daemon --start --components=secrets,pkcs11,ssh
       exec-once = waybar
-      exec-once = awww-daemon
+      exec-once = awww-daemon --no-cache && awww img /home/justkowal/Pictures/wallpaper.png --transition-type wipe --transition-step 90
       # nm-applet is disabled to avoid duplicate network tray/bar icons
       # exec-once = nm-applet --indicator
       exec-once = blueman-applet
@@ -1033,7 +1011,7 @@
       fi
 
       TEXT=" ''${CPU_UTIL}% (''${CPU_TEMP}°C)  󰾲 ''${GPU_UTIL}% (''${GPU_TEMP}°C)"
-      TOOLTIP="System Status:\n\nCPU Usage: ''${CPU_UTIL}%\nCPU Temp: ''${CPU_TEMP}°C\n\nGPU Usage: ''${GPU_UTIL}%\nGPU Temp: ''${GPU_TEMP}°C"
+      TOOLTIP=$(printf "System Status:\n\nCPU Usage: %s%%\nCPU Temp: %s°C\n\nGPU Usage: %s%%\nGPU Temp: %s°C" "$CPU_UTIL" "$CPU_TEMP" "$GPU_UTIL" "$GPU_TEMP")
 
       ${pkgs.jq}/bin/jq -n -c --arg text "$TEXT" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}'
     '';

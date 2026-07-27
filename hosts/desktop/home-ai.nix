@@ -14,6 +14,32 @@
 
   # ─── Rofi AI Popup ─────────────────────────────────────────────────────
 
+  # Markdown to GTK Pango Markup Converter for SwayNC Notifications
+  xdg.configFile."ai/md_to_pango.py" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env python3
+      import sys, re, html
+
+      def md_to_pango(text):
+          if not text:
+              return ""
+          text = html.escape(text)
+          text = re.sub(r'```(?:[a-zA-Z0-9_-]+)?\n?(.*?)```', r'<tt>\1</tt>', text, flags=re.DOTALL)
+          text = re.sub(r'`([^`]+)`', r'<tt>\1</tt>', text)
+          text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
+          text = re.sub(r'__([^_]+)__', r'<b>\1</b>', text)
+          text = re.sub(r'\*([^*]+)\*', r'<i>\1</i>', text)
+          text = re.sub(r'_([^_]+)_', r'<i>\1</i>', text)
+          text = re.sub(r'^#+\s*(.*)$', r'<b>\1</b>', text, flags=re.MULTILINE)
+          return text
+
+      if __name__ == "__main__":
+          inp = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else sys.stdin.read()
+          print(md_to_pango(inp))
+    '';
+  };
+
   # Interactive Rofi AI Popup with Handoff to Open-WebUI
   xdg.configFile."hypr/scripts/rofi_ai.sh" = {
     executable = true;
@@ -434,6 +460,15 @@
       FIRST=$(echo "$TAGS" | ${pkgs.jq}/bin/jq -r '.models[]? | select(.name != "nomic-embed-text:latest") | .name' | head -n 1)
       MODEL="''${TARGET:-''${FIRST:-$PREF_MODEL}}"
 
+      # Skip scheduled execution if GPU is busy (> 15%) or CPU load > 35% or heavy workload active
+      GPU_BUSY=$(cat /sys/class/drm/card1/device/gpu_busy_percent 2>/dev/null || echo 0)
+      LOAD_1M=$(uptime | awk -F'load average:' '{print $2}' | awk -F, '{print $1}' | tr -d ' ')
+      NPROC=$(nproc)
+      LOAD_PCT=$(echo "$LOAD_1M * 100 / $NPROC" | bc 2>/dev/null || echo 0)
+      if [ "$GPU_BUSY" -gt 15 ] || [ "''${LOAD_PCT%.*}" -gt 35 ] || pgrep -i -x "steam|gamescope|lutris|heroic|java|obs|ffmpeg|nix-daemon|hyprlock" >/dev/null 2>&1; then
+        exit 0
+      fi
+
       NOTIF_JSON=$(${pkgs.swaynotificationcenter}/bin/swaync-client -s 2>/dev/null || echo '[]')
       NOTIF_COUNT=$(echo "$NOTIF_JSON" | ${pkgs.jq}/bin/jq 'length' 2>/dev/null || echo "0")
 
@@ -534,6 +569,18 @@
                      ".so", ".o", ".a", ".dll", ".pyc", ".lock", ".db", ".sqlite"}
       IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 
+      def is_system_busy():
+          try:
+              if os.path.exists("/sys/class/drm/card1/device/gpu_busy_percent"):
+                  with open("/sys/class/drm/card1/device/gpu_busy_percent") as f:
+                      if int(f.read().strip()) > 15: return True
+              load1, _, _ = os.getloadavg()
+              if load1 / (os.cpu_count() or 1) > 0.35: return True
+              res = subprocess.run(["pgrep", "-i", "-x", "steam|gamescope|lutris|heroic|java|obs|ffmpeg|nix-daemon|hyprlock"], capture_output=True)
+              if res.returncode == 0: return True
+          except Exception: pass
+          return False
+
       def get_embedding(text):
           payload = json.dumps({"model": EMBED_MODEL, "input": text[:2000]}).encode("utf-8")
           req = urllib.request.Request(OLLAMA_EMBED_URL, data=payload, headers={"Content-Type": "application/json"})
@@ -545,14 +592,8 @@
           except Exception: return []
 
       def describe_image(path):
-          try:
-              with open(path, "rb") as f: b64 = base64.b64encode(f.read()).decode("utf-8")
-              payload = json.dumps({"model": VISION_MODEL, "prompt": "Describe this image in one sentence for search indexing:",
-                                    "images": [b64], "stream": False}).encode("utf-8")
-              req = urllib.request.Request(OLLAMA_GEN_URL, data=payload, headers={"Content-Type": "application/json"})
-              with urllib.request.urlopen(req, timeout=20) as r:
-                  return json.loads(r.read().decode("utf-8")).get("response", "").strip()
-          except Exception: return ""
+          # Skip heavy vision model inference during background auto-indexing sweeps
+          return ""
 
       def extract_pdf_text(path):
           try:
@@ -608,7 +649,9 @@
                   except: pass
           return valid
 
-      def index():
+      def scan_and_index():
+          if is_system_busy():
+              sys.exit(0)
           os.makedirs(os.path.dirname(VECTOR_STORE), exist_ok=True)
           existing = []
           if os.path.exists(VECTOR_STORE):
@@ -672,8 +715,11 @@
       # Spotlight-style Unified Search: Apps, files, AI prompt, web search
       # AI fallback: when no app/file/dir matches, query E2B before web search
 
+      cd "$HOME" || exit 1
+
       # 1. Collect installed desktop applications
       APP_LIST=$(${pkgs.findutils}/bin/find /run/current-system/sw/share/applications /home/justkowal/.nix-profile/share/applications /var/lib/flatpak/exports/share/applications -name "*.desktop" 2>/dev/null | while read -r file; do
+        if ${pkgs.gnugrep}/bin/grep -qE "^(NoDisplay|Hidden)=true" "$file"; then continue; fi
         name=$(${pkgs.gnugrep}/bin/grep -m 1 "^Name=" "$file" | ${pkgs.coreutils}/bin/cut -d= -f2-)
         [ -n "$name" ] && echo "[App] $name"
       done | ${pkgs.coreutils}/bin/sort -u)
@@ -699,6 +745,7 @@
 
       # Check if it matches a desktop application
       DESKTOP_FILE=$(${pkgs.findutils}/bin/find /run/current-system/sw/share/applications /home/justkowal/.nix-profile/share/applications /var/lib/flatpak/exports/share/applications -name "*.desktop" 2>/dev/null | while read -r file; do
+        if ${pkgs.gnugrep}/bin/grep -qE "^(NoDisplay|Hidden)=true" "$file"; then continue; fi
         name=$(${pkgs.gnugrep}/bin/grep -m 1 "^Name=" "$file" | ${pkgs.coreutils}/bin/cut -d= -f2-)
         if [ "$name" = "$CLEAN_INPUT" ] || [ "$name" = "$INPUT" ]; then echo "$file"; break; fi
       done | ${pkgs.coreutils}/bin/head -n 1)
@@ -765,7 +812,8 @@
 
           CONVERSATION="$CONVERSATION $RESPONSE\n"
           CHAR_COUNT=$(echo -n "$RESPONSE" | ${pkgs.coreutils}/bin/wc -c)
-          ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:spotlight-ai "Spotlight AI ($MODEL_LABEL)" "$RESPONSE" -i dialog-information
+          PANGO_RESP=$(${pkgs.python3}/bin/python3 %h/.config/ai/md_to_pango.py "$RESPONSE")
+          ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:spotlight-ai "Spotlight AI ($MODEL_LABEL)" "$PANGO_RESP" -i dialog-information
           echo "$RESPONSE" | ${pkgs.wl-clipboard}/bin/wl-copy
 
           if [ "$CHAR_COUNT" -gt 200 ]; then
@@ -1019,6 +1067,12 @@
       LOAD_THRESHOLD=$(echo "$NPROC * 2" | bc)
       LOAD_HIGH=$(echo "$LOAD_1M > $LOAD_THRESHOLD" | bc 2>/dev/null || echo 0)
 
+      # Detect gaming & heavy workload processes (Steam, Gamescope, Lutris, Heroic, Minecraft/Java, OBS, FFmpeg, Nix build, etc.)
+      if pgrep -i -x "steam|gamescope|lutris|heroic|java|obs|ffmpeg|nix-daemon|hyprlock" >/dev/null 2>&1 || pgrep -f "minecraft|PrismLauncher" >/dev/null 2>&1; then
+        # Heavy workload / game active — suppress resource anomaly alerts
+        exit 0
+      fi
+
       # Check thresholds
       ANOMALIES=""
       [ "$RAM_PCT" -gt 85 ] && ANOMALIES="$ANOMALIES RAM at ''${RAM_PCT}% (''${RAM_USED}MB/''${RAM_TOTAL}MB)."
@@ -1054,8 +1108,9 @@
       RESPONSE=$(echo "$RAW_RES" | ${pkgs.jq}/bin/jq -r '.response // empty')
 
       if [ -n "$RESPONSE" ] && [ "$RESPONSE" != "null" ]; then
+        PANGO_RES=$(${pkgs.python3}/bin/python3 %h/.config/ai/md_to_pango.py "$RESPONSE")
         ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:health-ai \
-          "🩺 System Health" "$RESPONSE" -i dialog-warning
+          "🩺 System Health" "$PANGO_RES" -i dialog-warning
       fi
     '';
   };
@@ -1293,7 +1348,8 @@
     Unit.Description = "Periodic Vector Indexing Timer";
     Timer = {
       OnCalendar = "daily";
-      Persistent = true;
+      Persistent = false;
+      OnBootSec = "10m";
     };
     Install.WantedBy = [ "timers.target" ];
   };
@@ -1314,7 +1370,8 @@
     Unit.Description = "AI Notification Digest Timer (30 min)";
     Timer = {
       OnCalendar = "*:0/30";
-      Persistent = true;
+      Persistent = false;
+      OnBootSec = "10m";
     };
     Install.WantedBy = [ "timers.target" ];
   };
@@ -1335,7 +1392,8 @@
     Unit.Description = "System Health Check Timer (5 min)";
     Timer = {
       OnCalendar = "*:0/5";
-      Persistent = true;
+      Persistent = false;
+      OnBootSec = "10m";
     };
     Install.WantedBy = [ "timers.target" ];
   };
