@@ -45,6 +45,7 @@
     STARSHIP_CONFIG = "/home/justkowal/.config/starship.toml";
     GTK_THEME = "Adwaita:dark";
     MANGOHUD_CONFIGFILE = "/home/justkowal/.config/MangoHud/MangoHud.conf";
+    ANKI_NIGHT_MODE = "1";
   };
 
   # User packages
