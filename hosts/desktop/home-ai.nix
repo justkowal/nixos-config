@@ -1315,22 +1315,22 @@
     };
   };
 
-  # Smart context-aware clipboard daemon (AI actions)
-  systemd.user.services.ai-clipboard-context = {
-    Unit = {
-      Description = "Smart Context-Aware Clipboard — AI Action Suggestions";
-      After = [ "graphical-session.target" "ollama.service" ];
-      PartOf = [ "graphical-session.target" ];
-    };
-    Service = {
-      ExecStart = "${pkgs.bash}/bin/bash %h/.config/ai/clipboard_context.sh";
-      Restart = "always";
-      RestartSec = "10s";
-    };
-    Install = {
-      WantedBy = [ "graphical-session.target" ];
-    };
-  };
+  # Smart context-aware clipboard daemon (AI actions) - DISABLED per user request
+  # systemd.user.services.ai-clipboard-context = {
+  #   Unit = {
+  #     Description = "Smart Context-Aware Clipboard — AI Action Suggestions";
+  #     After = [ "graphical-session.target" "ollama.service" ];
+  #     PartOf = [ "graphical-session.target" ];
+  #   };
+  #   Service = {
+  #     ExecStart = "${pkgs.bash}/bin/bash %h/.config/ai/clipboard_context.sh";
+  #     Restart = "always";
+  #     RestartSec = "10s";
+  #   };
+  #   Install = {
+  #     WantedBy = [ "graphical-session.target" ];
+  #   };
+  # };
 
   # Vector indexer (daily)
   systemd.user.services.ai-vector-indexer = {

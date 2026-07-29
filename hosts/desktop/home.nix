@@ -161,6 +161,10 @@
   # 3. Waybar Status Bar (floating, rounded pill design following MD3)
   programs.waybar = {
     enable = true;
+    systemd = {
+      enable = true;
+      targets = [ "graphical-session.target" ];
+    };
     settings = [
       {
         layer = "top";
@@ -472,8 +476,8 @@
       exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
       exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
       exec-once = ${pkgs.gnome-keyring}/bin/gnome-keyring-daemon --start --components=secrets,pkcs11,ssh
-      exec-once = waybar
-      exec-once = awww-daemon --no-cache && awww img /home/justkowal/Pictures/wallpaper.png --transition-type wipe --transition-step 90
+      exec-once = systemctl --user start waybar
+      exec-once = sleep 0.5 && awww img /home/justkowal/Pictures/wallpaper.png --transition-type wipe --transition-step 90
       # nm-applet is disabled to avoid duplicate network tray/bar icons
       # exec-once = nm-applet --indicator
       exec-once = blueman-applet
@@ -920,6 +924,32 @@
         *"Lock"*) ${pkgs.hyprlock}/bin/hyprlock ;;
         *"Exit"*) ${pkgs.hyprland}/bin/hyprctl dispatch exit ;;
       esac
+    '';
+  };
+
+  xdg.configFile."hypr/scripts/change_wallpaper.sh" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      WALLPAPER="/home/justkowal/Pictures/wallpaper.png"
+      WALLPAPER_DIR="/home/justkowal/Pictures/Wallpapers"
+
+      if [ -d "$WALLPAPER_DIR" ]; then
+        RANDOM_WALL=$(find "$WALLPAPER_DIR" -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.webp" \) 2>/dev/null | shuf -n 1)
+        if [ -n "$RANDOM_WALL" ]; then
+          WALLPAPER="$RANDOM_WALL"
+        fi
+      fi
+
+      if command -v awww &>/dev/null; then
+        awww img "$WALLPAPER" --transition-type wipe --transition-step 90
+      fi
+
+      if command -v matugen &>/dev/null; then
+        matugen image --source-color-index 0 "$WALLPAPER"
+      fi
+
+      ${pkgs.libnotify}/bin/notify-send -i image-x-generic "Wallpaper Changed" "Applied: $(basename "$WALLPAPER")"
     '';
   };
 
@@ -1409,6 +1439,22 @@
       }
 
     '';
+  };
+
+  systemd.user.services.awww-daemon = {
+    Unit = {
+      Description = "Animated Wallpaper Daemon (awww)";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStartPre = "${pkgs.coreutils}/bin/rm -f /run/user/%U/*awww-daemon.sock";
+      ExecStart = "${pkgs.awww}/bin/awww-daemon";
+      Restart = "on-failure";
+    };
+    Install = {
+      WantedBy = [ "graphical-session.target" ];
+    };
   };
 
   home.stateVersion = "26.05";

@@ -44,8 +44,9 @@
     tesseract # Optical Character Recognition (OCR) engine for AI screenshot parsing
     kicad # EDA suite for schematics and PCB design
 
-    # LaTeX typesetting stack (medium scheme provides most standard packages)
-    texlive.combined.scheme-medium
+    # LaTeX typesetting stack & Anki flashcard suite
+    (texlive.combine { inherit (pkgs.texlive) scheme-medium cancel physics siunitx mathtools; })
+    anki
 
     # Desktop Generics
     gnome-calculator # Calculator

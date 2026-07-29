@@ -857,6 +857,26 @@
     input_path = "~/.config/matugen/templates/kde-colors.colors"
     output_path = "~/.local/share/color-schemes/Matugen.colors"
     post_hook = "plasma-apply-colorscheme Matugen 2>/dev/null || true"
+
+    [templates.anki]
+    input_path = "~/.config/matugen/templates/anki.css"
+    output_path = "~/.local/share/Anki2/user_files/anki-matugen.css"
+  '';
+
+  # Matugen template for Anki Flashcard Cards
+  xdg.configFile."matugen/templates/anki.css".text = ''
+    /* Matugen Dynamic Anki Card Colors */
+    .card {
+      background-color: {{ colors.surface.default.hex }};
+      color: {{ colors.on_surface.default.hex }};
+      font-family: "Outfit", "JetBrainsMono Nerd Font", sans-serif;
+    }
+    .card-front {
+      color: {{ colors.primary.default.hex }};
+    }
+    hr#answer {
+      background: {{ colors.outline_variant.default.hex }};
+    }
   '';
 
   # ═══════════════════════════════════════════════════════════════════════
