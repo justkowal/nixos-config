@@ -45,7 +45,7 @@
     kicad # EDA suite for schematics and PCB design
 
     # LaTeX typesetting stack & Anki flashcard suite
-    (texlive.combine { inherit (pkgs.texlive) scheme-medium cancel physics siunitx mathtools; })
+    (texlive.combine { inherit (pkgs.texlive) scheme-medium cancel physics siunitx mathtools tcolorbox environ; })
     anki
 
     # Desktop Generics
