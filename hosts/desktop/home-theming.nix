@@ -869,6 +869,26 @@
     [templates.vesktop-theme]
     input_path = "~/.config/matugen/templates/discord.css"
     output_path = "~/.config/vesktop/themes/matugen.theme.css"
+
+    [templates.heroic]
+    input_path = "~/.config/matugen/templates/heroic.css"
+    output_path = "~/.config/heroic/themes/matugen.css"
+
+    [templates.prismlauncher]
+    input_path = "~/.config/matugen/templates/prismlauncher.json"
+    output_path = "~/.local/share/PrismLauncher/themes/Matugen/theme.json"
+
+    [templates.zathura]
+    input_path = "~/.config/matugen/templates/zathura-colors"
+    output_path = "~/.config/zathura/zathurarc"
+
+    [templates.spotify]
+    input_path = "~/.config/matugen/templates/spicetify.ini"
+    output_path = "~/.config/spicetify/Themes/Sleek/color.ini"
+
+    [templates.gtk-colors]
+    input_path = "~/.config/matugen/templates/gtk-colors.css"
+    output_path = "~/.config/gtk-3.0/colors.css"
   '';
 
   # Matugen template for Discord / Vencord / Vesktop (InioX matugen-themes)
@@ -954,6 +974,182 @@
       color: var(--text-0) !important;
       fill: var(--text-0) !important;
     }
+  '';
+
+  # Matugen template for Heroic Games Launcher (InioX matugen-themes)
+  xdg.configFile."matugen/templates/heroic.css".text = ''
+    body.matugen {
+      --accent: {{ colors.tertiary.default.hex }};
+      --accent-overlay: {{ colors.inverse_primary.default.hex }};
+      
+      --primary: {{ colors.primary.default.hex }};
+      --primary-hover: {{ colors.primary_container.default.hex }};
+      --navbar-accent: var(--primary);
+      
+      --background: {{ colors.background.default.hex }};
+      --body-background: {{ colors.surface.default.hex }};
+      --navbar-background: {{ colors.surface_container.default.hex }};
+      
+      --background-darker: var(--background);
+      --current-background: var(--body-background);
+      --navbar-active-background: {{ colors.surface_container_high.default.hex }};
+
+      --gradient-body-background: linear-gradient(
+        90deg,
+        var(--background-darker) -32px,
+        var(--body-background) 64px,
+        var(--body-background) 100%
+      );
+      
+      --input-background: var(--navbar-background);
+      --modal-background: var(--body-background);
+      --modal-border: var(--body-background);
+
+      --success: {{ colors.tertiary.default.hex }};
+      --success-hover: {{ colors.tertiary_container.default.hex }};
+      --danger: {{ colors.error.default.hex }};
+      --danger-hover: {{ colors.error_container.default.hex }};
+
+      --text-default: {{ colors.on_surface.default.hex }};
+      --text-title: {{ colors.on_surface.default.hex }};
+      --text-secondary: {{ colors.on_surface_variant.default.hex }};
+      --text-tertiary: {{ colors.on_tertiary.default.hex }};
+      --text-hover: {{ colors.primary.default.hex }};
+
+      --action-icon: {{ colors.on_surface.default.hex }};
+      --action-icon-hover: {{ colors.primary.default.hex }};
+      --action-icon-active: {{ colors.primary_container.default.hex }};
+      --icons-background: {{ colors.surface_variant.default.hex }};
+      --icon-disabled: {{ colors.on_surface_variant.default.hex }};
+
+      --anticheat-denied: var(--danger);
+      --anticheat-broken: var(--accent);
+      --anticheat-running: var(--primary);
+      --anticheat-supported: var(--success);
+      --anticheat-planned: {{ colors.secondary.default.hex }};
+
+      --neutral-06: {{ colors.on_surface_variant.default.hex }};
+      --gamecard-title-color: {{ colors.surface_container.default.hex }}cc;
+      --secondary-button: var(--accent);
+      --tertiary-button: var(--primary);
+    }
+  '';
+
+  # Matugen template for Prism Launcher (InioX matugen-themes)
+  xdg.configFile."matugen/templates/prismlauncher.json".text = ''
+    {
+      "colors": {
+        "AlternateBase": "{{ colors.surface.default.hex }}",
+        "Base": "{{ colors.surface.default.hex }}",
+        "BrightText": "{{ colors.secondary.default.hex }}",
+        "Button": "{{ colors.surface_variant.default.hex }}",
+        "ButtonText": "{{ colors.on_surface.default.hex }}",
+        "Highlight": "{{ colors.primary.default.hex }}",
+        "HighlightedText": "{{ colors.on_primary.default.hex }}",
+        "Link": "{{ colors.primary.default.hex }}",
+        "Text": "{{ colors.on_surface.default.hex }}",
+        "ToolTipBase": "{{ colors.surface_variant.default.hex }}",
+        "ToolTipText": "{{ colors.on_surface.default.hex }}",
+        "Window": "{{ colors.surface.default.hex }}",
+        "WindowText": "{{ colors.on_surface.default.hex }}",
+        "fadeAmount": 0.5,
+        "fadeColor": "{{ colors.surface_variant.default.hex }}"
+      },
+      "name": "Matugen",
+      "widgets": "Fusion"
+    }
+  '';
+
+  # Matugen template for Zathura PDF Viewer (InioX matugen-themes)
+  xdg.configFile."matugen/templates/zathura-colors".text = ''
+    set default-bg              "{{ colors.on_primary.default.hex }}"
+    set default-fg              "{{ colors.primary.default.hex }}"
+
+    set statusbar-bg            "{{ colors.on_primary.default.hex }}"
+    set statusbar-fg            "{{ colors.primary.default.hex }}"
+
+    set inputbar-bg             "{{ colors.on_primary.default.hex }}"
+    set inputbar-fg             "{{ colors.primary.default.hex }}"
+
+    set notification-error-bg   "{{ colors.on_error.default.hex }}"
+    set notification-error-fg   "{{ colors.error.default.hex }}"
+
+    set notification-warning-bg "{{ colors.primary_fixed.default.hex }}"
+    set notification-warning-fg "{{ colors.error_container.default.hex }}"
+
+    set highlight-color         "{{ colors.primary_fixed.default.hex }}"
+    set highlight-active-color  "{{ colors.primary_fixed_dim.default.hex }}"
+
+    set completion-highlight-fg "{{ colors.on_primary.default.hex }}"
+    set completion-highlight-bg "{{ colors.primary.default.hex }}"
+
+    set completion-bg           "{{ colors.on_primary.default.hex }}"
+    set completion-fg           "{{ colors.primary.default.hex }}"
+
+    set notification-bg         "{{ colors.on_primary.default.hex }}"
+    set notification-fg         "{{ colors.primary.default.hex }}"
+
+    set recolor                 "true"
+    set recolor-lightcolor      "{{ colors.on_primary.default.hex }}"
+    set recolor-darkcolor       "{{ colors.primary.default.hex }}"
+    set recolor-reverse-video   "true"
+    set recolor-keephue         "true"
+
+    set selection-clipboard clipboard
+    set incremental-search true
+    set search-hadjust true
+    set adjust-open width
+    set font "Outfit 12"
+  '';
+
+  # Matugen template for Spotify Spicetify Sleek (InioX matugen-themes)
+  xdg.configFile."matugen/templates/spicetify.ini".text = ''
+    [matugen]
+    main               = {{ colors.background.default.hex_stripped }}
+    main-secondary     = {{ colors.surface_bright.default.hex_stripped }}
+    accent             = {{ colors.primary.default.hex_stripped }}
+    button             = {{ colors.primary.default.hex_stripped }}
+    button-secondary   = {{ colors.secondary.default.hex_stripped }}
+    button-active      = {{ colors.primary_fixed.default.hex_stripped }}
+    button-disabled    = {{ colors.surface_bright.default.hex_stripped }}
+
+    misc               = {{ colors.tertiary.default.hex_stripped }}
+    subtext            = {{ colors.on_surface_variant.default.hex_stripped }}
+    text               = {{ colors.on_background.default.hex_stripped }}
+    sidebar            = {{ colors.surface.default.hex_stripped }}
+    player             = {{ colors.surface.default.hex_stripped }}
+    card               = {{ colors.surface_bright.default.hex_stripped }}
+    notification       = {{ colors.surface.default.hex_stripped }}
+    notification-error = {{ colors.error.default.hex_stripped }}
+    shadow             = {{ colors.shadow.default.hex_stripped }}
+
+    nav-active-text    = {{ colors.primary.default.hex_stripped }}
+    nav-active         = {{ colors.primary.default.hex_stripped }}
+    tab-active         = {{ colors.surface.default.hex_stripped }}
+    play-button        = {{ colors.primary.default.hex_stripped }}
+
+    playback-bar       = {{ colors.primary_fixed.default.hex_stripped }}
+  '';
+
+  # Matugen template for GTK Colors (InioX matugen-themes)
+  xdg.configFile."matugen/templates/gtk-colors.css".text = ''
+    @define-color accent_color {{ colors.primary_fixed_dim.default.hex }};
+    @define-color accent_fg_color {{ colors.on_primary_fixed.default.hex }};
+    @define-color accent_bg_color {{ colors.primary_fixed_dim.default.hex }};
+    @define-color window_bg_color {{ colors.surface_dim.default.hex }};
+    @define-color window_fg_color {{ colors.on_surface.default.hex }};
+    @define-color headerbar_bg_color {{ colors.surface_dim.default.hex }};
+    @define-color headerbar_fg_color {{ colors.on_surface.default.hex }};
+    @define-color popover_bg_color {{ colors.surface_dim.default.hex }};
+    @define-color popover_fg_color {{ colors.on_surface.default.hex }};
+    @define-color view_bg_color {{ colors.surface.default.hex }};
+    @define-color view_fg_color {{ colors.on_surface.default.hex }};
+    @define-color card_bg_color {{ colors.surface.default.hex }};
+    @define-color card_fg_color {{ colors.on_surface.default.hex }};
+    @define-color sidebar_bg_color @window_bg_color;
+    @define-color sidebar_fg_color @window_fg_color;
+    @define-color sidebar_border_color @window_bg_color;
+    @define-color sidebar_backdrop_color @window_bg_color;
   '';
 
   # Vencord / Vesktop QuickCSS Configuration
