@@ -18,7 +18,8 @@
     thunderbird
     vlc
     gnome-software # Graphical store for Flatpaks
-    discord # Chat & Social (with Discord Rich Presence support)
+    (discord.override { withVencord = true; }) # Chat & Social (with Vencord custom CSS theme support)
+    vesktop # Discord Desktop client with built-in Vencord support
     heroic # GOG & Epic Games Launcher client
     lutris # Open Source gaming platform for Windows/Linux games
     protonup-qt # Graphical manager for Proton-GE and Wine-GE
