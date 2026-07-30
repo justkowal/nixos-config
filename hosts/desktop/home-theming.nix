@@ -11,15 +11,15 @@
     "$schema" = 'https://starship.rs/config-schema.json'
 
     format = """
-    []({{ colors.primary.default.hex }})\
+    [ ](bg:{{ colors.primary.default.hex }})\
     $os\
     $username\
-    [](bg:{{ colors.secondary.default.hex }} fg:{{ colors.primary.default.hex }})\
+    [](bg:{{ colors.secondary.default.hex }} fg:{{ colors.primary.default.hex }})\
     $directory\
-    [](bg:{{ colors.tertiary.default.hex }} fg:{{ colors.secondary.default.hex }})\
+    [](bg:{{ colors.tertiary.default.hex }} fg:{{ colors.secondary.default.hex }})\
     $git_branch\
     $git_status\
-    [](bg:{{ colors.primary_container.default.hex }} fg:{{ colors.tertiary.default.hex }})\
+    [](bg:{{ colors.primary_container.default.hex }} fg:{{ colors.tertiary.default.hex }})\
     $c\
     $rust\
     $golang\
@@ -30,11 +30,12 @@
     $kotlin\
     $haskell\
     $python\
-    [](bg:{{ colors.secondary_container.default.hex }} fg:{{ colors.primary_container.default.hex }})\
+    [](bg:{{ colors.secondary_container.default.hex }} fg:{{ colors.primary_container.default.hex }})\
+    $docker_context\
     $conda\
-    [](bg:{{ colors.tertiary_container.default.hex }} fg:{{ colors.secondary_container.default.hex }})\
+    [](bg:{{ colors.tertiary_container.default.hex }} fg:{{ colors.secondary_container.default.hex }})\
     $time\
-    [ ](fg:{{ colors.tertiary_container.default.hex }})\
+    [](fg:{{ colors.tertiary_container.default.hex }})\
     $cmd_duration\
     $line_break\
     $character"""
@@ -44,24 +45,23 @@
     style = "bg:{{ colors.primary.default.hex }} fg:{{ colors.on_primary.default.hex }}"
 
     [os.symbols]
-    NixOS = " "
-    Windows = " "
+    NixOS = " "
+    Windows = "󰍲 "
     Ubuntu = "󰕈 "
-    SUSE = " "
+    SUSE = " "
     Raspbian = "󰐿 "
     Mint = "󰣭 "
     Macos = "󰀵 "
-    Manjaro = " "
+    Manjaro = " "
     Linux = "󰌽 "
     Gentoo = "󰣨 "
     Fedora = "󰣛 "
-    Alpine = " "
-    Amazon = " "
-    Android = " "
-    AOSC = " "
+    Alpine = " "
+    Amazon = " "
+    Android = "󰀲 "
     Arch = "󰣇 "
     Artix = "󰣇 "
-    CentOS = " "
+    CentOS = " "
     Debian = "󰣚 "
     Redhat = "󱄛 "
     RedHatEnterprise = "󱄛 "
@@ -70,7 +70,7 @@
     show_always = true
     style_user = "bg:{{ colors.primary.default.hex }} fg:{{ colors.on_primary.default.hex }}"
     style_root = "bg:{{ colors.primary.default.hex }} fg:{{ colors.on_primary.default.hex }}"
-    format = '[ $user]($style)'
+    format = '[$user ]($style)'
 
     [directory]
     style = "bg:{{ colors.secondary.default.hex }} fg:{{ colors.on_secondary.default.hex }}"
@@ -80,77 +80,77 @@
 
     [directory.substitutions]
     "Documents" = "󰈙 "
-    "Downloads" = " "
+    "Downloads" = "󰇚 "
     "Music" = "󰝚 "
-    "Pictures" = " "
+    "Pictures" = "󰋩 "
     "Developer" = "󰲋 "
 
     [git_branch]
-    symbol = ""
+    symbol = "󰘬 "
     style = "bg:{{ colors.tertiary.default.hex }} fg:{{ colors.on_tertiary.default.hex }}"
-    format = '[[ $symbol $branch ](fg:{{ colors.on_tertiary.default.hex }} bg:{{ colors.tertiary.default.hex }})]($style)'
+    format = '[[ $symbol$branch ](fg:{{ colors.on_tertiary.default.hex }} bg:{{ colors.tertiary.default.hex }})]($style)'
 
     [git_status]
     style = "bg:{{ colors.tertiary.default.hex }} fg:{{ colors.on_tertiary.default.hex }}"
     format = '[[($all_status$ahead_behind )](fg:{{ colors.on_tertiary.default.hex }} bg:{{ colors.tertiary.default.hex }})]($style)'
 
     [nodejs]
-    symbol = ""
+    symbol = " "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [bun]
-    symbol = ""
+    symbol = " "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [c]
-    symbol = " "
+    symbol = " "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [rust]
-    symbol = ""
+    symbol = " "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [golang]
-    symbol = ""
+    symbol = " "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [php]
-    symbol = ""
+    symbol = "🐘 "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [java]
-    symbol = " "
+    symbol = " "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [kotlin]
-    symbol = ""
+    symbol = "🅺 "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [haskell]
-    symbol = ""
+    symbol = "󰲒 "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [python]
-    symbol = ""
+    symbol = " "
     style = "bg:{{ colors.primary_container.default.hex }} fg:{{ colors.on_primary_container.default.hex }}"
     format = '[[ $symbol( $version)(\\($virtualenv\\)) ](fg:{{ colors.on_primary_container.default.hex }} bg:{{ colors.primary_container.default.hex }})]($style)'
 
     [docker_context]
-    symbol = ""
+    symbol = "󰡨 "
     style = "bg:{{ colors.secondary_container.default.hex }} fg:{{ colors.on_secondary_container.default.hex }}"
     format = '[[ $symbol( $context) ](fg:{{ colors.on_secondary_container.default.hex }} bg:{{ colors.secondary_container.default.hex }})]($style)'
 
     [conda]
-    symbol = "  "
+    symbol = "🅲 "
     style = "bg:{{ colors.secondary_container.default.hex }} fg:{{ colors.on_secondary_container.default.hex }}"
     format = '[$symbol$environment ]($style)'
     ignore_base = false
@@ -159,7 +159,7 @@
     disabled = false
     time_format = "%R"
     style = "bg:{{ colors.tertiary_container.default.hex }} fg:{{ colors.on_tertiary_container.default.hex }}"
-    format = '[[  $time ](fg:{{ colors.on_tertiary_container.default.hex }} bg:{{ colors.tertiary_container.default.hex }})]($style)'
+    format = '[[ 󰥔 $time ](fg:{{ colors.on_tertiary_container.default.hex }} bg:{{ colors.tertiary_container.default.hex }})]($style)'
 
     [line_break]
     disabled = true
