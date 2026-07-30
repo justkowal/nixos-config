@@ -4,4 +4,6 @@ core.*
 *.svg
 docs/
 convo to continue.md
+.git.bak_nobody
+
 
