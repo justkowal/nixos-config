@@ -841,14 +841,6 @@
     input_path = "~/.config/matugen/templates/btop.theme"
     output_path = "~/.config/btop/themes/matugen.theme"
 
-    [templates.freecad]
-    input_path = "~/.config/matugen/templates/freecad.qss"
-    output_path = "~/.local/share/FreeCAD/v1-1/Gui/Stylesheets/matugen.qss"
-
-    [templates.kicad]
-    input_path = "~/.config/matugen/templates/kicad.json"
-    output_path = "~/.config/kicad/10.0/colors/matugen.json"
-
     [templates.steam]
     input_path = "~/.config/matugen/templates/steam.css"
     output_path = "~/.local/share/Steam/steamui/skins/Material-Theme/css/main/colors/matugen.css"
