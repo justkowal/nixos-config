@@ -5,7 +5,10 @@
     enable = true;
     extraConfig = ''
       $env.TZ = "Europe/Warsaw"
-      macchina
+      $env.PLAYWRIGHT_DRIVER_DOWNLOAD_HOST = ""
+      $env.PLAYWRIGHT_DRIVER_PATH = "${pkgs.playwright-driver}"
+      $env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}"
+      $env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
 
       $env.config = {
         show_banner: false
