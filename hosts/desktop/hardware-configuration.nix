@@ -26,7 +26,7 @@
   fileSystems."/boot/efi" =
     { device = "/dev/disk/by-label/boot";
       fsType = "vfat";
-      options = [ "fmask=0077" "dmask=0077" "noatime" "lazytime" "async" ];
+      options = [ "fmask=0077" "dmask=0077" "noatime" "lazytime" "async" "nofail" "x-systemd.automount" ];
     };
 
   swapDevices = [ ];

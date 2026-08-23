@@ -40,6 +40,7 @@
     "amd_pstate=active"
     "amd_pstate.epp=performance"
     "nmi_watchdog=0"
+    "audit=0"
     "split_lock_detect=off"
     "skew_tick=1"
     "clocksource=tsc"

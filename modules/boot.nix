@@ -8,7 +8,7 @@
   boot.supportedFilesystems = [ "bcachefs" ];
 
   boot.initrd.systemd.enable = true;
-  boot.initrd.compressor = "zstd";
+  boot.initrd.compressor = "lz4";
   boot.initrd.includeDefaultModules = false;
   boot.initrd.verbose = false;
   boot.consoleLogLevel = 0;
