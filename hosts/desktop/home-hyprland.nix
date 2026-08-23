@@ -91,15 +91,17 @@ in
       }
 
       misc {
-          vrr = 0
+          vrr = 2
+          vfr = true
       }
 
       cursor {
-          no_hardware_cursors = true
+          no_hardware_cursors = false
       }
 
       render {
           direct_scanout = true
+          explicit_sync = 1
       }
 
       # Autostart

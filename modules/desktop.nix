@@ -26,8 +26,6 @@
     config.common.default = "*";
   };
 
-  # Dolphin needs KDE menu definitions in non-KDE environments
-  environment.etc."xdg/menus/applications.menu".source = "${pkgs.kdePackages.plasma-workspace}/etc/xdg/menus/plasma-applications.menu";
 
   security.rtkit.enable = true;
   services.pipewire = {
@@ -39,6 +37,7 @@
     extraConfig.pipewire."10-lowlatency" = {
       "context.properties" = {
         "default.clock.rate" = 48000;
+        "default.clock.allowed-rates" = [ 44100 48000 88200 96000 ];
         "default.clock.quantum" = 64;
         "default.clock.min-quantum" = 32;
         "default.clock.max-quantum" = 1024;
