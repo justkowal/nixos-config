@@ -1,10 +1,8 @@
 { config, pkgs, lib, ... }: {
 
-  # ═══════════════════════════════════════════════════════════════════════
   # Matugen Material You Dynamic Theming Templates
   # All templates are processed by matugen to generate theme files for
   # each application from wallpaper-extracted Material Design 3 colors.
-  # ═══════════════════════════════════════════════════════════════════════
 
   # --- Starship Prompt ---
   xdg.configFile."matugen/templates/starship.toml".text = ''
@@ -670,6 +668,14 @@
 
   # --- KDE/Qt Color Scheme (for Dolphin and all KDE/Qt apps) ---
   xdg.configFile."matugen/templates/kde-colors.colors".text = ''
+    [General]
+    ColorScheme=Matugen
+    Name=Matugen
+    shadeSortColumn=true
+
+    [KDE]
+    contrast=4
+
     [ColorEffects:Disabled]
     Color=56,56,56
     ColorAmount=0
@@ -760,14 +766,6 @@
     ForegroundPositive={{ colors.primary.default.red }},{{ colors.primary.default.green }},{{ colors.primary.default.blue }}
     ForegroundVisited={{ colors.tertiary_container.default.red }},{{ colors.tertiary_container.default.green }},{{ colors.tertiary_container.default.blue }}
 
-    [General]
-    ColorScheme=Matugen
-    Name=Matugen
-    shadeSortColumn=true
-
-    [KDE]
-    contrast=4
-
     [WM]
     activeBackground={{ colors.background.default.red }},{{ colors.background.default.green }},{{ colors.background.default.blue }}
     activeBlend={{ colors.primary.default.red }},{{ colors.primary.default.green }},{{ colors.primary.default.blue }}
@@ -777,9 +775,7 @@
     inactiveForeground={{ colors.on_surface_variant.default.red }},{{ colors.on_surface_variant.default.green }},{{ colors.on_surface_variant.default.blue }}
   '';
 
-  # ═══════════════════════════════════════════════════════════════════════
   # Matugen Configuration (template → output path mappings)
-  # ═══════════════════════════════════════════════════════════════════════
 
   xdg.configFile."matugen/config.toml".text = ''
     [config]
@@ -849,6 +845,10 @@
     input_path = "~/.config/matugen/templates/kde-colors.colors"
     output_path = "~/.local/share/color-schemes/Matugen.colors"
     post_hook = "sh -c 'plasma-apply-colorscheme Matugen 2>/dev/null || true'"
+
+    [templates.kdeglobals]
+    input_path = "~/.config/matugen/templates/kde-colors.colors"
+    output_path = "~/.config/kdeglobals"
 
     [templates.anki]
     input_path = "~/.config/matugen/templates/anki.css"
@@ -1060,38 +1060,43 @@
     }
   '';
 
+  # Matugen template for Anki (InioX matugen-themes)
+  xdg.configFile."matugen/templates/anki.css".text = ''
+    /* Add anki matugen theme content here */
+  '';
+
   # Matugen template for Zathura PDF Viewer (InioX matugen-themes)
   xdg.configFile."matugen/templates/zathura-colors".text = ''
-    set default-bg              "{{ colors.on_primary.default.hex }}"
-    set default-fg              "{{ colors.primary.default.hex }}"
+    set default-bg              "{{ colors.surface.default.hex }}"
+    set default-fg              "{{ colors.on_surface.default.hex }}"
 
-    set statusbar-bg            "{{ colors.on_primary.default.hex }}"
-    set statusbar-fg            "{{ colors.primary.default.hex }}"
+    set statusbar-bg            "{{ colors.surface_variant.default.hex }}"
+    set statusbar-fg            "{{ colors.on_surface_variant.default.hex }}"
 
-    set inputbar-bg             "{{ colors.on_primary.default.hex }}"
-    set inputbar-fg             "{{ colors.primary.default.hex }}"
+    set inputbar-bg             "{{ colors.surface.default.hex }}"
+    set inputbar-fg             "{{ colors.on_surface.default.hex }}"
 
-    set notification-error-bg   "{{ colors.on_error.default.hex }}"
-    set notification-error-fg   "{{ colors.error.default.hex }}"
+    set notification-error-bg   "{{ colors.error.default.hex }}"
+    set notification-error-fg   "{{ colors.on_error.default.hex }}"
 
-    set notification-warning-bg "{{ colors.primary_fixed.default.hex }}"
-    set notification-warning-fg "{{ colors.error_container.default.hex }}"
+    set notification-warning-bg "{{ colors.surface_variant.default.hex }}"
+    set notification-warning-fg "{{ colors.tertiary.default.hex }}"
 
-    set highlight-color         "{{ colors.primary_fixed.default.hex }}"
-    set highlight-active-color  "{{ colors.primary_fixed_dim.default.hex }}"
+    set highlight-color         "{{ colors.primary.default.hex }}"
+    set highlight-active-color  "{{ colors.secondary.default.hex }}"
 
     set completion-highlight-fg "{{ colors.on_primary.default.hex }}"
     set completion-highlight-bg "{{ colors.primary.default.hex }}"
 
-    set completion-bg           "{{ colors.on_primary.default.hex }}"
-    set completion-fg           "{{ colors.primary.default.hex }}"
+    set completion-bg           "{{ colors.surface_variant.default.hex }}"
+    set completion-fg           "{{ colors.on_surface_variant.default.hex }}"
 
-    set notification-bg         "{{ colors.on_primary.default.hex }}"
-    set notification-fg         "{{ colors.primary.default.hex }}"
+    set notification-bg         "{{ colors.surface_variant.default.hex }}"
+    set notification-fg         "{{ colors.on_surface_variant.default.hex }}"
 
     set recolor                 "true"
-    set recolor-lightcolor      "{{ colors.on_primary.default.hex }}"
-    set recolor-darkcolor       "{{ colors.primary.default.hex }}"
+    set recolor-lightcolor      "{{ colors.background.default.hex }}"
+    set recolor-darkcolor       "{{ colors.on_background.default.hex }}"
     set recolor-reverse-video   "true"
     set recolor-keephue         "true"
 
@@ -1177,18 +1182,5 @@
     }
   '';
 
-  # ═══════════════════════════════════════════════════════════════════════
-  # KDE/Qt Color Scheme Integration (kdeglobals for Dolphin + all Qt apps)
-  # ═══════════════════════════════════════════════════════════════════════
-
-  # Set kdeglobals to use Matugen color scheme for Dolphin and all KDE/Qt apps
-  home.file.".config/kdeglobals".text = ''
-    [General]
-    ColorScheme=Matugen
-    Name=Matugen
-
-    [KDE]
-    contrast=4
-    widgetStyle=Breeze
-  '';
+  # KDE/Qt Color Scheme Integration (kdeglobals written dynamically by Matugen)
 }

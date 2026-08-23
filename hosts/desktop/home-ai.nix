@@ -882,9 +882,7 @@
     '';
   };
 
-  # ═══════════════════════════════════════════════════════════════════════
   # NEW AMBIENT AI INTEGRATIONS
-  # ═══════════════════════════════════════════════════════════════════════
 
   # ─── 1. Smart Context-Aware Clipboard Daemon ───────────────────────────
 
@@ -1294,9 +1292,7 @@
     '';
   };
 
-  # ═══════════════════════════════════════════════════════════════════════
   # Systemd User Services & Timers
-  # ═══════════════════════════════════════════════════════════════════════
 
   # Clipboard vector embedding daemon (semantic search)
   systemd.user.services.ai-clipboard-daemon = {
@@ -1315,22 +1311,7 @@
     };
   };
 
-  # Smart context-aware clipboard daemon (AI actions) - DISABLED per user request
-  # systemd.user.services.ai-clipboard-context = {
-  #   Unit = {
-  #     Description = "Smart Context-Aware Clipboard — AI Action Suggestions";
-  #     After = [ "graphical-session.target" "ollama.service" ];
-  #     PartOf = [ "graphical-session.target" ];
-  #   };
-  #   Service = {
-  #     ExecStart = "${pkgs.bash}/bin/bash %h/.config/ai/clipboard_context.sh";
-  #     Restart = "always";
-  #     RestartSec = "10s";
-  #   };
-  #   Install = {
-  #     WantedBy = [ "graphical-session.target" ];
-  #   };
-  # };
+
 
   # Vector indexer (daily)
   systemd.user.services.ai-vector-indexer = {
@@ -1415,17 +1396,13 @@
     };
   };
 
-  # ═══════════════════════════════════════════════════════════════════════
   # Git AI Hook Integration
-  # ═══════════════════════════════════════════════════════════════════════
 
   programs.git.hooks.prepare-commit-msg = pkgs.writeShellScript "git-prepare-commit-msg" ''
     exec ~/.config/ai/git-prepare-commit-msg.sh "$@"
   '';
 
-  # ═══════════════════════════════════════════════════════════════════════
   # Nushell AI Shell Functions
-  # ═══════════════════════════════════════════════════════════════════════
 
   programs.nushell.extraConfig = ''
     # ── AI Session Helpers ──

@@ -23,15 +23,16 @@
     home-manager,
     ...
   } @ inputs: let
-    # Shared Home Manager Userland Module for consistent desktop & shell experience across all machines
+    user = "justkowal";
+
+    # Shared Home Manager Userland Module
     sharedHomeManagerModule = {
       home-manager.useGlobalPkgs = true;
       home-manager.useUserPackages = true;
-      home-manager.users.justkowal = import ./hosts/desktop/home.nix;
+      home-manager.users.${user} = import ./hosts/desktop/home.nix;
     };
   in {
-    nixosConfigurations = rec {
-      # 1. Bare-metal Desktop Host Target (AMD Ryzen + Radeon RX 6700 XT + Custom LTO Kernel)
+    nixosConfigurations = {
       desktop = nixpkgs.lib.nixosSystem {
         specialArgs = {inherit inputs;};
         modules = [
@@ -41,9 +42,7 @@
           sharedHomeManagerModule
         ];
       };
-      nixos-desktop = desktop;
 
-      # 2. Virtual Machine Host Target (QEMU/KVM/VirtualBox Integration + Shared Userland)
       vm = nixpkgs.lib.nixosSystem {
         specialArgs = {inherit inputs;};
         modules = [
@@ -54,7 +53,6 @@
         ];
       };
 
-      # 3. Laptop Host Target (TLP Battery Management + Touchpad + Shared Userland)
       laptop = nixpkgs.lib.nixosSystem {
         specialArgs = {inherit inputs;};
         modules = [
@@ -65,7 +63,6 @@
         ];
       };
 
-      # 4. Custom Bootable USB ISO Installer Target (with interactive TUI wizard & partitioning)
       iso = nixpkgs.lib.nixosSystem {
         specialArgs = {inherit inputs;};
         modules = [
@@ -74,5 +71,8 @@
         ];
       };
     };
+
+    # Alias for desktop target
+    nixosConfigurations.nixos-desktop = self.nixosConfigurations.desktop;
   };
 }
