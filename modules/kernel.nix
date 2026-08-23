@@ -9,7 +9,7 @@
       ignoreConfigErrors = true;
 
       # Zen 3 (5700X) tuned compilation
-      extraMakeFlags = [ "KCFLAGS+=-march=znver3" "KCFLAGS+=-mtune=znver3" ];
+      extraMakeFlags = [ "KCFLAGS+=-O3 -march=znver3 -mtune=znver3 -fno-semantic-interposition" ];
 
       structuredExtraConfig = with lib.kernel; {
         # Clang ThinLTO
@@ -26,6 +26,7 @@
         HZ_1000 = yes;
         PREEMPT = yes;
         SCHED_AUTOGROUP = no;
+        FAIR_GROUP_SCHED = no;
         RCU_EXPERT = yes;
         RCU_BOOST = yes;
 
