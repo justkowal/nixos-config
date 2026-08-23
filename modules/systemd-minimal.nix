@@ -14,6 +14,8 @@
     Storage=volatile
     SystemMaxUse=50M
     RuntimeMaxUse=50M
+    SyncIntervalSec=5m
+    MaxRetentionSec=14day
   '';
 
   systemd.targets.network-online.wantedBy = lib.mkForce [];
