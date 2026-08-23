@@ -1,7 +1,7 @@
 { config, pkgs, lib, ... }:
 
 {
-  zramSwap = { enable = true; algorithm = "zstd"; memoryPercent = 50; priority = 10; };
+  zramSwap = { enable = true; algorithm = "lz4"; memoryPercent = 50; priority = 10; };
 
   services.dbus.implementation = "broker";
 
@@ -12,8 +12,11 @@
     "net.ipv4.tcp_slow_start_after_idle" = 0;
     "net.ipv4.tcp_tw_reuse" = 1;
     "net.ipv4.tcp_fin_timeout" = 15;
+    "net.ipv4.tcp_fastopen" = 3;
     "net.core.rmem_max" = 16777216;
     "net.core.wmem_max" = 16777216;
+    "net.core.netdev_max_backlog" = 16384;
+    "net.ipv4.tcp_max_syn_backlog" = 8192;
 
     "vm.swappiness" = 180;
     "vm.vfs_cache_pressure" = 100;
@@ -35,6 +38,10 @@
 
   boot.kernelParams = [
     "amd_pstate=active"
+    "amd_pstate.epp=performance"
+    "nmi_watchdog=0"
+    "split_lock_detect=off"
+    "skew_tick=1"
     "clocksource=tsc"
     "tsc=reliable"
     "quiet"
@@ -74,10 +81,11 @@
     NH_FLAKE = "/etc/nixos";
 
     AMD_VULKAN_ICD = "RADV";
-    RADV_PERFTEST = "gpa_bo,sam,nggc";
+    RADV_PERFTEST = "gpa_bo,sam,nggc,csworkgroups";
 
     MESA_SHADER_CACHE_DIR = "/home/justkowal/.cache/mesa_shader_cache";
     MESA_SHADER_CACHE_MAX_SIZE = "10G";
+    MESA_DISK_CACHE_SINGLE_FILE = "1";
     __GL_SHADER_DISK_CACHE = "1";
     __GL_SHADER_DISK_CACHE_SKIP_CLEANUP = "1";
   };

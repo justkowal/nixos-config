@@ -13,6 +13,10 @@
   boot.initrd.verbose = false;
   boot.consoleLogLevel = 0;
 
+  # RAM-backed /tmp for high-speed scratch and build I/O
+  boot.tmp.useTmpfs = true;
+  boot.tmp.tmpfsSize = "75%";
+
   # Avoid slow early boot VFAT write syncs
   systemd.services.systemd-boot-random-seed.enable = false;
 }
