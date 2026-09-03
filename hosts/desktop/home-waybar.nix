@@ -161,6 +161,7 @@ in
         drawer = {
           transition-duration = 500;
           transition-left-to-right = false;
+          click-to-reveal = true;
         };
         modules = [
           "custom/hw_trigger"
@@ -175,6 +176,7 @@ in
         drawer = {
           transition-duration = 500;
           transition-left-to-right = false;
+          click-to-reveal = true;
         };
         modules = [
           "custom/sys_trigger"
@@ -237,6 +239,7 @@ in
       #custom-hw_trigger, #custom-sys_trigger {
         color: @primary;
         font-size: 15px;
+        box-shadow: -16px 0px 18px -4px @background;
       }
 
       #custom-notification { color: @primary; }

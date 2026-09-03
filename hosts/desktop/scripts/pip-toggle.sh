@@ -15,7 +15,8 @@ workspace=$(hyprctl clients -j | jq -r ".[] | select(.address==\"$pip_address\")
 if [ "${1:-}" == "toggle" ]; then
     if [[ "$workspace" == "special:pip" ]]; then
         # Move it to current workspace
-        hyprctl dispatch movetoworkspace e+0,address:"$pip_address"
+        current_workspace=$(hyprctl activeworkspace -j | jq -r '.id')
+        hyprctl dispatch movetoworkspace "$current_workspace,address:$pip_address"
     else
         # Move it to special workspace
         hyprctl dispatch movetoworkspacesilent special:pip,address:"$pip_address"
