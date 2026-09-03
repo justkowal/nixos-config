@@ -92,9 +92,9 @@ in
       "custom/update" = {
         exec = pkgs.writeShellScript "check-update" ''
           if [ -f /var/tmp/nixos-pending-update.ready ]; then
-            echo '{"text": "󰚰 Update Ready", "class": "ready", "tooltip": "Pre-built update staged!\nClick to review package diff and switch."}'
+            ${pkgs.jq}/bin/jq -n -c --arg text "󰚰 Update Ready" --arg class "ready" --arg tooltip "Pre-built update staged!&#x0a;Click to review package diff and switch." '{text: $text, class: $class, tooltip: $tooltip}'
           else
-            echo '{"text": "󰚰", "class": "idle", "tooltip": "NixOS Auto-Updater Idle / Up to date.\nClick to check & stage update now."}'
+            ${pkgs.jq}/bin/jq -n -c --arg text "󰚰" --arg class "idle" --arg tooltip "NixOS Auto-Updater Idle / Up to date.&#x0a;Click to check & stage update now." '{text: $text, class: $class, tooltip: $tooltip}'
           fi
         '';
         interval = 10;

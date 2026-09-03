@@ -22,8 +22,8 @@ if [ "${1:-}" == "toggle" ]; then
     fi
 else
     if [[ "$workspace" == "special:pip" ]]; then
-        printf '%s\n' '{"text": "󰗡 ", "class": "hidden", "tooltip": "PIP Hidden\nClick to show"}'
+        printf '%s\n' '{"text": "󰗡 ", "class": "hidden", "tooltip": "PIP Hidden\\nClick to show"}'
     else
-        printf '%s\n' '{"text": "󰗡 ", "class": "visible", "tooltip": "PIP Visible\nClick to hide"}'
+        printf '%s\n' '{"text": "󰗡 ", "class": "visible", "tooltip": "PIP Visible\\nClick to hide"}'
     fi
 fi
