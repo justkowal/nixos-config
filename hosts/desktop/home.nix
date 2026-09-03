@@ -28,6 +28,8 @@ in
       mkdir -p ${homeDir}/.local/share/FreeCAD/v1-1/Gui/Stylesheets
       mkdir -p ${homeDir}/.config/kicad/10.0/colors
       mkdir -p ${homeDir}/.local/share/Steam/steamui/skins
+      mkdir -p ${homeDir}/.local/share/millennium
+      ln -sfn ${homeDir}/.local/share/Steam/steamui/skins ${homeDir}/.local/share/millennium/themes
 
       THEME_DIR="${homeDir}/.local/share/Steam/steamui/skins/Material-Theme"
       if [ ! -d "$THEME_DIR" ]; then
@@ -55,6 +57,10 @@ in
     GTK_THEME = "Adwaita:dark";
     MANGOHUD_CONFIGFILE = "${homeDir}/.config/MangoHud/MangoHud.conf";
     ANKI_NIGHT_MODE = "1";
+    PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+    PLAYWRIGHT_DRIVER_PATH = "${pkgs.playwright-driver}";
+    PLAYWRIGHT_DRIVER_DOWNLOAD_HOST = "";
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
   };
 
   home.packages = with pkgs; [
@@ -72,6 +78,14 @@ in
     gnome-control-center
     jq
     ddcutil
+    playwright-driver
+    playwright-driver.browsers
+    easyeffects
+    (buildFHSEnv {
+      name = "playwright-fhs";
+      targetPkgs = pkgs: with pkgs; [ playwright-driver ];
+      runScript = "bash";
+    })
   ];
 
   programs.home-manager.enable = true;

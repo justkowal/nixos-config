@@ -90,19 +90,7 @@ in
           animation = specialWorkspace, 1, 4, bouncy, slidevert
       }
 
-      misc {
-          vrr = 2
-          vfr = true
-      }
 
-      cursor {
-          no_hardware_cursors = false
-      }
-
-      render {
-          direct_scanout = true
-          explicit_sync = 1
-      }
 
       # Autostart
       exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
@@ -224,6 +212,11 @@ in
       submap = reset
 
       # Window rules
+      windowrule = float 1, match:title ^(Picture-in-Picture)$
+      windowrule = size 400 225, match:title ^(Picture-in-Picture)$
+      windowrule = pin 1, match:title ^(Picture-in-Picture)$
+      windowrule = move 100%-412 50, match:title ^(Picture-in-Picture)$
+
       windowrule = float 1, match:class ^(pwvucontrol|com\.saivert\.pwvucontrol)$
       windowrule = size 700 500, match:class ^(pwvucontrol|com\.saivert\.pwvucontrol)$
       windowrule = center 1, match:class ^(pwvucontrol|com\.saivert\.pwvucontrol)$

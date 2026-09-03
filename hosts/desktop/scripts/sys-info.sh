@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Unified CPU + GPU sensor monitor for Waybar (JSON output)
 
+set +e
+set +o pipefail 2>/dev/null || true
+
 # CPU usage over 0.5 seconds
-read -r _ user nice system idle iowait irq softirq steal guest guest_nice < /proc/stat
+read -r _ user nice system idle iowait irq softirq steal _ _ < /proc/stat
 prev_idle=$((idle + iowait))
 prev_non_idle=$((user + nice + system + irq + softirq + steal))
 prev_total=$((prev_idle + prev_non_idle))
 
 sleep 0.5
 
-read -r _ user nice system idle iowait irq softirq steal guest guest_nice < /proc/stat
+read -r _ user nice system idle iowait irq softirq steal _ _ < /proc/stat
 idle=$((idle + iowait))
 non_idle=$((user + nice + system + irq + softirq + steal))
 total=$((idle + non_idle))
@@ -23,33 +26,60 @@ else
     CPU_UTIL=0
 fi
 
-# CPU temperature (k10temp)
-CPU_TEMP_FILE=$(find /sys/class/hwmon/ -name "temp1_input" | grep -v "amdgpu" | grep -v "nvme" | head -n 1)
-CPU_TEMP_DIR=$(grep -l "k10temp" /sys/class/hwmon/hwmon*/name 2>/dev/null | awk -F/ '{print "/sys/class/hwmon/" $5 "/temp1_input"}')
-if [ -f "$CPU_TEMP_DIR" ]; then
-    CPU_TEMP_FILE="$CPU_TEMP_DIR"
-fi
-
+# CPU temperature (k10temp / coretemp / zenpower)
 CPU_TEMP=0
-if [ -f "$CPU_TEMP_FILE" ]; then
-    CPU_TEMP=$(( $(cat "$CPU_TEMP_FILE") / 1000 ))
+CPU_TEMP_FILE=""
+for name_file in /sys/class/hwmon/hwmon*/name; do
+    if [ -f "$name_file" ]; then
+        name=$(cat "$name_file" 2>/dev/null)
+        if [ "$name" = "k10temp" ] || [ "$name" = "coretemp" ] || [ "$name" = "zenpower" ]; then
+            dir=$(dirname "$name_file")
+            if [ -f "$dir/temp1_input" ]; then
+                CPU_TEMP_FILE="$dir/temp1_input"
+                break
+            fi
+        fi
+    fi
+done
+
+# Fallback if specific sensor driver name not found
+if [ -z "$CPU_TEMP_FILE" ]; then
+    for temp_file in /sys/class/hwmon/hwmon*/temp1_input; do
+        if [ -f "$temp_file" ]; then
+            hwmon_dir=$(dirname "$temp_file")
+            name=""
+            [ -f "$hwmon_dir/name" ] && name=$(cat "$hwmon_dir/name" 2>/dev/null)
+            if [ "$name" != "amdgpu" ] && [ "$name" != "nvme" ]; then
+                CPU_TEMP_FILE="$temp_file"
+                break
+            fi
+        fi
+    done
 fi
 
-# GPU utilization and temperature (AMDGPU)
-GPU_BUSY_PATH="/sys/class/drm/card1/device/gpu_busy_percent"
-GPU_TEMP_FILE=$(find /sys/class/drm/card1/device/hwmon/ -name "temp1_input" 2>/dev/null | head -n 1)
+if [ -n "$CPU_TEMP_FILE" ] && [ -f "$CPU_TEMP_FILE" ]; then
+    CPU_TEMP=$(( $(cat "$CPU_TEMP_FILE" 2>/dev/null || echo 0) / 1000 ))
+fi
 
+# GPU utilization and temperature (AMDGPU dynamic card lookup)
 GPU_UTIL=0
-if [ -f "$GPU_BUSY_PATH" ]; then
-    GPU_UTIL=$(cat "$GPU_BUSY_PATH")
-fi
-
 GPU_TEMP=0
-if [ -f "$GPU_TEMP_FILE" ]; then
-    GPU_TEMP=$(( $(cat "$GPU_TEMP_FILE") / 1000 ))
-fi
 
-TEXT=" ${CPU_UTIL}% (${CPU_TEMP}°C)  󰾲 ${GPU_UTIL}% (${GPU_TEMP}°C)"
+for card_dev in /sys/class/drm/card*/device; do
+    if [ -f "$card_dev/gpu_busy_percent" ]; then
+        GPU_UTIL=$(cat "$card_dev/gpu_busy_percent" 2>/dev/null || echo 0)
+    fi
+    for temp_file in "$card_dev"/hwmon/hwmon*/temp1_input; do
+        if [ -f "$temp_file" ]; then
+            GPU_TEMP=$(( $(cat "$temp_file" 2>/dev/null || echo 0) / 1000 ))
+            break
+        fi
+    done
+done
+
+TEXT="󰻠 ${CPU_UTIL}% (${CPU_TEMP}°C)  󰾲 ${GPU_UTIL}% (${GPU_TEMP}°C)"
 TOOLTIP=$(printf "System Status:\n\nCPU Usage: %s%%\nCPU Temp: %s°C\n\nGPU Usage: %s%%\nGPU Temp: %s°C" "$CPU_UTIL" "$CPU_TEMP" "$GPU_UTIL" "$GPU_TEMP")
 
 jq -n -c --arg text "$TEXT" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}'
+
+

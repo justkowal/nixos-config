@@ -1,4 +1,4 @@
-{ ... }:
+{ pkgs, ... }:
 
 {
   boot.loader.systemd-boot.enable = true;
@@ -8,7 +8,7 @@
   boot.supportedFilesystems = [ "bcachefs" ];
 
   boot.initrd.systemd.enable = true;
-  boot.initrd.compressor = "lz4";
+  boot.initrd.compressor = "${pkgs.lz4.out}/bin/lz4 -l -9";
   boot.initrd.includeDefaultModules = false;
   boot.initrd.verbose = false;
   boot.consoleLogLevel = 0;

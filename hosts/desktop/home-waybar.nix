@@ -12,9 +12,15 @@ let
     runtimeInputs = with pkgs; [ jq coreutils libnotify ];
     text = builtins.readFile ./scripts/pomodoro.sh;
   };
+
+  pip-toggle = pkgs.writeShellApplication {
+    name = "pip-toggle";
+    runtimeInputs = with pkgs; [ jq hyprland coreutils ];
+    text = builtins.readFile ./scripts/pip-toggle.sh;
+  };
 in
 {
-  home.packages = [ sys-info pomodoro ];
+  home.packages = [ sys-info pomodoro pip-toggle ];
 
   programs.waybar = {
     enable = true;
@@ -31,7 +37,7 @@ in
       margin-right = 12;
       modules-left = [ "hyprland/workspaces" "hyprland/submap" ];
       modules-center = [ "clock" "custom/pomodoro" "clock#date" ];
-      modules-right = [ "mpris" "idle_inhibitor" "custom/sysinfo" "memory" "disk" "pulseaudio" "network" "custom/notification" "tray" "custom/power" ];
+      modules-right = [ "mpris" "idle_inhibitor" "custom/sysinfo" "memory" "disk" "pulseaudio" "network" "custom/update" "custom/pip" "custom/notification" "tray" "custom/power" ];
 
       "hyprland/workspaces" = {
         disable-scroll = true;
@@ -50,7 +56,7 @@ in
       "mpris" = {
         format = "{player_icon} {title} - {artist}";
         format-paused = "{status_icon} <i>{title} - {artist}</i>";
-        player-icons = { default = "󰎆 "; spotify = " "; };
+        player-icons = { default = "󰎆 "; spotify = " "; };
         status-icons = { paused = "󰏤 "; };
         on-click = "playerctl play-pause";
         on-click-right = "playerctl next";
@@ -75,13 +81,33 @@ in
       };
 
       "custom/sysinfo" = {
-        exec = "sys-info";
+        exec = "${sys-info}/bin/sys-info";
         interval = 2;
         return-type = "json";
         format = "{}";
       };
 
-      "memory" = { format = " {percentage}%"; };
+      "memory" = { format = "󰍛 {percentage}%"; };
+
+      "custom/update" = {
+        exec = pkgs.writeShellScript "check-update" ''
+          if [ -f /var/tmp/nixos-pending-update.ready ]; then
+            echo '{"text": "󰚰 Update Ready", "class": "ready", "tooltip": "Pre-built update staged!\nClick to review package diff and switch."}'
+          else
+            echo '{"text": "󰚰", "class": "idle", "tooltip": "NixOS Auto-Updater Idle / Up to date.\nClick to check & stage update now."}'
+          fi
+        '';
+        interval = 10;
+        return-type = "json";
+        on-click = pkgs.writeShellScript "handle-update-click" ''
+          if [ -f /var/tmp/nixos-pending-update.ready ]; then
+            kitty --class update_review -e nixos-update-apply
+          else
+            kitty --class update_stage -e nixos-update-stage
+          fi
+        '';
+        signal = 8;
+      };
 
       "custom/notification" = {
         tooltip = false;
@@ -110,6 +136,14 @@ in
         on-click = "pomodoro toggle";
         on-click-middle = "pomodoro reset";
         on-click-right = "pomodoro skip";
+      };
+
+      "custom/pip" = {
+        exec = "pip-toggle";
+        interval = 1;
+        return-type = "json";
+        format = "{}";
+        on-click = "pip-toggle toggle";
       };
     }];
 
@@ -150,7 +184,7 @@ in
         background-color: @surface_variant;
       }
 
-      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-power, #custom-pomodoro {
+      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-power, #custom-pomodoro, #custom-update, #custom-pip {
         padding: 0 16px;
         margin: 4px 2px;
         background-color: alpha(@surface_variant, 0.82);
@@ -158,9 +192,13 @@ in
       }
 
       #custom-notification { color: @primary; }
+      #custom-update { color: @tertiary; }
+      #custom-update.ready { color: @primary; background-color: alpha(@primary, 0.25); }
       #custom-pomodoro.work { color: @error; }
       #custom-pomodoro.break { color: @primary; }
       #custom-pomodoro.paused { color: @on_surface_variant; }
+      #custom-pip { color: @secondary; }
+      #custom-pip.hidden { color: @on_surface_variant; }
 
       #submap {
         padding: 0 12px;
