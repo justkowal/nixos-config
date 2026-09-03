@@ -12,14 +12,22 @@ fi
 # Get its workspace
 workspace=$(hyprctl clients -j | jq -r ".[] | select(.address==\"$pip_address\") | .workspace.name")
 
+is_pinned=$(hyprctl clients -j | jq -r ".[] | select(.address==\"$pip_address\") | .pinned")
+
 if [ "${1:-}" == "toggle" ]; then
     if [[ "$workspace" == "special:pip" ]]; then
         # Move it to current workspace
         current_workspace=$(hyprctl activeworkspace -j | jq -r '.id')
-        hyprctl dispatch movetoworkspace "$current_workspace,address:$pip_address"
+        hyprctl dispatch movetoworkspacesilent "$current_workspace,address:$pip_address"
+        if [ "$is_pinned" == "false" ]; then
+            hyprctl dispatch pin "address:$pip_address"
+        fi
     else
         # Move it to special workspace
-        hyprctl dispatch movetoworkspacesilent special:pip,address:"$pip_address"
+        if [ "$is_pinned" == "true" ]; then
+            hyprctl dispatch pin "address:$pip_address"
+        fi
+        hyprctl dispatch movetoworkspacesilent "special:pip,address:$pip_address"
     fi
 else
     if [[ "$workspace" == "special:pip" ]]; then
