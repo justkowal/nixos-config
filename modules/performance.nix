@@ -1,7 +1,7 @@
 { config, pkgs, lib, ... }:
 
 {
-  zramSwap = { enable = true; algorithm = "lz4"; memoryPercent = 50; priority = 10; };
+  zramSwap = { enable = true; algorithm = "zstd"; memoryPercent = 50; priority = 10; };
 
   services.dbus.implementation = "broker";
 
@@ -23,11 +23,11 @@
     "net.core.netdev_max_backlog" = 16384;
     "net.ipv4.tcp_max_syn_backlog" = 8192;
 
-    "vm.swappiness" = 180;
+    "vm.swappiness" = 100;
     "vm.vfs_cache_pressure" = 100;
     "vm.dirty_background_ratio" = 5;
     "vm.dirty_ratio" = 10;
-    "vm.compaction_proactiveness" = 20;
+    "vm.compaction_proactiveness" = 10;
     "vm.watermark_boost_factor" = 0;
 
     "fs.file-max" = 2097152;

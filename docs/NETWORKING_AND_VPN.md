@@ -1,134 +1,69 @@
-# Networking, Security & Network Namespace VPN Manual
+# Networking, Security & VPN Namespace
 
-This document provides a 100% exhaustive reference manual for network interfaces, DNS, Tailscale, Syncthing, system firewall rules, isolated network namespaces (`vpnns`), OpenVPN, and headless qBittorrent defined in `modules/networking.nix` and `modules/vpn.nix`.
+This document outlines the host networking configuration, mesh VPNs (Tailscale), file synchronization (Syncthing), and the strict Linux Network Namespace (`vpnns`) used to isolate torrent traffic.
 
----
+## Host Networking Infrastructure
 
-## 1. System Networking Infrastructure (`modules/networking.nix`)
+*   **DNS Resolution**: Cloudflare Secure DNS (`1.1.1.1`, `1.0.0.1`).
+*   **Firewall**: System ingress firewall is enabled by default.
+*   **Mesh VPN**: Tailscale is enabled, and `tailscale0` is trusted by the firewall to allow seamless multi-device connectivity.
+*   **Syncthing**: Decentralized file sync runs as the local user, syncing `/home/justkowal/Sync`.
 
-- **Host Identifier**: `networking.hostName = "nixos-desktop"`.
-- **Network Manager**: `networking.networkmanager.enable = true` (manages Ethernet & Wi-Fi interfaces).
-- **DNS Resolution**:
-  - Cloudflare Secure DNS Primary: `1.1.1.1`
-  - Cloudflare Secure DNS Secondary: `1.0.0.1`
-  - Specified via `networking.nameservers = [ "1.1.1.1" "1.0.0.1" ]`.
-- **System Ingress Firewall**:
-  - `networking.firewall.enable = true`
-  - `trustedInterfaces = [ "tailscale0" ]` (Tailscale mesh network interface bypasses local firewall filters).
+## Isolated Network Namespace (`vpnns`)
 
----
+To guarantee absolute privacy and prevent DNS or IP leaks, torrent traffic is isolated inside a dedicated Linux Network Namespace.
 
-## 2. Mesh VPN & File Synchronization (`modules/networking.nix`)
+> [!CAUTION]
+> Traffic originating inside `vpnns` cannot escape to the host network unless it is traversing the encrypted `tun0` interface.
 
-### Tailscale Mesh Network (`services.tailscale`)
-- Service enabled system-wide.
-- Interface `tailscale0` added to trusted firewall interfaces for multi-device connectivity.
+```mermaid
+graph TD
+    subgraph Host Network
+        A[Local Subnet]
+        B[Web Browser]
+        C[veth-host 10.200.1.1]
+    end
 
-### Syncthing Decentralized File Sync (`services.syncthing`)
-- User: `justkowal`
-- Data Directory: `/home/justkowal/Sync`
-- Configuration Directory: `/home/justkowal/.config/syncthing`
+    subgraph vpnns Namespace
+        D[veth-ns 10.200.1.2]
+        E[OpenVPN Daemon]
+        F[tun0 Interface]
+        G[qBittorrent Daemon]
+        H[iptables Kill-Switch]
+    end
 
----
-
-## 3. Isolated Network Namespace VPN Architecture (`modules/vpn.nix`)
-
-To guarantee absolute privacy, torrenting and VPN traffic are isolated inside a dedicated Linux Network Namespace named **`vpnns`**. This completely prevents IP leaks, DNS leaks, or unencrypted traffic escaping to the host network.
-
-```
-┌────────────────────────────────────────────────────────────────────────────────┐
-│ Host Environment (10.200.1.1 on veth-host)                                      │
-│  - System Firewall & Main Default Gateway                                      │
-│  - Web Browser / Local GUI Apps                                                │
-│                                                                                │
-│   ▲                                                  ▲                         │
-│   │ (veth-host <--> veth-ns)                         │ (Port 8080 WebUI)       │
-│   ▼                                                  ▼                         │
-│ ┌────────────────────────────────────────────────────────────────────────────┐ │
-│ │ Network Namespace: vpnns (10.200.1.2 on veth-ns)                           │ │
-│ │                                                                            │ │
-│ │  1. OpenVPN Client Service (vpnns-openvpn.service)                         │ │
-│ │     - Config: ~/.config/openvpn-config.ovpn                                │ │
-│ │     - Establishes encrypted tun0 tunnel                                   │ │
-│ │                                                                            │ │
-│ │  2. Headless qBittorrent Service (services.qbittorrent)                    │ │
-│ │     - Bound exclusively to interface: tun0                                 │ │
-│ │     - WebUI Port: 8080 (Whitelisted for 10.200.1.0/24 subnet)             │ │
-│ │                                                                            │ │
-│ │  3. Strict iptables Firewall Rules (Kill-Switch)                           │ │
-│ │     - INPUT / OUTPUT / FORWARD default policy: DROP                        │ │
-│ │     - Traffic ONLY allowed on loopback (lo), tun+, or veth-ns subnet       │ │
-│ └────────────────────────────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────────────────────────┘
+    C <-->|NAT Routing| D
+    D <--> E
+    E <-->|Encrypted Tunnel| F
+    G <-->|Bound to| F
+    H -.->|Enforces| F
 ```
 
-### Namespace Setup (`systemd.services.vpnns`)
-- **Type**: `oneshot` (`RemainAfterExit = true`).
-- **Creation Commands**:
-  ```bash
-  ip netns add vpnns
-  ip netns exec vpnns ip link set lo up
-  ip link add veth-host type veth peer name veth-ns
-  ip link set veth-ns netns vpnns
-  ip addr add 10.200.1.1/24 dev veth-host
-  ip link set veth-host up
-  ip netns exec vpnns ip addr add 10.200.1.2/24 dev veth-ns
-  ip netns exec vpnns ip link set veth-ns up
-  ip netns exec vpnns ip route add default via 10.200.1.1
-  ```
+### Namespace Architecture
 
-### Namespace Firewall & Kill-Switch Rules (iptables)
-Executing inside `vpnns`:
-1. Default Policy: `INPUT DROP`, `OUTPUT DROP`, `FORWARD DROP`.
-2. Allow loopback: `lo` in/out ACCEPT.
-3. Allow established state: `-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT`.
-4. Allow VPN tunnel traffic: `-i tun+ -j ACCEPT` and `-o tun+ -j ACCEPT`.
-5. Allow root process to initiate tunnel: `-o veth-ns -m owner --uid-owner 0 -j ACCEPT`.
-6. Allow local subnet for host WebUI access: `-s 10.200.1.0/24` and `-d 10.200.1.0/24` on `veth-ns` ACCEPT.
+*   **Virtual Ethernet Pairs**: `veth-host` on the host side routes NAT traffic to `veth-ns` inside the namespace (`10.200.1.0/24` subnet).
+*   **DNS**: Forced to Cloudflare (`1.1.1.1`) inside the namespace via `/etc/netns/vpnns/resolv.conf`.
+*   **iptables Kill-Switch**:
+    *   Default policy drops ALL traffic.
+    *   Allows loopback (`lo`).
+    *   Allows traffic on the `tun+` interface.
+    *   Allows traffic bound for the local `10.200.1.0/24` subnet (to permit WebUI access from the host browser).
 
-### OpenVPN Daemon inside Namespace (`systemd.services.vpnns-openvpn`)
-- **Dependencies**: `after = [ "vpnns.service" ]`, `requires = [ "vpnns.service" ]`.
-- **Command**: `ip netns exec vpnns openvpn --config /home/justkowal/.config/openvpn-config.ovpn`.
-- **Restart Policy**: `Restart = "always"`, `RestartSec = 5`.
+### OpenVPN & qBittorrent
 
-### Headless qBittorrent Daemon (`services.qbittorrent`)
-- **User/Group**: `justkowal` / `users`.
-- **Profile Directory**: `/var/lib/qBittorrent`.
-- **WebUI Port**: `8080`.
-- **Bound Network Interface**: `tun0` (`Preferences.Connection.Interface = "tun0"`).
-- **WebUI Subnet Whitelist**: `10.200.1.0/24` (`AuthSubnetWhitelistEnabled = true`).
-- **Download Save Path**: `/home/justkowal/Downloads`.
-- **Namespace Binding (`systemd.services.qbittorrent`)**:
-  - `bindsTo = [ "vpnns-openvpn.service" ]`
-  - `after = [ "vpnns-openvpn.service" ]`
-  - `serviceConfig.NetworkNamespacePath = "/var/run/netns/vpnns"`
-  - `serviceConfig.ProtectHome = pkgs.lib.mkForce "no"`
+> [!IMPORTANT]
+> The `qbittorrent` systemd service is explicitly bound to the `vpnns-openvpn.service` and executes inside `/var/run/netns/vpnns`.
 
-### Host NAT & DNS inside Namespace
-- **Host NAT**: `networking.nat.enable = true`, `internalInterfaces = [ "veth-host" ]`.
-- **Namespace DNS**: Defined at `/etc/netns/vpnns/resolv.conf`:
-  ```ini
-  nameserver 1.1.1.1
-  nameserver 1.0.0.1
-  ```
+*   **OpenVPN**: Runs continuously inside `vpnns`, establishing the `tun0` tunnel using `openvpn-config.ovpn`.
+*   **qBittorrent (Headless)**: Binds exclusively to `tun0`. The WebUI operates on port `8080`, allowing the host browser to connect.
 
-### Passwordless Sudo Rule (`security.sudo.extraRules`)
-Allows user `justkowal` to launch diagnostic commands or GUI apps inside the namespace without typing password:
-```nix
-{
-  users = [ "justkowal" ];
-  commands = [
-    {
-      command = "${pkgs.iproute2}/bin/ip netns exec vpnns *";
-      options = [ "NOPASSWD" ];
-    }
-  ];
-}
-```
+### GUI Application Wrapper
 
-### GUI App Wrapper (`qbittorrent-vpn`)
-Available in PATH:
+To launch applications inside the VPN namespace with full GUI support (X11/Wayland variables passed through):
+
 ```bash
+# Launches the qbittorrent GUI inside the namespace
 qbittorrent-vpn
-# Executes: sudo ip netns exec vpnns sudo -u justkowal env DISPLAY="$DISPLAY" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" qbittorrent "$@"
 ```
+
+This is facilitated by a targeted `sudo` rule allowing passwordless execution of `ip netns exec vpnns`.

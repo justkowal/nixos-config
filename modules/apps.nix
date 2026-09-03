@@ -38,6 +38,7 @@
     restic
     tesseract
     kicad
+    qmapshack
 
     (texlive.combine { inherit (pkgs.texlive) scheme-medium cancel physics siunitx mathtools tcolorbox environ; })
     anki
@@ -49,16 +50,11 @@
     macchina
     nix-search-cli
 
-    # Dolphin file manager + KDE integration
-    kdePackages.dolphin
-    kdePackages.qtsvg
-    kdePackages.kio
-    kdePackages.kio-fuse
-    kdePackages.kio-extras
-    kdePackages.dolphin-plugins
-    kdePackages.ffmpegthumbs
-    kdePackages.kdegraphics-thumbnailers
-    kdePackages.ark
+    # GNOME Nautilus file manager (lightweight GTK replacement for Dolphin)
+    nautilus
+    nautilus-python
+    sushi
+    file-roller
 
     inputs.antigravity-nix.packages.${pkgs.stdenv.hostPlatform.system}.default
     inputs.antigravity-nix.packages.${pkgs.stdenv.hostPlatform.system}.google-antigravity-ide

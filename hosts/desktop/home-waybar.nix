@@ -37,7 +37,7 @@ in
       margin-right = 12;
       modules-left = [ "hyprland/workspaces" "hyprland/submap" ];
       modules-center = [ "clock" "custom/pomodoro" "clock#date" ];
-      modules-right = [ "mpris" "idle_inhibitor" "custom/sysinfo" "memory" "disk" "pulseaudio" "network" "custom/update" "custom/pip" "custom/notification" "tray" "custom/power" ];
+      modules-right = [ "mpris" "group/system" "group/hardware" "pulseaudio" "custom/pip" "custom/notification" "custom/power" ];
 
       "hyprland/workspaces" = {
         disable-scroll = true;
@@ -145,6 +145,45 @@ in
         format = "{}";
         on-click = "pip-toggle toggle";
       };
+
+      "custom/hw_trigger" = {
+        format = "󰻠";
+        tooltip = false;
+      };
+
+      "custom/sys_trigger" = {
+        format = "󰒓";
+        tooltip = false;
+      };
+
+      "group/hardware" = {
+        orientation = "inherit";
+        drawer = {
+          transition-duration = 500;
+          transition-left-to-right = false;
+        };
+        modules = [
+          "custom/hw_trigger"
+          "custom/sysinfo"
+          "memory"
+          "disk"
+        ];
+      };
+
+      "group/system" = {
+        orientation = "inherit";
+        drawer = {
+          transition-duration = 500;
+          transition-left-to-right = false;
+        };
+        modules = [
+          "custom/sys_trigger"
+          "network"
+          "custom/update"
+          "idle_inhibitor"
+          "tray"
+        ];
+      };
     }];
 
     style = ''
@@ -184,11 +223,20 @@ in
         background-color: @surface_variant;
       }
 
-      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-power, #custom-pomodoro, #custom-update, #custom-pip {
+      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-power, #custom-pomodoro, #custom-update, #custom-pip, #custom-hw_trigger, #custom-sys_trigger {
         padding: 0 16px;
         margin: 4px 2px;
         background-color: alpha(@surface_variant, 0.82);
         border-radius: 12px;
+      }
+
+      window#waybar group.hardware, window#waybar group.system {
+        background-color: transparent;
+      }
+
+      #custom-hw_trigger, #custom-sys_trigger {
+        color: @primary;
+        font-size: 15px;
       }
 
       #custom-notification { color: @primary; }

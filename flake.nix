@@ -3,6 +3,8 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
+    # Pinned kernel input: isolated from general package updates so custom kernel never rebuilds unexpectedly
+    nixpkgs-kernel.url = "github:nixos/nixpkgs/5880666fd9eb563038431edb35c2d0aa595884e6";
     millennium = {
       url = "github:SteamClientHomebrew/Millennium?dir=packages/nix";
       inputs.nixpkgs.follows = "nixpkgs";
