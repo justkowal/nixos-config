@@ -19,8 +19,8 @@
 
   fileSystems."/" = {
     device = "/dev/disk/by-label/nixos";
-    fsType = "ext4";
-    options = ["noatime"];
+    fsType = "btrfs";
+    options = [ "compress=zstd" "noatime" "discard=async" ];
   };
 
   fileSystems."/boot/efi" = {

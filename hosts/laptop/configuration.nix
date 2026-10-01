@@ -6,6 +6,7 @@
 }: {
   imports = [
     ./hardware-configuration.nix
+    ../../modules/overlays.nix
     ../../modules/boot.nix
     ../../modules/locale.nix
     ../../modules/user.nix

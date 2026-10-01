@@ -32,8 +32,8 @@
         TRANSPARENT_HUGEPAGE_MADVISE = yes;
 
         # Keep responsiveness without desktop-only over-pruning
-        HZ_1000 = yes;
-        PREEMPT = yes;
+        HZ_300 = yes;
+        PREEMPT_VOLUNTARY = yes;
         SCHED_AUTOGROUP = yes;
         FAIR_GROUP_SCHED = yes;
         RCU_EXPERT = yes;
@@ -82,7 +82,7 @@ in {
 
   boot.kernelParams = [
     "amd_pstate=active"
-    "amd_pstate.epp=balance_performance"
+    "amd_pstate.epp=power"
     "transparent_hugepage=madvise"
     "preempt=full"
   ];
