@@ -40,5 +40,6 @@
 
   environment.interactiveShellInit = ''
     alias fallback-bash="exec ${pkgs.bashInteractive}/bin/bash"
+    alias discord="vesktop"
   '';
 }

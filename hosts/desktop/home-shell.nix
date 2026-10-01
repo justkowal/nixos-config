@@ -27,6 +27,7 @@
         }
       }
 
+      alias discord = vesktop
     '';
   };
 

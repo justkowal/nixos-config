@@ -202,6 +202,22 @@
     createDirectories = true;
   };
 
+  xdg.desktopEntries.discord = {
+    name = "Discord";
+    genericName = "All-in-one cross-platform voice and text chat";
+    comment = "All-in-one voice and text chat (Vesktop)";
+    exec = "vesktop %U";
+    icon = "vesktop";
+    terminal = false;
+    type = "Application";
+    categories = [ "Network" "InstantMessaging" "Chat" ];
+    mimeType = [ "x-scheme-handler/discord" ];
+    settings = {
+      Keywords = "discord;vencord;electron;chat";
+      StartupWMClass = "Vesktop";
+    };
+  };
+
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
@@ -244,7 +260,7 @@
       "application/x-compressed-tar" = [ "org.gnome.FileRoller.desktop" ];
       "application/x-xz" = [ "org.gnome.FileRoller.desktop" ];
       "application/x-rar" = [ "org.gnome.FileRoller.desktop" ];
-      "inode/directory" = [ "org.gnome.Nautilus.desktop" ];
+      "inode/directory" = [ "thunar.desktop" ];
       "text/plain" = [ "code.desktop" ];
       "text/markdown" = [ "code.desktop" ];
       "application/json" = [ "code.desktop" ];

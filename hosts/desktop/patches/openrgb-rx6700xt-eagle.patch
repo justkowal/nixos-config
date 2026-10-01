@@ -1,0 +1,24 @@
+diff --git a/Controllers/GigabyteRGBFusion2GPUController/GigabyteRGBFusion2GPUControllerDetect.cpp b/Controllers/GigabyteRGBFusion2GPUController/GigabyteRGBFusion2GPUControllerDetect.cpp
+index 07c39cd1ac..3faee47f5b 100644
+--- a/Controllers/GigabyteRGBFusion2GPUController/GigabyteRGBFusion2GPUControllerDetect.cpp
++++ b/Controllers/GigabyteRGBFusion2GPUController/GigabyteRGBFusion2GPUControllerDetect.cpp
+@@ -170,6 +170,7 @@ REGISTER_I2C_PCI_DETECTOR("Gigabyte AORUS GeForce RTX 5090 MASTER ICE",
+ REGISTER_I2C_PCI_DETECTOR("Gigabyte Radeon RX 7600 GAMING OC 8G",                      DetectGigabyteRGBFusion2GPUControllers, AMD_GPU_VEN, AMD_NAVI33_DEV,            GIGABYTE_SUB_VEN,   GIGABYTE_RX7600_GAMING_OC_8G_SUB_DEV,           0x55);
+ REGISTER_I2C_PCI_DETECTOR("Gigabyte Radeon RX 7600 GAMING OC 8G",                      DetectGigabyteRGBFusion2GPUControllers, AMD_GPU_VEN, AMD_NAVI33_DEV,            GIGABYTE_SUB_VEN,   GIGABYTE_RX7600_GAMING_OC_8G_SUB_DEV2,          0x55);
+ REGISTER_I2C_PCI_DETECTOR("Gigabyte Radeon RX 7600 XT GAMING OC 16G",                  DetectGigabyteRGBFusion2GPUControllers, AMD_GPU_VEN, AMD_NAVI33_DEV,            GIGABYTE_SUB_VEN,   GIGABYTE_RX7600XT_GAMING_OC_16G_SUB_DEV,        0x55);
++REGISTER_I2C_PCI_DETECTOR("Gigabyte Radeon RX 6700 XT EAGLE 12G",                      DetectGigabyteRGBFusion2GPUControllers, AMD_GPU_VEN, AMD_NAVI22_DEV,            GIGABYTE_SUB_VEN,   GIGABYTE_RX6700XT_EAGLE_12G_SUB_DEV,            0x63);
+ REGISTER_I2C_PCI_DETECTOR("Gigabyte Radeon RX 6700 XT GAMING OC 12G",                  DetectGigabyteRGBFusion2GPUControllers, AMD_GPU_VEN, AMD_NAVI22_DEV,            GIGABYTE_SUB_VEN,   GIGABYTE_RX6700XT_GAMING_OC_12G_SUB_DEV,        0x62);
+ REGISTER_I2C_PCI_DETECTOR("Gigabyte Radeon RX 6800 XT GAMING OC",                      DetectGigabyteRGBFusion2GPUControllers, AMD_GPU_VEN, AMD_NAVI21_DEV1,           GIGABYTE_SUB_VEN,   GIGABYTE_RX6800XT_GAMING_OC_SUB_DEV,            0x62);
+ REGISTER_I2C_PCI_DETECTOR("Gigabyte Radeon RX 6900 XT GAMING OC",                      DetectGigabyteRGBFusion2GPUControllers, AMD_GPU_VEN, AMD_NAVI21_DEV1,           GIGABYTE_SUB_VEN,   GIGABYTE_RX6900XT_GAMING_OC_SUB_DEV,            0x62);
+diff --git a/pci_ids/pci_ids.h b/pci_ids/pci_ids.h
+index daa23a787d..adddea8709 100644
+--- a/pci_ids/pci_ids.h
++++ b/pci_ids/pci_ids.h
+@@ -745,6 +745,7 @@
+ #define GIGABYTE_RTX5090_XTREME_WATERFORCE_32G_SUB_DEV1         0x4171
+ #define GIGABYTE_RTX5090_XTREME_WATERFORCE_32G_SUB_DEV2         0x4172
+ #define GIGABYTE_RX6700XT_GAMING_OC_12G_SUB_DEV                 0x232D
++#define GIGABYTE_RX6700XT_EAGLE_12G_SUB_DEV                     0x2331
+ #define GIGABYTE_AORUS_RX_6750_XT_ELITE_12G_SUB_DEV             0x2407
+ #define GIGABYTE_RX6800XT_GAMING_OC_SUB_DEV                     0x2328
+ #define GIGABYTE_RX6900XT_XTREME_WATERFORCE_WB_SUB_DEV          0x2333

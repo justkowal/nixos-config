@@ -3,12 +3,15 @@
   pkgs,
   modulesPath,
   lib,
+  self,
   inputs,
   ...
 }: {
   imports = [
     (modulesPath + "/installer/cd-dvd/installation-cd-minimal.nix")
   ];
+
+  environment.etc."laptop-system".source = self.nixosConfigurations.laptop.config.system.build.toplevel;
 
   # Installer packages: disko for declarative partitioning, gum for TUI wizard
   environment.systemPackages = with pkgs; [
@@ -33,9 +36,9 @@
     alias install-tui="bash /etc/nixos/hosts/iso/install-tui.sh"
     echo ""
     echo "=================================================================="
-    echo "          Custom NixOS Modular Multi-Host TUI Installer           "
+    echo "          Custom NixOS Laptop Prebuilt TUI Installer              "
     echo "=================================================================="
-    echo " Run 'install-tui' to start the interactive installation wizard.   "
+    echo " Run 'install-tui' to install the laptop profile from prebuilt store paths. "
     echo "=================================================================="
     echo ""
   '';

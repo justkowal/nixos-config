@@ -717,8 +717,17 @@
 
       cd "$HOME" || exit 1
 
+      APP_DIRS=(
+        "/run/current-system/sw/share/applications"
+        "/etc/profiles/per-user/justkowal/share/applications"
+        "/home/justkowal/.nix-profile/share/applications"
+        "/home/justkowal/.local/share/applications"
+        "/var/lib/flatpak/exports/share/applications"
+        "/home/justkowal/.local/share/flatpak/exports/share/applications"
+      )
+
       # 1. Collect installed desktop applications
-      APP_LIST=$(${pkgs.findutils}/bin/find /run/current-system/sw/share/applications /home/justkowal/.nix-profile/share/applications /var/lib/flatpak/exports/share/applications -name "*.desktop" 2>/dev/null | while read -r file; do
+      APP_LIST=$(${pkgs.findutils}/bin/find "''${APP_DIRS[@]}" -name "*.desktop" 2>/dev/null | while read -r file; do
         if ${pkgs.gnugrep}/bin/grep -qE "^(NoDisplay|Hidden)=true" "$file"; then continue; fi
         name=$(${pkgs.gnugrep}/bin/grep -m 1 "^Name=" "$file" | ${pkgs.coreutils}/bin/cut -d= -f2-)
         [ -n "$name" ] && echo "[App] $name"
@@ -744,15 +753,29 @@
       fi
 
       # Check if it matches a desktop application
-      DESKTOP_FILE=$(${pkgs.findutils}/bin/find /run/current-system/sw/share/applications /home/justkowal/.nix-profile/share/applications /var/lib/flatpak/exports/share/applications -name "*.desktop" 2>/dev/null | while read -r file; do
+      DESKTOP_FILE=$(${pkgs.findutils}/bin/find "''${APP_DIRS[@]}" -name "*.desktop" 2>/dev/null | while read -r file; do
         if ${pkgs.gnugrep}/bin/grep -qE "^(NoDisplay|Hidden)=true" "$file"; then continue; fi
         name=$(${pkgs.gnugrep}/bin/grep -m 1 "^Name=" "$file" | ${pkgs.coreutils}/bin/cut -d= -f2-)
-        if [ "$name" = "$CLEAN_INPUT" ] || [ "$name" = "$INPUT" ]; then echo "$file"; break; fi
+        base=$(${pkgs.coreutils}/bin/basename "$file" .desktop)
+        name_lower=$(echo "$name" | ${pkgs.coreutils}/bin/tr '[:upper:]' '[:lower:]')
+        clean_lower=$(echo "$CLEAN_INPUT" | ${pkgs.coreutils}/bin/tr '[:upper:]' '[:lower:]')
+        base_lower=$(echo "$base" | ${pkgs.coreutils}/bin/tr '[:upper:]' '[:lower:]')
+        if [ "$name_lower" = "$clean_lower" ] || [ "$base_lower" = "$clean_lower" ] || [ "$name" = "$INPUT" ]; then
+          echo "$file"
+          break
+        fi
       done | ${pkgs.coreutils}/bin/head -n 1)
 
       if [ -n "$DESKTOP_FILE" ]; then
+        is_terminal=$(${pkgs.gnugrep}/bin/grep -iE "^Terminal=(true|1)" "$DESKTOP_FILE")
+        exec_raw=$(${pkgs.gnugrep}/bin/grep -m 1 "^Exec=" "$DESKTOP_FILE" | ${pkgs.coreutils}/bin/cut -d= -f2-)
+        exec_cmd=$(echo "$exec_raw" | ${pkgs.gnused}/bin/sed -E 's/%[a-zA-Z0-9%]//g')
         desktop_id=$(${pkgs.coreutils}/bin/basename "$DESKTOP_FILE")
-        ${pkgs.gtk3}/bin/gtk-launch "$desktop_id" 2>/dev/null || ${pkgs.xdg-utils}/bin/xdg-open "$DESKTOP_FILE" &
+        if [ -n "$is_terminal" ]; then
+          ${pkgs.kitty}/bin/kitty -e sh -c "$exec_cmd" &
+        else
+          ${pkgs.gtk3}/bin/gtk-launch "$desktop_id" 2>/dev/null || (eval "$exec_cmd" &)
+        fi
         exit 0
       fi
 

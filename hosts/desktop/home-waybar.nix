@@ -1,199 +1,257 @@
-{ config, pkgs, ... }:
-
-let
+{
+  config,
+  pkgs,
+  lib,
+  laptop ? false,
+  ...
+}: let
   sys-info = pkgs.writeShellApplication {
     name = "sys-info";
-    runtimeInputs = with pkgs; [ jq findutils gnugrep gawk coreutils ];
+    runtimeInputs = with pkgs; [jq findutils gnugrep gawk coreutils];
     text = builtins.readFile ./scripts/sys-info.sh;
   };
 
   pomodoro = pkgs.writeShellApplication {
     name = "pomodoro";
-    runtimeInputs = with pkgs; [ jq coreutils libnotify ];
+    runtimeInputs = with pkgs; [jq coreutils libnotify];
     text = builtins.readFile ./scripts/pomodoro.sh;
   };
 
   pip-toggle = pkgs.writeShellApplication {
     name = "pip-toggle";
-    runtimeInputs = with pkgs; [ jq hyprland coreutils ];
+    runtimeInputs = with pkgs; [jq hyprland coreutils];
     text = builtins.readFile ./scripts/pip-toggle.sh;
   };
-in
-{
-  home.packages = [ sys-info pomodoro pip-toggle ];
+in {
+  home.packages = [sys-info pomodoro pip-toggle];
 
   programs.waybar = {
     enable = true;
     systemd = {
       enable = true;
-      targets = [ "graphical-session.target" ];
+      targets = ["graphical-session.target"];
     };
-    settings = [{
-      layer = "top";
-      position = "top";
-      height = 36;
-      margin-top = 8;
-      margin-left = 12;
-      margin-right = 12;
-      modules-left = [ "hyprland/workspaces" "hyprland/submap" ];
-      modules-center = [ "clock" "custom/pomodoro" "clock#date" ];
-      modules-right = [ "mpris" "group/system" "group/hardware" "pulseaudio" "custom/pip" "custom/notification" "custom/power" ];
+    settings = [
+      {
+        layer = "top";
+        position = "top";
+        height =
+          if laptop
+          then 32
+          else 36;
+        margin-top =
+          if laptop
+          then 6
+          else 8;
+        margin-left =
+          if laptop
+          then 8
+          else 12;
+        margin-right =
+          if laptop
+          then 8
+          else 12;
+        modules-left = ["hyprland/workspaces" "hyprland/submap"];
+        modules-center =
+          if laptop
+          then ["clock" "clock#date"]
+          else ["clock" "custom/pomodoro" "clock#date"];
+        modules-right =
+          if laptop
+          then ["battery" "mpris" "pulseaudio" "custom/notification" "custom/power" "tray"]
+          else ["mpris" "group/system" "group/hardware" "pulseaudio" "custom/pip" "custom/notification" "custom/power"];
 
-      "hyprland/workspaces" = {
-        disable-scroll = true;
-        all-outputs = true;
-        format = "{name}";
-      };
-
-      "clock" = { format = "{:%H:%M}"; };
-
-      "clock#date" = {
-        format = "{:%d.%m.%Y}";
-        tooltip-format = "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>";
-        on-click = "env XDG_CURRENT_DESKTOP=GNOME ${pkgs.gnome-calendar}/bin/gnome-calendar";
-      };
-
-      "mpris" = {
-        format = "{player_icon} {title} - {artist}";
-        format-paused = "{status_icon} <i>{title} - {artist}</i>";
-        player-icons = { default = "󰎆 "; spotify = " "; };
-        status-icons = { paused = "󰏤 "; };
-        on-click = "playerctl play-pause";
-        on-click-right = "playerctl next";
-        on-click-middle = "playerctl previous";
-        max-length = 35;
-      };
-
-      "idle_inhibitor" = {
-        format = "{icon}";
-        format-icons = { activated = "󰅶 "; deactivated = "󰾆 "; };
-      };
-
-      "disk" = { interval = 30; format = "󰋊 {percentage_used}%"; path = "/"; };
-      "pulseaudio" = { format = "󰕾 {volume}%"; format-muted = "󰖁 Muted"; on-click = "pwvucontrol"; };
-
-      "network" = {
-        format-wifi = "󰖩 {essid}";
-        format-ethernet = "󰈀 Wired";
-        format-disconnected = "󰖪 Disconnected";
-        tooltip-format = "{ifname} via {gwaddr}";
-        on-click = "kitty --class network_tui -e nmtui";
-      };
-
-      "custom/sysinfo" = {
-        exec = "${sys-info}/bin/sys-info";
-        interval = 2;
-        return-type = "json";
-        format = "{}";
-      };
-
-      "memory" = { format = "󰍛 {percentage}%"; };
-
-      "custom/update" = {
-        exec = pkgs.writeShellScript "check-update" ''
-          if [ -f /var/tmp/nixos-pending-update.ready ]; then
-            ${pkgs.jq}/bin/jq -n -c --arg text "󰚰 Update Ready" --arg class "ready" --arg tooltip "Pre-built update staged!&#x0a;Click to review package diff and switch." '{text: $text, class: $class, tooltip: $tooltip}'
-          else
-            ${pkgs.jq}/bin/jq -n -c --arg text "󰚰" --arg class "idle" --arg tooltip "NixOS Auto-Updater Idle / Up to date.&#x0a;Click to check & stage update now." '{text: $text, class: $class, tooltip: $tooltip}'
-          fi
-        '';
-        interval = 10;
-        return-type = "json";
-        on-click = pkgs.writeShellScript "handle-update-click" ''
-          if [ -f /var/tmp/nixos-pending-update.ready ]; then
-            kitty --class update_review -e nixos-update-apply
-          else
-            kitty --class update_stage -e nixos-update-stage
-          fi
-        '';
-        signal = 8;
-      };
-
-      "custom/notification" = {
-        tooltip = false;
-        format = "🔔 {icon}";
-        format-icons = {
-          notification = "󱅫"; none = "󰂜";
-          dnd-notification = "󰂛"; dnd-none = "󰂛";
+        "hyprland/workspaces" = {
+          disable-scroll = true;
+          all-outputs = true;
+          format = "{name}";
         };
-        return-type = "json";
-        exec = "${pkgs.swaynotificationcenter}/bin/swaync-client -swb";
-        on-click = "${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw";
-        on-click-right = "${pkgs.swaynotificationcenter}/bin/swaync-client -d -sw";
-        escape = true;
-      };
 
-      "custom/power" = {
-        format = "⏻ ";
-        on-click = "power-menu";
-      };
+        "clock" = {format = "{:%H:%M}";};
 
-      "custom/pomodoro" = {
-        format = "{}";
-        return-type = "json";
-        exec = "pomodoro status";
-        interval = 1;
-        on-click = "pomodoro toggle";
-        on-click-middle = "pomodoro reset";
-        on-click-right = "pomodoro skip";
-      };
-
-      "custom/pip" = {
-        exec = "pip-toggle";
-        interval = 1;
-        return-type = "json";
-        format = "{}";
-        on-click = "pip-toggle toggle";
-      };
-
-      "custom/hw_trigger" = {
-        format = "󰻠";
-        tooltip = false;
-      };
-
-      "custom/sys_trigger" = {
-        format = "󰒓";
-        tooltip = false;
-      };
-
-      "group/hardware" = {
-        orientation = "inherit";
-        drawer = {
-          transition-duration = 500;
-          transition-left-to-right = false;
-          click-to-reveal = true;
+        "clock#date" = {
+          format = "{:%d.%m.%Y}";
+          tooltip-format = "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>";
+          on-click = "env XDG_CURRENT_DESKTOP=GNOME ${pkgs.gnome-calendar}/bin/gnome-calendar";
         };
-        modules = [
-          "custom/hw_trigger"
-          "custom/sysinfo"
-          "memory"
-          "disk"
-        ];
-      };
 
-      "group/system" = {
-        orientation = "inherit";
-        drawer = {
-          transition-duration = 500;
-          transition-left-to-right = false;
-          click-to-reveal = true;
+        battery = {
+          format = "󰁹 {capacity}%";
+          format-charging = "󰂄 {capacity}%";
+          format-plugged = "󰚥 {capacity}%";
+          format-full = "󰁹 {capacity}%";
+          states = {
+            warning = 30;
+            critical = 15;
+          };
+          tooltip-format = "{timeTo} remaining";
         };
-        modules = [
-          "custom/sys_trigger"
-          "network"
-          "custom/update"
-          "idle_inhibitor"
-          "tray"
-        ];
-      };
-    }];
+
+        "mpris" = {
+          format = "{player_icon} {title} - {artist}";
+          format-paused = "{status_icon} <i>{title} - {artist}</i>";
+          player-icons = {
+            default = "󰎆 ";
+            spotify = " ";
+          };
+          status-icons = {paused = "󰏤 ";};
+          on-click = "playerctl play-pause";
+          on-click-right = "playerctl next";
+          on-click-middle = "playerctl previous";
+          max-length = 35;
+        };
+
+        "idle_inhibitor" = {
+          format = "{icon}";
+          format-icons = {
+            activated = "󰅶 ";
+            deactivated = "󰾆 ";
+          };
+        };
+
+        "disk" = {
+          interval = 30;
+          format = "󰋊 {percentage_used}%";
+          path = "/";
+        };
+        "pulseaudio" = {
+          format = "󰕾 {volume}%";
+          format-muted = "󰖁 Muted";
+          on-click = "pwvucontrol";
+        };
+
+        "network" = {
+          format-wifi = "󰖩 {essid}";
+          format-ethernet = "󰈀 Wired";
+          format-disconnected = "󰖪 Disconnected";
+          tooltip-format = "{ifname} via {gwaddr}";
+          on-click = "kitty --class network_tui -e nmtui";
+        };
+
+        "custom/sysinfo" = {
+          exec = "${sys-info}/bin/sys-info";
+          interval = 2;
+          return-type = "json";
+          format = "{}";
+        };
+
+        "memory" = {format = "󰍛 {percentage}%";};
+
+        "custom/update" = {
+          exec = pkgs.writeShellScript "check-update" ''
+            if [ -d /var/tmp/nixos-pending-update ] && [ -f /var/tmp/nixos-pending-update.ready ]; then
+              ${pkgs.jq}/bin/jq -n -c --arg text "󰚰 Update Ready" --arg class "ready" --arg tooltip "Pre-built update staged!&#x0a;Click to review package diff and switch." '{text: $text, class: $class, tooltip: $tooltip}'
+            else
+              if [ -f /var/tmp/nixos-pending-update.ready ]; then
+                rm -f /var/tmp/nixos-pending-update /var/tmp/nixos-pending-update.ready /var/tmp/nixos-pending-update.diff
+              fi
+              ${pkgs.jq}/bin/jq -n -c --arg text "󰚰" --arg class "idle" --arg tooltip "NixOS Auto-Updater Idle / Up to date.&#x0a;Click to check & stage update now." '{text: $text, class: $class, tooltip: $tooltip}'
+            fi
+          '';
+          interval = 10;
+          return-type = "json";
+          on-click = pkgs.writeShellScript "handle-update-click" ''
+            if [ -d /var/tmp/nixos-pending-update ] && [ -f /var/tmp/nixos-pending-update.ready ]; then
+              kitty --class update_review -e nixos-update-apply
+            else
+              kitty --class update_stage -e nixos-update-stage
+            fi
+          '';
+          signal = 8;
+        };
+
+        "custom/notification" = {
+          tooltip = false;
+          format = "🔔 {icon}";
+          format-icons = {
+            notification = "󱅫";
+            none = "󰂜";
+            dnd-notification = "󰂛";
+            dnd-none = "󰂛";
+          };
+          return-type = "json";
+          exec = "${pkgs.swaynotificationcenter}/bin/swaync-client -swb";
+          on-click = "${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw";
+          on-click-right = "${pkgs.swaynotificationcenter}/bin/swaync-client -d -sw";
+          escape = true;
+        };
+
+        "custom/power" = {
+          format = "⏻ ";
+          on-click = "power-menu";
+        };
+
+        "custom/pomodoro" = {
+          format = "{}";
+          return-type = "json";
+          exec = "pomodoro status";
+          interval = 1;
+          on-click = "pomodoro toggle";
+          on-click-middle = "pomodoro reset";
+          on-click-right = "pomodoro skip";
+        };
+
+        "custom/pip" = {
+          exec = "pip-toggle";
+          interval = 1;
+          return-type = "json";
+          format = "{}";
+          on-click = "pip-toggle toggle";
+        };
+
+        "custom/hw_trigger" = {
+          format = "󰻠";
+          tooltip = false;
+        };
+
+        "custom/sys_trigger" = {
+          format = "󰒓";
+          tooltip = false;
+        };
+
+        "group/hardware" = {
+          orientation = "inherit";
+          drawer = {
+            transition-duration = 500;
+            transition-left-to-right = false;
+            click-to-reveal = true;
+          };
+          modules = [
+            "custom/hw_trigger"
+            "custom/sysinfo"
+            "memory"
+            "disk"
+          ];
+        };
+
+        "group/system" = {
+          orientation = "inherit";
+          drawer = {
+            transition-duration = 500;
+            transition-left-to-right = false;
+            click-to-reveal = true;
+          };
+          modules = [
+            "custom/sys_trigger"
+            "network"
+            "custom/update"
+            "idle_inhibitor"
+            "tray"
+          ];
+        };
+      }
+    ];
 
     style = ''
       @import url("colors.css");
 
       * {
         font-family: "Outfit", "JetBrainsMono Nerd Font", sans-serif;
-        font-size: 13px;
+        font-size: ${
+        if laptop
+        then "12px"
+        else "13px"
+      };
         font-weight: bold;
         border: none;
         border-radius: 0;
@@ -232,6 +290,14 @@ in
         border-radius: 12px;
       }
 
+      #battery {
+        padding: 0 16px;
+        margin: 4px 2px;
+        background-color: alpha(@surface_variant, 0.82);
+        border-radius: 12px;
+        color: @primary;
+      }
+
       window#waybar group.hardware, window#waybar group.system {
         background-color: transparent;
       }
@@ -250,6 +316,8 @@ in
       #custom-pomodoro.paused { color: @on_surface_variant; }
       #custom-pip { color: @secondary; }
       #custom-pip.hidden { color: @on_surface_variant; }
+      #battery.warning { color: @tertiary; }
+      #battery.critical { color: @error; }
 
       #submap {
         padding: 0 12px;

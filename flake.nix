@@ -38,7 +38,7 @@
       desktop = nixpkgs.lib.nixosSystem {
         specialArgs = {inherit inputs;};
         modules = [
-          { nixpkgs.hostPlatform = "x86_64-linux"; }
+          {nixpkgs.hostPlatform = "x86_64-linux";}
           ./hosts/desktop/configuration.nix
           home-manager.nixosModules.home-manager
           sharedHomeManagerModule
@@ -48,7 +48,7 @@
       vm = nixpkgs.lib.nixosSystem {
         specialArgs = {inherit inputs;};
         modules = [
-          { nixpkgs.hostPlatform = "x86_64-linux"; }
+          {nixpkgs.hostPlatform = "x86_64-linux";}
           ./hosts/vm/configuration.nix
           home-manager.nixosModules.home-manager
           sharedHomeManagerModule
@@ -58,7 +58,7 @@
       laptop = nixpkgs.lib.nixosSystem {
         specialArgs = {inherit inputs;};
         modules = [
-          { nixpkgs.hostPlatform = "x86_64-linux"; }
+          {nixpkgs.hostPlatform = "x86_64-linux";}
           ./hosts/laptop/configuration.nix
           home-manager.nixosModules.home-manager
           sharedHomeManagerModule
@@ -66,9 +66,9 @@
       };
 
       iso = nixpkgs.lib.nixosSystem {
-        specialArgs = {inherit inputs;};
+        specialArgs = {inherit inputs self;};
         modules = [
-          { nixpkgs.hostPlatform = "x86_64-linux"; }
+          {nixpkgs.hostPlatform = "x86_64-linux";}
           ./hosts/iso/configuration.nix
         ];
       };

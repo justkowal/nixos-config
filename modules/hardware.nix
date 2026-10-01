@@ -1,8 +1,11 @@
 { config, pkgs, ... }:
 
 {
-  # Unlock GPU overclocking/undervolting
-  boot.kernelParams = [ "amdgpu.ppfeaturemask=0xffffffff" ];
+  # Unlock GPU overclocking/undervolting and allow SMBus access for RGB controllers
+  boot.kernelParams = [
+    "amdgpu.ppfeaturemask=0xffffffff"
+    "acpi_enforce_resources=lax"
+  ];
 
   hardware.enableRedistributableFirmware = true;
 

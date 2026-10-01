@@ -2,29 +2,30 @@
   config,
   pkgs,
   lib,
+  laptop ? false,
   ...
-}:
-
-let
+}: let
   user = "justkowal";
   homeDir = "/home/${user}";
-in
-{
-  imports = [
-    ./home-hyprland.nix
-    ./home-waybar.nix
-    ./home-shell.nix
-    ./home-apps.nix
-    ./home-theming.nix
-    ./home-ai.nix
-  ];
+in {
+  imports =
+    [
+      ./home-hyprland.nix
+      ./home-waybar.nix
+      ./home-shell.nix
+      ./home-apps.nix
+      ./home-theming.nix
+    ]
+    ++ lib.optionals (!laptop) [
+      ./home-ai.nix
+    ];
 
   home.username = user;
   home.homeDirectory = homeDir;
   home.enableNixpkgsReleaseCheck = false;
 
   home.activation = {
-    createCadEdaDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    createCadEdaDirs = lib.hm.dag.entryAfter ["writeBoundary"] ''
       mkdir -p ${homeDir}/.local/share/FreeCAD/v1-1/Gui/Stylesheets
       mkdir -p ${homeDir}/.config/kicad/10.0/colors
       mkdir -p ${homeDir}/.local/share/Steam/steamui/skins
@@ -38,7 +39,7 @@ in
     '';
 
     # MangoHud needs a mutable config file (not a symlink)
-    copyMangoHud = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    copyMangoHud = lib.hm.dag.entryAfter ["linkGeneration"] ''
       if [ -L ${homeDir}/.config/MangoHud/MangoHud.conf ]; then
         TARGET_PATH=$(readlink -f ${homeDir}/.config/MangoHud/MangoHud.conf)
         if [ -n "$TARGET_PATH" ] && [ -f "$TARGET_PATH" ]; then
@@ -83,7 +84,7 @@ in
     easyeffects
     (buildFHSEnv {
       name = "playwright-fhs";
-      targetPkgs = pkgs: with pkgs; [ playwright-driver ];
+      targetPkgs = pkgs: with pkgs; [playwright-driver];
       runScript = "bash";
     })
   ];

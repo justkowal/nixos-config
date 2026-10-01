@@ -57,6 +57,7 @@ Specific applications bypass standard tiling behaviors:
 
 *   **Floating Windows**: `pwvucontrol`, GNOME Calendar, Network TUI, and the `scratchpad` terminal always open floating and centered.
 *   **Gaming Latency Bypass**: All `steam_app_*` windows have animations, shadows, and blur entirely disabled to eliminate compositor latency overhead.
+*   **Notification Focus Activation**: `misc.focus_on_activate` is enabled so clicking desktop notifications (via SwayNC / `xdg-activation-v1`) switches to the relevant workspace and focuses the window.
 
 ## Screen Locking (Hyprlock & Hypridle)
 

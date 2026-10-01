@@ -6,7 +6,7 @@
 }: {
   imports = [
     ./hardware-configuration.nix
-    ./overlays.nix
+    ../../modules/overlays.nix
     ../../modules/boot.nix
     ../../modules/locale.nix
     ../../modules/user.nix
@@ -27,8 +27,6 @@
     ../../modules/auto-update.nix
   ];
 
-
-
   home-manager.backupFileExtension = "backup";
 
   networking.hostName = "nixos-desktop";
@@ -43,16 +41,33 @@
     };
   };
   systemd.timers.bcachefs-scrub = {
-    wantedBy = [ "timers.target" ];
-    timerConfig = { OnCalendar = "weekly"; Persistent = true; };
+    wantedBy = ["timers.target"];
+    timerConfig = {
+      OnCalendar = "weekly";
+      Persistent = true;
+    };
   };
-
 
   # Real-time PAM limits for low-latency audio (PipeWire)
   security.pam.loginLimits = [
-    { domain = "@audio"; item = "rtprio"; type = "-"; value = "99"; }
-    { domain = "@audio"; item = "memlock"; type = "-"; value = "unlimited"; }
-    { domain = "@audio"; item = "nice"; type = "-"; value = "-19"; }
+    {
+      domain = "@audio";
+      item = "rtprio";
+      type = "-";
+      value = "99";
+    }
+    {
+      domain = "@audio";
+      item = "memlock";
+      type = "-";
+      value = "unlimited";
+    }
+    {
+      domain = "@audio";
+      item = "nice";
+      type = "-";
+      value = "-19";
+    }
   ];
 
   environment.systemPackages = with pkgs; [

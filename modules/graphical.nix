@@ -1,6 +1,8 @@
-{ config, pkgs, ... }:
-
 {
+  config,
+  pkgs,
+  ...
+}: {
   programs.hyprland = {
     enable = true;
     xwayland.enable = true;
@@ -9,23 +11,15 @@
   hardware.graphics = {
     enable = true;
     enable32Bit = true;
-    extraPackages = with pkgs; [ rocmPackages.clr rocmPackages.clr.icd ];
   };
-
-  # RX 6700 XT (gfx1031) needs gfx1030 override for ROCm
-  environment.variables.HSA_OVERRIDE_GFX_VERSION = "10.3.0";
-
-  # Blender HIP detection
-  systemd.tmpfiles.rules = [ "L+ /opt/rocm/hip - - - - ${pkgs.rocmPackages.clr}" ];
 
   services.flatpak.enable = true;
 
   xdg.portal = {
     enable = true;
-    extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+    extraPortals = [pkgs.xdg-desktop-portal-gtk];
     config.common.default = "*";
   };
-
 
   security.rtkit.enable = true;
   services.pipewire = {
@@ -37,7 +31,7 @@
     extraConfig.pipewire."10-lowlatency" = {
       "context.properties" = {
         "default.clock.rate" = 48000;
-        "default.clock.allowed-rates" = [ 44100 48000 88200 96000 ];
+        "default.clock.allowed-rates" = [44100 48000 88200 96000];
         "default.clock.quantum" = 64;
         "default.clock.min-quantum" = 32;
         "default.clock.max-quantum" = 1024;

@@ -12,10 +12,25 @@ let
       STATE_FILE="/var/tmp/nixos-pending-update.ready"
       DIFF_FILE="/var/tmp/nixos-pending-update.diff"
 
+      cleanup_on_exit() {
+        local exit_code=$?
+        if [ -t 0 ]; then
+          if [ "$exit_code" -ne 0 ]; then
+            echo ""
+            echo "[nixos-update-stage] Failed with exit code $exit_code."
+            read -r -p "Press Enter to close..." || true
+          else
+            echo ""
+            read -r -t 10 -p "Update staged! Press Enter to close (auto-closing in 10s)..." || true
+          fi
+        fi
+      }
+      trap cleanup_on_exit EXIT
+
       echo "[nixos-update-stage] Checking network connectivity..."
       if ! ping -c 1 1.1.1.1 &>/dev/null; then
         echo "[nixos-update-stage] No internet connection, skipping update stage."
-        exit 0
+        exit 1
       fi
 
       echo "[nixos-update-stage] Updating flake inputs in $FLAKE_DIR..."
@@ -59,8 +74,14 @@ let
       DIFF_FILE="/var/tmp/nixos-pending-update.diff"
 
       if [ ! -d "$STAGING_DIR" ]; then
-        echo "No staged update found in $STAGING_DIR."
-        echo "Run 'sudo nixos-update-stage' to check and stage updates."
+        echo "No valid staged update found in $STAGING_DIR (stale or removed)."
+        rm -f "$STATE_FILE" "$DIFF_FILE" "$STAGING_DIR"
+        pkill -RTMIN+8 waybar || true
+        echo "Cleaned up stale state. Click the update widget to stage a fresh update."
+        echo ""
+        if [ -t 0 ]; then
+          read -r -p "Press Enter to close..." || true
+        fi
         exit 0
       fi
 
@@ -81,13 +102,21 @@ let
       case "$response" in
         [yY][eE][sS]|[yY])
           echo "Switching system profile..."
-          sudo "$STAGING_DIR/bin/switch" switch
-          rm -f "$STATE_FILE" "$DIFF_FILE"
+          sudo nix-env -p /nix/var/nix/profiles/system --set "$STAGING_DIR"
+          sudo "$STAGING_DIR/bin/switch-to-configuration" switch
+          rm -f "$STATE_FILE" "$DIFF_FILE" "$STAGING_DIR"
           pkill -RTMIN+8 waybar || true
           notify-send "󰄬 NixOS Update Applied" "Successfully switched to the new system build!"
+          echo ""
+          if [ -t 0 ]; then
+            read -r -p "System switched successfully! Press Enter to close..." || true
+          fi
           ;;
         *)
           echo "Switch cancelled. Update remains staged for later."
+          if [ -t 0 ]; then
+            read -r -t 3 -p "Closing in 3s (or press Enter)..." || true
+          fi
           ;;
       esac
     '';
