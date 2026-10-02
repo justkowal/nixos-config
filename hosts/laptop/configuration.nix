@@ -254,7 +254,32 @@
     seahorse
     sbctl
     e2fsprogs
+    sops
+    ssh-to-age
   ];
+
+  # ── Declarative Secrets Management (sops-nix) ──────────────────────────
+  # Decrypts secrets at runtime using the host's SSH host key or admin age key.
+  sops = {
+    defaultSopsFile = ../rpi4/secrets/secrets.yaml;
+    defaultSopsFormat = "yaml";
+    age.sshKeyPaths = [
+      "/etc/ssh/ssh_host_ed25519_key"
+      "/home/justkowal/.ssh/id_ed25519"
+    ];
+    age.keyFile = "/home/justkowal/.config/sops/age/keys.txt";
+    validateSopsFiles = false;
+    secrets."tailscale_auth_key" = {};
+  };
+
+  # ── Automated Tailnet Auto-Join ────────────────────────────────────────
+  # Uses the cluster's reusable pre-auth key to enroll into the mesh network
+  # on boot automatically without manual `tailscale up` or browser logins.
+  services.tailscale = {
+    enable = true;
+    authKeyFile = config.sops.secrets."tailscale_auth_key".path;
+    extraUpFlags = [ "--accept-routes" ];
+  };
 
   # Hostname
   networking.hostName = "thinkpad-t14s-gen1-amd";

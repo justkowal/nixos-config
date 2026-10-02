@@ -71,6 +71,7 @@
         modules = [
           {nixpkgs.hostPlatform = "x86_64-linux";}
           inputs.lanzaboote.nixosModules.lanzaboote
+          inputs.sops-nix.nixosModules.sops
           ./hosts/laptop/configuration.nix
           home-manager.nixosModules.home-manager
           (makeHomeManagerModule true)

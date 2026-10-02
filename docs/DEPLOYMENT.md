@@ -414,18 +414,17 @@ Switch the Laptop configuration to the declarative flake target:
 sudo nixos-rebuild switch --flake .#laptop
 ```
 
-### 4.3 Connect to Tailscale Mesh
+### 4.3 Connect to Tailscale Mesh (Automated Auto-Join)
 
-Enroll the laptop into the homelab Tailnet to enable `.lab` resolution:
+The laptop configuration includes `sops-nix` and `services.tailscale.authKeyFile = config.sops.secrets."tailscale_auth_key".path;`. Because the pre-auth key in `secrets.yaml` is **reusable**, the laptop automatically enrolls into your Tailnet upon boot with zero interactive browser prompts!
 
+Confirm connectivity once booted:
 ```bash
-sudo tailscale up --accept-routes
-```
-Follow the browser authentication link to authorize the laptop. Confirm connectivity:
-```bash
+tailscale status
 tailscale ping nixos-rpi4
 curl -I https://idm.lab
 ```
+*(Fallback for manual enrollment if needed: `sudo tailscale up --accept-routes`)*
 
 ### 4.4 Verify Homelab Root CA Trust
 

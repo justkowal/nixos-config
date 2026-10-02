@@ -13,13 +13,14 @@ All homelab services are published on the private **Tailscale** mesh network usi
 All internal homelab services (`*.lab`) live within your encrypted Tailscale mesh network. Because Tailscale uses WireGuard over UDP with NAT-traversal (DERP relays), it seamlessly connects your devices even when your homelab is behind CGNAT or strict hotel/mobile Wi-Fi.
 
 #### On Your Laptop (NixOS / Linux)
-The laptop configuration automatically includes `services.tailscale.enable = true;`.
+The laptop automatically enrolls into your Tailnet upon boot using the cluster's reusable auth key via `sops-nix` (`services.tailscale.authKeyFile`). No manual browser login is required.
 
-1. **Authenticate and connect**:
+1. **Verify automated connection**:
    ```bash
-   sudo tailscale up
+   # Check Tailnet status and confirm machine is 'Running'
+   tailscale status
    ```
-   Follow the login URL in your browser to authorize your laptop to the Tailnet.
+   *(If re-authenticating manually: `sudo tailscale up --accept-routes`)*
 
 2. **Verify connection**:
    ```bash
