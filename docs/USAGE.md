@@ -56,6 +56,9 @@ The laptop configuration automatically includes `services.tailscale.enable = tru
 > [!TIP]
 > **Zero Certificate Warnings**: The Homelab Internal Root CA is declaratively distributed to the system trust store on all nodes (Laptop, Desktop, VM, Pi) via `security.pki.certificates` in `modules/security.nix`. All `*.lab` HTTPS services are trusted out of the box with zero browser or CLI warnings.
 
+> [!NOTE]
+> **Zero Password SSH**: Your primary SSH public key (`~/.ssh/id_ed25519.pub`) is declaratively provisioned to `authorizedKeys` on all nodes (RPi4, Desktop, Laptop) via `modules/security.nix`. All SSH commands (`justkowal@...` or `sandbox@...`) connect seamlessly without prompting for passwords.
+
 ---
 
 ## 2. Unified Identity & Single Sign-On (Kanidm)
@@ -338,3 +341,56 @@ systemctl status worker-watchdog.service
 journalctl -u worker-watchdog -f
 ```
 The watchdog will report active Docker containers, Blender render processes, and sandbox sessions every 30 seconds.
+
+---
+
+## 9. Operator Secrets Management (SOPS Cheat Sheet)
+
+All homelab cluster secrets are managed declaratively via `sops-nix`. Secrets are encrypted with asymmetric authenticated cryptography (AES-256-GCM + age) in `hosts/rpi4/secrets/secrets.yaml`. **Encrypted secrets files are completely safe to commit and push to Git.**
+
+### 9.1 Interactive Editing (Replacing Placeholders)
+Whenever you receive new API credentials or tokens:
+
+```bash
+sops hosts/rpi4/secrets/secrets.yaml
+```
+
+- SOPS uses your local key at `~/.config/sops/age/keys.txt` to decrypt the file into your editor.
+- Replace any placeholder values:
+  ```yaml
+  cloudflare_tunnel_credentials: "placeholder"
+  woodpecker_agent_secret: "placeholder"
+  woodpecker_gitea_client: "placeholder"
+  woodpecker_gitea_secret: "placeholder"
+  homelab_ca_key: "placeholder"
+  tailscale_auth_key: "tskey-auth-..."
+  ```
+- Save and exit. The file is automatically re-encrypted in-place.
+
+### 9.2 Setting a Secret via CLI
+To update a single secret without opening an interactive editor:
+
+```bash
+sops set hosts/rpi4/secrets/secrets.yaml '["woodpecker_agent_secret"]' '"your-generated-token"'
+```
+
+### 9.3 Inspecting Decrypted Secrets
+To inspect the plaintext values in your terminal:
+
+```bash
+sops -d hosts/rpi4/secrets/secrets.yaml
+```
+
+### 9.4 Adding a New Host Key (Re-keying)
+When deploying a new node or the RPi4 for the first time:
+
+1. Obtain the new host's age public key from its SSH host key:
+   ```bash
+   nix-shell -p ssh-to-age --run "ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub"
+   ```
+2. Add the age recipient key to `.sops.yaml` in the repo root.
+3. Re-encrypt the existing secrets with the updated recipient list:
+   ```bash
+   sops updatekeys hosts/rpi4/secrets/secrets.yaml
+   ```
+

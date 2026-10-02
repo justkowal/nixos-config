@@ -178,17 +178,18 @@ in {
     ];
   };
 
-  services.tailscale.enable = true;
+  services.tailscale = {
+    enable = true;
+    authKeyFile = config.sops.secrets."tailscale_auth_key".path;
+    extraUpFlags = [ "--ssh" "--accept-routes" ];
+  };
 
   # ── User ───────────────────────────────────────────────────────────────
   users.users.justkowal = {
     isNormalUser = true;
     description = "justkowal";
     extraGroups = [ "networkmanager" "wheel" "podman" ];
-    openssh.authorizedKeys.keys = [
-      # TODO: Populate with your SSH public key(s)
-      # "ssh-ed25519 AAAA..."
-    ];
+    # SSH keys inherited cluster-wide from modules/security.nix
   };
 
   # Unprivileged user for the webhook receiver
@@ -203,7 +204,7 @@ in {
     isNormalUser = true;
     description = "Interactive bridge to Desktop sandbox";
     openssh.authorizedKeys.keys = [
-      # Populated via Kanidm sshIntegration or declaratively
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINq047VZyk7koA7QCAW8RuGaqu8YePnLPnOIIgo0TiBS justkowal@desktop"
     ];
   };
 
@@ -444,6 +445,7 @@ in {
     defaultSopsFormat = "yaml";
     age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
     validateSopsFiles = false;
+    secrets."tailscale_auth_key" = {};
   };
 
   # ── Forgejo (Git forge + OCI container registry) ───────────────────────

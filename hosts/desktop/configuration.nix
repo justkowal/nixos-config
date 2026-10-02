@@ -213,6 +213,8 @@ in {
     vim
     pciutils
     usbutils
+    sops
+    ssh-to-age
   ];
 
   powerManagement.cpuFreqGovernor = "performance";
@@ -298,9 +300,8 @@ in {
       users.users.sandbox = {
         isNormalUser = true;
         description = "Ephemeral Docker sandbox user";
-        # SSH keys: resolved via Kanidm sshIntegration, or declarative keys
         openssh.authorizedKeys.keys = [
-          # Populated via Kanidm sshIntegration or declaratively
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINq047VZyk7koA7QCAW8RuGaqu8YePnLPnOIIgo0TiBS justkowal@desktop"
         ];
         extraGroups = [ "docker" ];
       };

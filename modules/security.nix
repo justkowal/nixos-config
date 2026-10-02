@@ -49,4 +49,12 @@
   security.pki.certificates = [
     (builtins.readFile ./certs/homelab-ca.crt)
   ];
+
+  # ── Cluster-wide Authorized SSH Keys ──────────────────────────────────
+  # Guarantees seamless key-based SSH access across all machines (Desktop,
+  # Laptop, RPi4) without password prompts.
+  users.users.justkowal.openssh.authorizedKeys.keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINq047VZyk7koA7QCAW8RuGaqu8YePnLPnOIIgo0TiBS justkowal@desktop"
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFWMDlHUXnZP+8GHiZ9qGUrWs1SKDk0t7pbzQjDus5T9 github-actions-deploy-talented"
+  ];
 }

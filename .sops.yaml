@@ -2,6 +2,8 @@
 # https://github.com/Mic92/sops-nix
 creation_rules:
   - path_regex: hosts/rpi4/secrets/.*\.ya?ml$
-    # Replace with the age public key derived from RPi4's /etc/ssh/ssh_host_ed25519_key.pub:
+    # Admin desktop key (derived from ~/.ssh/id_ed25519.pub):
+    #   ssh-to-age < ~/.ssh/id_ed25519.pub
+    # RPi4 host key (derived from /etc/ssh/ssh_host_ed25519_key.pub on Pi):
     #   ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub
-    age: "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+    age: "age1xwv8qkhntnepv4np9lu2fe6nh8k8pgxylr9yz2p87j67ys4e2quspgwnc4,age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"

@@ -60,9 +60,12 @@ Before starting the node-level deployments, set up your private **Tailscale** ov
 3. **Configure Search Domains**:
    - In the **DNS** tab under **Search Domains**, click **Add search domain**.
    - Add `lab`. This allows accessing homelab nodes and Caddy virtual hosts using simple names like `nixos-rpi4.lab`, `git.lab`, `idm.lab`, and `ci.lab`.
-4. **Generate Pre-Authentication Keys** *(Optional for automated enrollments)*:
+4. **Generate Pre-Authentication Key (Automated RPi4 Join)**:
    - Go to **Settings → Keys → Generate auth key**.
-   - Select **Reusable** (or ephemeral if needed), and optionally tag machines with `tag:homelab`.
+   - Check **Reusable** (or ephemeral), check **Pre-authorized**, and optionally tag with `tag:homelab`.
+   - Copy the generated key (`tskey-auth-...`).
+   - Store it encrypted in `hosts/rpi4/secrets/secrets.yaml` under `tailscale_auth_key` using `sops`.
+   - On boot, `services.tailscale.authKeyFile = config.sops.secrets."tailscale_auth_key".path;` connects the RPi4 to your Tailnet automatically without interactive browser authentication.
 5. **Tailscale Access Controls (ACLs)**:
    - For basic homelab use, the default `accept all` ACL policy allows all your devices to communicate seamlessly.
    - For strict segmentation, you can define ACL rules in the **Access Controls** tab separating untrusted IoT nodes from the cluster.
@@ -214,19 +217,38 @@ sudo chown -R webhook:webhook /var/www/boot-state
 sudo chmod 0644 /var/www/boot-state/boot-state.cfg
 ```
 
-#### E. Declarative Secrets via sops-nix (Recommended)
-Instead of manually copying plaintext secret files, you can manage all secrets declaratively in the Git repository using `sops-nix` and the Pi's SSH host key:
+#### E. Declarative Secrets via sops-nix
+All secrets are managed declaratively in the Git repository using `sops-nix` and authenticated asymmetric cryptography (AES-256-GCM + age). **Encrypted secrets are 100% safe to commit to Git and push to GitHub.**
 
-1. **Obtain the Pi's age recipient key** from its SSH host key:
-   ```bash
-   nix-shell -p ssh-to-age --run "ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub"
-   ```
-2. **Add the key** to `.sops.yaml` in the repository root.
-3. **Encrypt secrets**:
+1. **Dual-Recipient Key Architecture (`.sops.yaml`)**:
+   Secrets in `hosts/rpi4/secrets/secrets.yaml` are encrypted for two authorized recipients:
+   - **Desktop Admin Key**: Derived from `~/.ssh/id_ed25519.pub` via `ssh-to-age` (`age1xwv8...`), allowing you to view and edit secrets directly from your desktop.
+   - **RPi4 Host Key**: Derived from `/etc/ssh/ssh_host_ed25519_key.pub` on the Pi (`age1ql3z...`), allowing the Pi to decrypt secrets at boot without user intervention.
+
+2. **Editing Secrets Interactively**:
    ```bash
    sops hosts/rpi4/secrets/secrets.yaml
    ```
-4. `sops-nix` will automatically decrypt `/var/lib/caddy/pki/homelab-ca.key`, `/var/lib/cloudflared/homelab-credentials.json`, and `/etc/woodpecker/server.env` at boot.
+   SOPS detects your age key at `~/.config/sops/age/keys.txt`, decrypts the secrets in memory, opens your editor, and automatically re-encrypts the file when you save and exit.
+
+3. **Re-keying for the Raspberry Pi**:
+   Once the Pi is deployed, extract its host key and update the recipient list:
+   ```bash
+   # On the Pi:
+   nix-shell -p ssh-to-age --run "ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub"
+
+   # On the Desktop:
+   # Update the age key in .sops.yaml, then re-encrypt existing secrets:
+   sops updatekeys hosts/rpi4/secrets/secrets.yaml
+   git commit -am "chore(sops): re-key rpi4 secrets for host key"
+   ```
+
+4. **Runtime In-Memory Decryption**:
+   At boot, `sops-nix.service` decrypts secrets into a RAM-backed `tmpfs` at `/run/secrets/`. Plaintext secrets never touch disk unencrypted:
+   - `/run/secrets/tailscale_auth_key` → automatically used by `services.tailscale.authKeyFile`
+   - `/run/secrets/cloudflare_tunnel_credentials`
+   - `/run/secrets/woodpecker_agent_secret`
+   - `/run/secrets/homelab_ca_key`
 
 #### F. Automated State Backups (SD Card Protection)
 The Raspberry Pi runs two automated backup services:
@@ -234,6 +256,13 @@ The Raspberry Pi runs two automated backup services:
 - **Homelab State Backup**: Daily at 03:30, creates online hot snapshots of Kanidm (`kanidm.db`), Woodpecker, and Caddy PKI, writing compressed archives to `/home/justkowal/Sync/Backups/state/`.
 
 Because these live inside `/home/justkowal/Sync/`, **Syncthing automatically replicates all backup archives to the Desktop's btrfs SSD** whenever the Desktop is turned on.
+
+#### G. Cluster-Wide SSH Key Distribution
+SSH authentication is declaratively synchronized across all nodes via `modules/security.nix`:
+- **Central Authority**: `users.users.justkowal.openssh.authorizedKeys.keys` is declared in `modules/security.nix`.
+- **Automatic Propagation**: Because `modules/security.nix` is imported by `desktop`, `laptop`, and `rpi4`, your primary SSH public key (`~/.ssh/id_ed25519.pub`) is automatically provisioned onto every system upon deployment.
+- **Docker Sandbox Bridge**: The `sandbox` user on both `rpi4` and `desktop.specialisation.worker` is pre-authorized with your key, enabling instant access to the isolated GPU container environment.
+- **Zero Password Prompts**: Inter-node automation (e.g. `wake-and-proxy`, rsync, Syncthing) operates securely and unattended without fallback password prompts.
 
 ---
 
