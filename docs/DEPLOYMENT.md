@@ -408,13 +408,54 @@ sudo sbctl enroll-keys --microsoft
 
 ### 4.2 Deploy Laptop Configuration
 
-Switch the Laptop configuration:
+Switch the Laptop configuration to the declarative flake target:
 
 ```bash
 sudo nixos-rebuild switch --flake .#laptop
 ```
 
-### 4.3 Verify Kanidm Client & Offline Cache
+### 4.3 Connect to Tailscale Mesh
+
+Enroll the laptop into the homelab Tailnet to enable `.lab` resolution:
+
+```bash
+sudo tailscale up --accept-routes
+```
+Follow the browser authentication link to authorize the laptop. Confirm connectivity:
+```bash
+tailscale ping nixos-rpi4
+curl -I https://idm.lab
+```
+
+### 4.4 Verify Homelab Root CA Trust
+
+Because `modules/security.nix` is imported by the laptop configuration, the Homelab Root CA is automatically loaded into the system-wide OpenSSL and GnuTLS trust stores:
+
+```bash
+# Verify warning-free HTTPS
+curl -fsSL https://git.lab > /dev/null && echo "✅ Root CA trusted"
+```
+
+### 4.5 SSH Key Pairing (Laptop ↔ Cluster)
+
+1. Ensure the laptop has an ed25519 SSH keypair:
+   ```bash
+   [ -f ~/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
+   ```
+2. If this key is different from your desktop key, add the laptop's public key (`~/.ssh/id_ed25519.pub`) to `users.users.justkowal.openssh.authorizedKeys.keys` in [`modules/security.nix`](file:///etc/nixos/modules/security.nix) so all nodes accept it.
+3. Test seamless cluster access from the laptop:
+   ```bash
+   # Connect to RPi4 orchestrator
+   ssh justkowal@nixos-rpi4.lab
+
+   # Connect to Desktop (auto-wakes with live boot progress streaming)
+   ssh justkowal@nixos-desktop.lab
+
+   # Connect to disposable Docker GPU container
+   ssh sandbox@nixos-desktop.lab
+   ```
+
+### 4.6 Verify Kanidm Client & Offline Cache
 
 1. Check that `kanidm-unixd` is running:
    ```bash
@@ -428,6 +469,14 @@ sudo nixos-rebuild switch --flake .#laptop
    - Disconnect Wi-Fi.
    - Run `su - justkowal` or lock and unlock with `hyprlock`.
    - Confirm credentials validate from `/var/cache/kanidm-unixd/cache.db`.
+
+### 4.7 Power Management & Battery Health Check
+
+The laptop uses TLP tailored for the ThinkPad T14s Gen 1 AMD:
+```bash
+# Verify TLP service and charge threshold limits (85% start / 90% stop)
+sudo tlp-stat -b
+```
 
 ---
 
@@ -444,3 +493,7 @@ sudo nixos-rebuild switch --flake .#laptop
 | **Desktop** | Worker Specialisation | `/run/current-system/specialisation/worker/bin/switch-to-configuration test` | Headless, Woodpecker & Flamenco workers active |
 | **Desktop** | Watchdog | `systemctl status worker-watchdog` | Polling active workers every 30s |
 | **Laptop** | Kanidm NSS/PAM | `id justkowal` | Resolves UID/GID with `linux_users` group |
+| **Laptop** | Secure Boot | `sudo sbctl status` | `Secure Boot: enabled (user-mode)` |
+| **Laptop** | Homelab Root CA | `curl -fsSL https://git.lab` | Clean HTTP 200 (no cert warnings or `-k` flags) |
+| **Laptop** | Cluster SSH | `ssh justkowal@nixos-rpi4.lab` | Key-based login with zero password prompts |
+| **Laptop** | Battery Health | `sudo tlp-stat -b \| grep -E 'START\|STOP'` | Thresholds: 85% start / 90% stop |
