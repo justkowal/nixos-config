@@ -45,6 +45,7 @@
 
   unlock-keyring = pkgs.writers.writePython3Bin "unlock-keyring-tool" {
     libraries = [pkgs.python3Packages.jeepney];
+    flakeIgnore = ["E501"];
   } ''
     import sys
     from jeepney import DBusAddress, new_method_call

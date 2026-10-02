@@ -212,6 +212,7 @@
         if [ -s "$CREDENTIALS_DIRECTORY/keyring" ] && [ -S "/run/user/1000/bus" ]; then
           exec ${pkgs.su}/bin/su -s /bin/sh justkowal -c "export DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/1000/bus'; exec ${pkgs.writers.writePython3Bin "unlock-keyring-tool" {
             libraries = [pkgs.python3Packages.jeepney];
+            flakeIgnore = ["E501"];
           } ''
             import sys
             from jeepney import DBusAddress, new_method_call
@@ -219,7 +220,10 @@
 
             password = sys.stdin.read().strip()
             if not password:
-                print("Keyring unlock failed: No password provided in credential", file=sys.stderr)
+                print(
+                    "Keyring unlock failed: No password provided in credential",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
 
             try:
@@ -248,7 +252,10 @@
                 )
                 reply = conn.send_and_get_reply(msg_unlock)
                 if reply.body:
-                    print(f"Keyring unlock failed: {reply.body[0]}", file=sys.stderr)
+                    print(
+                        f"Keyring unlock failed: {reply.body[0]}",
+                        file=sys.stderr,
+                    )
                     sys.exit(1)
                 print("Keyring successfully unlocked.")
             except Exception as e:
