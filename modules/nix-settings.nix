@@ -36,4 +36,9 @@
   nix.gc.automatic = false;
 
   programs.nix-ld.enable = true;
+
+  environment.systemPackages = with pkgs; [
+    nix-output-monitor # `nom` real-time interactive build graph & progress tree
+    nix-tree           # interactive TUI package dependency tree browser
+  ];
 }

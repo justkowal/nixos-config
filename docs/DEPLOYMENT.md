@@ -100,11 +100,23 @@ sudo nixos-rebuild switch --flake .#desktop
 sudo nixos-rebuild switch --flake .#laptop
 ```
 
-#### Step B: Build the Image (Distributed or Standalone)
-Run the build from either the Desktop or Laptop:
+#### Step B: Verify Remote Builder Connectivity (Optional)
+Test that your build machine can communicate with the remote daemon over Tailscale/SSH:
 ```bash
-nix build .#nixosConfigurations.rpi4.config.system.build.sdImage
+# On Laptop, test Desktop builder:
+nix store ping --store ssh://justkowal@nixos-desktop.lab
+
+# On Desktop, test Laptop builder:
+nix store ping --store ssh://justkowal@thinkpad-t14s-gen1-amd.lab
 ```
+*Expected output: `Store 'ssh://justkowal@...' is responding`*
+
+#### Step C: Build the Image with Real-Time Dependency Graph
+Build using `nom` (`nix-output-monitor`), which renders an interactive live tree showing what is building, what is waiting on what, download speeds, and ETAs:
+```bash
+nom build .#nixosConfigurations.rpi4.config.system.build.sdImage
+```
+*(Or standard Nix: `nix build .#nixosConfigurations.rpi4.config.system.build.sdImage`)*
 
 * **When building from the Laptop**: Heavy compilation tasks are automatically offloaded to the Desktop's 16-thread Ryzen 7 7800X3D over Tailscale/LAN.
 * **When building from the Desktop**: Parallel jobs can be distributed across both the Desktop and Laptop simultaneously.
