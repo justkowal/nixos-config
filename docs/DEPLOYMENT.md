@@ -84,14 +84,31 @@ Before starting the node-level deployments, set up your private **Tailscale** ov
 
 The Raspberry Pi 4 acts as the central orchestrator, running 24/7 on low power (~4–7W). It coordinates identity, source control, CI orchestration, render management, and power signals.
 
-### 2.1 Build the SD Card Image
+### 2.1 Build the SD Card Image (Local or Distributed)
 
-Build the aarch64 bootable SD image using the Desktop or any machine with `binfmt` emulation or native ARM64:
+The Raspberry Pi image is built for ARM64 (`aarch64-linux`). Both the **Desktop** and **Laptop** are configured with:
+1. **ARM64 User Emulation (`binfmt`)**: Allows assembling ARM64 images natively via QEMU without platform mismatch errors.
+2. **Mutual Distributed Builds**: Both nodes trust each other via SSH and can dispatch build jobs in parallel across both machines simultaneously (`builders-use-substitutes = true`).
 
+#### Step A: Activate Configuration on Build Host(s)
+Before building for the first time, switch the host to activate QEMU ARM64 binfmt and distributed builder settings:
 ```bash
-# On your build machine (Desktop or Laptop):
+# On Desktop:
+sudo nixos-rebuild switch --flake .#desktop
+
+# Or on Laptop:
+sudo nixos-rebuild switch --flake .#laptop
+```
+
+#### Step B: Build the Image (Distributed or Standalone)
+Run the build from either the Desktop or Laptop:
+```bash
 nix build .#nixosConfigurations.rpi4.config.system.build.sdImage
 ```
+
+* **When building from the Laptop**: Heavy compilation tasks are automatically offloaded to the Desktop's 16-thread Ryzen 7 7800X3D over Tailscale/LAN.
+* **When building from the Desktop**: Parallel jobs can be distributed across both the Desktop and Laptop simultaneously.
+* **Binary Caching**: With `builders-use-substitutes = true`, pre-compiled ARM64 packages are fetched directly from `cache.nixos.org` by each builder.
 
 The resulting compressed image will be linked at `./result/sd-image/nixos-image-sd-card-*.img.zst`.
 

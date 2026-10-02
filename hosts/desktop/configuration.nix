@@ -71,6 +71,21 @@ in {
   # Allows native aarch64 builds (RPi4 SD images) via QEMU user-mode emulation
   boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
 
+  # ── Distributed Builds (Offload to Laptop) ─────────────────────────────
+  # Distributes parallel compilation jobs to the Laptop (ThinkPad T14s)
+  # when available over Tailscale/LAN with automatic local fallback.
+  nix.buildMachines = [
+    {
+      hostName = "thinkpad-t14s-gen1-amd.lab";
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      sshUser = "justkowal";
+      sshKey = "/home/justkowal/.ssh/id_ed25519";
+      maxJobs = 8;
+      speedFactor = 1;
+      supportedFeatures = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
+    }
+  ];
+
   # ── Bootloader: GRUB (replaces systemd-boot from shared module) ────────
   boot.loader.grub = {
     enable = true;

@@ -28,6 +28,24 @@
   boot.loader.timeout = 0;
   systemd.services.systemd-boot-random-seed.enable = false;
 
+  # Transparent ARM64 QEMU user emulation for local ARM builds
+  boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
+
+  # ── Distributed Builds (Offload to Desktop) ────────────────────────────
+  # Dispatches heavy compilation and ARM64 SD image builds to the Desktop's
+  # 16-thread Ryzen 7 7800X3D over Tailscale/LAN with automatic fallback.
+  nix.buildMachines = [
+    {
+      hostName = "nixos-desktop.lab";
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      sshUser = "justkowal";
+      sshKey = "/home/justkowal/.ssh/id_ed25519";
+      maxJobs = 16;
+      speedFactor = 2;
+      supportedFeatures = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
+    }
+  ];
+
   home-manager.backupFileExtension = "backup";
   home-manager.extraSpecialArgs = {
     laptop = true;
