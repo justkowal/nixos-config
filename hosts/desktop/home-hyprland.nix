@@ -7,13 +7,13 @@
   # Script wrappers — installed on PATH as commands
   volume-osd = pkgs.writeShellApplication {
     name = "volume-osd";
-    runtimeInputs = with pkgs; [wireplumber gawk gnugrep libnotify];
+    runtimeInputs = with pkgs; [wireplumber gawk gnugrep libnotify coreutils];
     text = builtins.readFile ./scripts/volume-osd.sh;
   };
 
   brightness-osd = pkgs.writeShellApplication {
     name = "brightness-osd";
-    runtimeInputs = with pkgs; [ddcutil gnugrep libnotify];
+    runtimeInputs = with pkgs; [brightnessctl ddcutil gnugrep libnotify coreutils];
     text = builtins.readFile ./scripts/brightness-osd.sh;
   };
 
@@ -34,6 +34,14 @@
     runtimeInputs = with pkgs; [jq hyprland coreutils];
     text = builtins.readFile ./scripts/resize-split.sh;
   };
+
+  cliphist-picker = pkgs.writeShellApplication {
+    name = "cliphist-picker";
+    runtimeInputs = with pkgs; [cliphist rofi wl-clipboard];
+    text = ''
+      cliphist list | rofi -dmenu -p "Clipboard" -theme-str 'window {width: 700px;}' | cliphist decode | wl-copy
+    '';
+  };
 in {
   home.packages =
     [
@@ -42,14 +50,26 @@ in {
       power-menu
       change-wallpaper
       resize-split
+      cliphist-picker
     ]
-    ++ lib.optionals laptop [pkgs.blueman];
+    ++ lib.optionals laptop [pkgs.blueman pkgs.brightnessctl];
 
   wayland.windowManager.hyprland = {
     enable = true;
     configType = "hyprlang";
     extraConfig = ''
           monitor=,preferred,auto,1
+
+          # Default fallback colors (overridden by matugen.conf if present)
+          $background = rgba(1a1111ff)
+          $background_transparent = rgba(1a1111cc)
+          $surface = rgba(1a1111ff)
+          $surface_variant = rgba(524343ff)
+          $on_surface = rgba(f0dedeff)
+          $primary = rgba(ffb3b5ff)
+          $secondary = rgba(e6bdbdff)
+          $tertiary = rgba(e6c18dff)
+          $outline = rgba(9f8c8cff)
 
           source = ~/.config/hypr/matugen.conf
 
@@ -60,16 +80,34 @@ in {
         touchpad {
           natural_scroll = true
           tap-to-click = true
+          clickfinger_behavior = true
+          tap-and-drag = true
+          drag_lock = false
           disable_while_typing = true
-          drag_lock = true
         }
       ''}
           }
 
       ${lib.optionalString laptop ''
         gestures {
-          workspace_swipe = true
-          workspace_swipe_fingers = 3
+          workspace_swipe_distance = 200
+          workspace_swipe_cancel_ratio = 0.2
+          workspace_swipe_min_speed_to_force = 15
+          workspace_swipe_forever = true
+          workspace_swipe_create_new = true
+          workspace_swipe_direction_lock = true
+        }
+
+        # 3 and 4-finger touchpad gestures
+        gesture = 3, horizontal, workspace
+        gesture = 4, horizontal, workspace
+        gesture = 3, vertical, special, term
+        gesture = 4, vertical, special, term
+
+        device {
+          name = etps/2-elantech-trackpoint
+          sensitivity = 0.0
+          accel_profile = adaptive
         }
       ''}
 
@@ -133,7 +171,7 @@ in {
           exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
           exec-once = ${pkgs.gnome-keyring}/bin/gnome-keyring-daemon --start --components=secrets,pkcs11,ssh
           exec-once = systemctl --user start waybar
-          exec-once = sleep 0.5 && awww img /home/justkowal/Pictures/wallpaper.png --transition-type wipe --transition-step 90
+          exec-once = ${pkgs.bash}/bin/bash -c "sleep 1 && ${pkgs.awww}/bin/awww img /home/justkowal/Pictures/wallpaper.png --transition-type wipe --transition-step 90 && ${pkgs.matugen}/bin/matugen image --source-color-index 0 /home/justkowal/Pictures/wallpaper.png"
         ${lib.optionalString laptop ''
         exec-once = blueman-applet
       ''}
@@ -146,13 +184,22 @@ in {
           bind = $mod, B, exec, firefox
           bind = $mod, ESCAPE, exec, power-menu
           bind = $mod, grave, togglespecialworkspace, term
+      ${
+        if laptop
+        then ''
+          bind = $mod, D, exec, rofi -show drun
+          bind = $mod, SPACE, exec, rofi -show drun
+        ''
+        else ''
           bind = $mod, D, exec, bash ~/.config/hypr/scripts/spotlight.sh
           bind = $mod, SPACE, exec, bash ~/.config/hypr/scripts/spotlight.sh
           bind = $mod, A, exec, bash ~/.config/hypr/scripts/rofi_ai.sh
+        ''
+      }
           bind = $mod, Q, killactive,
           bind = $mod, M, exit,
           bind = $mod, F, togglefloating,
-          bind = $mod, L, exec, hyprlock
+          bind = $mod, L, exec, loginctl lock-session
           bind = $mod, left, movefocus, l
           bind = $mod, right, movefocus, r
           bind = $mod, up, movefocus, u
@@ -188,26 +235,39 @@ in {
           bind = $mod SHIFT, mouse:276, movetoworkspace, r+1
 
           # Clipboard & AI
-          bind = $mod, V, exec, bash ~/.config/hypr/scripts/cliphist_picker.sh
+          bind = $mod, V, exec, cliphist-picker
+      ${lib.optionalString (!laptop) ''
           bind = $mod ALT, N, exec, bash ~/.config/ai/notification_digest.sh
           bind = $mod SHIFT, S, exec, bash ~/.config/hypr/scripts/ai_ocr_screenshot.sh
+      ''}
           bind = , Print, exec, ${pkgs.grim}/bin/grim -g "$(${pkgs.slurp}/bin/slurp)" - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.libnotify}/bin/notify-send "Screenshot" "Region copied to clipboard"
           bind = SHIFT, Print, exec, ${pkgs.grim}/bin/grim - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.libnotify}/bin/notify-send "Screenshot" "Fullscreen copied to clipboard"
           bind = CTRL, Print, exec, ${pkgs.grim}/bin/grim -g "$(${pkgs.hyprland}/bin/hyprctl activewindow -j | ${pkgs.jq}/bin/jq -r '([.at[0],.at[1]]|join(",")) + " " + ([.size[0],.size[1]]|join("x"))')" - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.libnotify}/bin/notify-send "Screenshot" "Focused window copied to clipboard"
 
           bind = $mod SHIFT, W, exec, change-wallpaper
 
-          # Media & volume keys
+          # Media, Volume & Mic keys
           bindl = , XF86AudioMute, exec, volume-osd mute
+          bindle = , XF86AudioRaiseVolume, exec, volume-osd up
+          bindle = , XF86AudioLowerVolume, exec, volume-osd down
+          bindl = , XF86AudioMicMute, exec, volume-osd mic-mute
           bindl = , XF86AudioPlay, exec, playerctl play-pause
           bindl = , XF86AudioNext, exec, playerctl next
           bindl = , XF86AudioPrev, exec, playerctl previous
-          bindle = , XF86AudioRaiseVolume, exec, volume-osd up
-          bindle = , XF86AudioLowerVolume, exec, volume-osd down
 
-          # Brightness (SUPER+ALT+PageUp/Down)
+          # Brightness (Hardware Keys & Mod shortcuts)
+          bindle = , XF86MonBrightnessUp, exec, brightness-osd up
+          bindle = , XF86MonBrightnessDown, exec, brightness-osd down
           bindle = $mod ALT, Page_Up, exec, brightness-osd up
           bindle = $mod ALT, Page_Down, exec, brightness-osd down
+
+          # ThinkPad Hardware Hotkeys
+          bindl = , XF86Display, exec, bash -c "if ${pkgs.hyprland}/bin/hyprctl monitors | grep -q 'DP-'; then ${pkgs.hyprland}/bin/hyprctl dispatch dpms toggle; else ${pkgs.libnotify}/bin/notify-send -i video-display 'Display' 'Single display active'; fi"
+          bindl = , XF86WLAN, exec, bash -c "if ${pkgs.networkmanager}/bin/nmcli radio wifi | grep -q 'enabled'; then ${pkgs.networkmanager}/bin/nmcli radio wifi off && ${pkgs.libnotify}/bin/notify-send -i network-wireless-offline 'WiFi' 'Disabled (Airplane Mode)'; else ${pkgs.networkmanager}/bin/nmcli radio wifi on && ${pkgs.libnotify}/bin/notify-send -i network-wireless-signal-excellent 'WiFi' 'Enabled'; fi"
+          bind = , XF86Tools, exec, swaync-client -t -sw
+          bind = , XF86NotificationCenter, exec, swaync-client -t -sw
+          bindl = , XF86Bluetooth, exec, bash -c "if ${pkgs.util-linux}/bin/rfkill list bluetooth | grep -q 'Soft blocked: yes'; then ${pkgs.util-linux}/bin/rfkill unblock bluetooth && ${pkgs.libnotify}/bin/notify-send -i bluetooth-active 'Bluetooth' 'Enabled'; else ${pkgs.util-linux}/bin/rfkill block bluetooth && ${pkgs.libnotify}/bin/notify-send -i bluetooth-disabled 'Bluetooth' 'Disabled'; fi"
+          bind = , XF86Favorites, togglespecialworkspace, term
 
           # Swap windows
           bind = $mod SHIFT, left, swapwindow, l
@@ -293,6 +353,11 @@ in {
         grace = 15;
         hide_cursor = true;
       };
+      auth = lib.mkIf laptop {
+        "fingerprint:enabled" = true;
+        "fingerprint:ready_message" = "(Scan fingerprint)";
+        "fingerprint:present_message" = "Scanning fingerprint...";
+      };
       background = [
         {
           path = "screenshot";
@@ -310,7 +375,10 @@ in {
           outer_color = "rgba(203, 166, 247, 1.0)";
           inner_color = "rgba(30, 30, 46, 0.9)";
           font_color = "rgba(205, 214, 244, 1.0)";
-          placeholder_text = "<i>Password...</i>";
+          placeholder_text =
+            if laptop
+            then "<i>Scan face, fingerprint or password...</i>"
+            else "<i>Password...</i>";
         }
       ];
     };
@@ -319,6 +387,12 @@ in {
   services.hypridle = {
     enable = true;
     settings = {
+      general = {
+        lock_cmd = "pidof hyprlock || hyprlock --grace 0";
+        before_sleep_cmd = "loginctl lock-session; sleep 0.5";
+        after_sleep_cmd = "hyprctl dispatch dpms on";
+        ignore_dbus_inhibit = false;
+      };
       listener = [
         {
           timeout = 900;

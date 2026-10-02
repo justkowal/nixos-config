@@ -1,6 +1,7 @@
 {
   config,
   pkgs,
+  lib,
   inputs,
   ...
 }: {
@@ -20,6 +21,7 @@
     ../../modules/systemd-minimal.nix
     ../../modules/laptop.nix
     ../../modules/networking.nix
+    ../../modules/power-saving.nix
   ];
 
   home-manager.backupFileExtension = "backup";
@@ -32,7 +34,7 @@
   services.blueman.enable = true;
   services.fwupd.enable = true;
 
-  # Laptop Battery Power Management & Thermal Control
+  # Laptop Battery Power Management, Thermal Control & Battery Health Preservation
   services.tlp = {
     enable = true;
     settings = {
@@ -45,10 +47,13 @@
       SATA_LINKPWR_ON_BAT = "min_power";
       WIFI_PWR_ON_AC = "off";
       WIFI_PWR_ON_BAT = "on";
+      # ThinkPad Battery Health Thresholds (Mild Conservation Mode: 85% - 90%)
+      START_CHARGE_THRESH_BAT0 = 85;
+      STOP_CHARGE_THRESH_BAT0 = 90;
     };
   };
 
-  # Touchpad support (Libinput)
+  # Touchpad & TrackPoint support (Libinput & ThinkPad TrackPoint Driver)
   services.libinput = {
     enable = true;
     touchpad = {
@@ -57,10 +62,93 @@
       scrollMethod = "twofinger";
     };
   };
+  hardware.trackpoint = {
+    enable = true;
+    emulateWheel = true;
+  };
 
   # Backlight brightness control without root privileges
   hardware.acpilight.enable = true;
   services.upower.enable = true;
+
+  # Deep sleep power savings (avoids Modern Standby battery drain on ThinkPad AMD)
+  boot.kernelParams = ["mem_sleep_default=deep"];
+
+  # Logind lid switch handling: suspend on battery, keep active when docked/external monitor
+  services.logind.settings = {
+    Login = {
+      HandleLidSwitch = "suspend";
+      HandleLidSwitchDocked = "ignore";
+      HandleLidSwitchExternalPower = "ignore";
+    };
+  };
+
+  # Biometrics: Synaptics Prometheus MIS Touch Fingerprint Reader (06cb:00bd)
+  services.fprintd.enable = true;
+
+  # Allow members of wheel group to enroll and manage fingerprints without a Polkit agent dialog
+  security.polkit.extraConfig = ''
+    polkit.addRule(function(action, subject) {
+      if (action.id.indexOf("net.reactivated.fprint.") == 0 && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+      }
+    });
+  '';
+
+  # Biometrics: Windows Hello facial recognition via ThinkPad IR Camera (/dev/video2)
+  services.howdy = {
+    enable = true;
+    control = "sufficient"; # NEVER "required" — prevents locking out password auth
+    settings = {
+      core = {
+        abort_if_lid_closed = true;
+        abort_if_ssh = true;
+      };
+      video = {
+        device_path = "/dev/video2";
+        dark_threshold = 95;
+        certainty = 3.5;
+      };
+    };
+  };
+
+  # IR Emitter Hardware Service for infrared illumination
+  services.linux-enable-ir-emitter.enable = true;
+
+  # PAM Authentication integration (Hyprlock: Face in PAM + parallel Fingerprint; Greetd: Face first then Fingerprint/Password)
+  security.pam.services = {
+    hyprlock = {
+      fprintAuth = false; # Handled in parallel natively by hyprlock (avoids serial PAM blocking)
+      howdy = {
+        enable = true;
+        control = "sufficient";
+      };
+    };
+    greetd = {
+      rules.auth.howdy.order = lib.mkForce 11300; # Run Howdy BEFORE fprintd so camera triggers first
+    };
+    sudo = {
+      fprintAuth = true;
+      howdy.enable = false;
+    };
+    polkit-1 = {
+      fprintAuth = true;
+      howdy.enable = false;
+    };
+    login = {
+      howdy.enable = false;
+    };
+  };
+
+
+  # Laptop-specific packages
+  environment.systemPackages = with pkgs; [
+    brightnessctl
+    wireplumber
+    libnotify
+    howdy
+    fprintd
+  ];
 
   # Hostname
   networking.hostName = "thinkpad-t14s-gen1-amd";

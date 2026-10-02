@@ -52,13 +52,10 @@ in {
           then 8
           else 12;
         modules-left = ["hyprland/workspaces" "hyprland/submap"];
-        modules-center =
-          if laptop
-          then ["clock" "clock#date"]
-          else ["clock" "custom/pomodoro" "clock#date"];
+        modules-center = ["clock" "custom/pomodoro" "clock#date"];
         modules-right =
           if laptop
-          then ["battery" "mpris" "pulseaudio" "custom/notification" "custom/power" "tray"]
+          then ["battery" "backlight" "network" "bluetooth" "pulseaudio" "custom/thinkdot" "custom/notification" "custom/power" "tray"]
           else ["mpris" "group/system" "group/hardware" "pulseaudio" "custom/pip" "custom/notification" "custom/power"];
 
         "hyprland/workspaces" = {
@@ -76,15 +73,35 @@ in {
         };
 
         battery = {
-          format = "󰁹 {capacity}%";
-          format-charging = "󰂄 {capacity}%";
-          format-plugged = "󰚥 {capacity}%";
-          format-full = "󰁹 {capacity}%";
           states = {
             warning = 30;
             critical = 15;
           };
-          tooltip-format = "{timeTo} remaining";
+          format = "{icon} {capacity}%";
+          format-charging = "󰂄 {capacity}%";
+          format-plugged = "󰚥 {capacity}%";
+          format-full = "󰁹 {capacity}%";
+          format-icons = ["󰁺" "󰁻" "󰁼" "󰁽" "󰁾" "󰁿" "󰂀" "󰂁" "󰂂" "󰁹"];
+          tooltip-format = "{timeTo} ({power:0.1f}W)\nHealth: {health}%";
+        };
+
+        backlight = {
+          device = "amdgpu_bl1";
+          format = "{icon} {percent}%";
+          format-icons = ["󰃞" "󰃟" "󰃠"];
+          on-scroll-up = "${pkgs.brightnessctl}/bin/brightnessctl set 5%+ -q";
+          on-scroll-down = "${pkgs.brightnessctl}/bin/brightnessctl set 5%- -q";
+          tooltip-format = "Brightness: {percent}%";
+        };
+
+        bluetooth = {
+          format = "󰂯 {status}";
+          format-connected = "󰂱 {device_alias}";
+          format-connected-battery = "󰂱 {device_alias} ({device_battery_percentage}%)";
+          tooltip-format = "{controller_alias}\t{controller_address}\n\n{num_connections} connected";
+          tooltip-format-connected = "{controller_alias}\t{controller_address}\n\n{num_connections} connected\n\n{device_enumerate}";
+          tooltip-format-enumerate-connected = "{device_alias}\t{device_address}";
+          on-click = "${pkgs.blueman}/bin/blueman-manager";
         };
 
         "mpris" = {
@@ -174,6 +191,15 @@ in {
           on-click = "${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw";
           on-click-right = "${pkgs.swaynotificationcenter}/bin/swaync-client -d -sw";
           escape = true;
+        };
+
+        "custom/thinkdot" = {
+          format = "{}";
+          return-type = "json";
+          exec = "thinkdot waybar";
+          interval = 2;
+          on-click = "thinkdot stealth toggle";
+          tooltip = true;
         };
 
         "custom/power" = {
@@ -283,7 +309,7 @@ in {
         background-color: @surface_variant;
       }
 
-      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-power, #custom-pomodoro, #custom-update, #custom-pip, #custom-hw_trigger, #custom-sys_trigger {
+      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-thinkdot, #custom-power, #custom-pomodoro, #custom-update, #custom-pip, #custom-hw_trigger, #custom-sys_trigger, #backlight, #bluetooth {
         padding: 0 16px;
         margin: 4px 2px;
         background-color: alpha(@surface_variant, 0.82);
@@ -309,6 +335,13 @@ in {
       }
 
       #custom-notification { color: @primary; }
+      #custom-thinkdot { color: @error; font-size: 15px; }
+      #custom-thinkdot.stealth { color: @outline; }
+      #custom-thinkdot.privacy { color: @error; font-weight: bold; }
+      #custom-thinkdot.focus { color: @primary; }
+      #custom-thinkdot.break { color: @secondary; }
+      #custom-thinkdot.critical { color: @error; }
+      #custom-thinkdot.idle { color: @on_surface_variant; }
       #custom-update { color: @tertiary; }
       #custom-update.ready { color: @primary; background-color: alpha(@primary, 0.25); }
       #custom-pomodoro.work { color: @error; }
@@ -333,6 +366,8 @@ in {
       #clock { color: @on_background; font-size: 14px; }
       #pulseaudio { color: @secondary; }
       #network { color: @secondary; }
+      #backlight { color: @tertiary; }
+      #bluetooth { color: @primary; }
       #custom-sysinfo { color: @primary; }
       #idle_inhibitor { color: @tertiary; }
       #memory { color: @primary; }

@@ -25,6 +25,22 @@
             }
           }
         }
+        hooks: {
+          pre_execution: [{ ||
+            $env.THINKDOT_CMD_START = (date now)
+          }]
+          pre_prompt: [{ ||
+            if ($env.THINKDOT_CMD_START? != null) {
+              let elapsed = ((date now) - $env.THINKDOT_CMD_START)
+              $env.THINKDOT_CMD_START = null
+              if ($elapsed >= 15sec) {
+                if (which thinkdot | is-not-empty) {
+                  ^thinkdot burst 3 out+err> /dev/null &
+                }
+              }
+            }
+          }]
+        }
       }
 
       alias discord = vesktop
@@ -44,6 +60,15 @@
   programs.fzf = {
     enable = true;
     enableNushellIntegration = false;
+  };
+
+  programs.git = {
+    enable = true;
+    userName = "justkowal";
+    userEmail = "justkowal@users.noreply.github.com";
+    extraConfig = {
+      init.defaultBranch = "main";
+    };
   };
 
   xdg.configFile."macchina/macchina.toml".text = ''

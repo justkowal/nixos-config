@@ -495,6 +495,7 @@
       if [[ "''${1:-}" == "--toast" ]]; then
         ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:ai-digest \
           "🔔 AI Digest ($NOTIF_COUNT notifications)" "$RESPONSE" -i dialog-information
+        command -v thinkdot >/dev/null 2>&1 && thinkdot burst 3 || true
       else
         echo ""
         echo "🔔 AI Notification Digest ($NOTIF_COUNT notifications)"

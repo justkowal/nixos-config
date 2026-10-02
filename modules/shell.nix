@@ -29,6 +29,7 @@
 
   environment.systemPackages = with pkgs; [
     uutils-coreutils-noprefix
+    git
   ];
 
   environment.sessionVariables = {
@@ -41,5 +42,23 @@
   environment.interactiveShellInit = ''
     alias fallback-bash="exec ${pkgs.bashInteractive}/bin/bash"
     alias discord="vesktop"
+
+    # ThinkPad Dot completion alert for commands running longer than 15s
+    if [ -n "''${PS1:-}" ]; then
+      __thinkdot_preexec() {
+        __THINKDOT_CMD_START=$SECONDS
+      }
+      __thinkdot_precmd() {
+        if [ -n "''${__THINKDOT_CMD_START:-}" ]; then
+          local elapsed=$((SECONDS - __THINKDOT_CMD_START))
+          unset __THINKDOT_CMD_START
+          if [ "$elapsed" -ge 15 ]; then
+            command -v thinkdot >/dev/null 2>&1 && thinkdot burst 3 &
+          fi
+        fi
+      }
+      trap '__thinkdot_preexec' DEBUG
+      PROMPT_COMMAND="''${PROMPT_COMMAND:+$PROMPT_COMMAND; }__thinkdot_precmd"
+    fi
   '';
 }

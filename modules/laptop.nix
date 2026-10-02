@@ -1,4 +1,8 @@
 {...}: {
+  imports = [
+    ./thinkpad-dot.nix
+  ];
+
   zramSwap = {
     enable = true;
     algorithm = "zstd";

@@ -3,3 +3,5 @@ core.*
 *.old
 *.bak
 .git.bak_nobody/
+hosts_old/
+.git_old/

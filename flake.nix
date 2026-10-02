@@ -28,9 +28,12 @@
     user = "justkowal";
 
     # Shared Home Manager Userland Module
-    sharedHomeManagerModule = {
+    makeHomeManagerModule = isLaptop: {
       home-manager.useGlobalPkgs = true;
       home-manager.useUserPackages = true;
+      home-manager.extraSpecialArgs = {
+        laptop = isLaptop;
+      };
       home-manager.users.${user} = import ./hosts/desktop/home.nix;
     };
   in {
@@ -41,7 +44,7 @@
           {nixpkgs.hostPlatform = "x86_64-linux";}
           ./hosts/desktop/configuration.nix
           home-manager.nixosModules.home-manager
-          sharedHomeManagerModule
+          (makeHomeManagerModule false)
         ];
       };
 
@@ -51,7 +54,7 @@
           {nixpkgs.hostPlatform = "x86_64-linux";}
           ./hosts/vm/configuration.nix
           home-manager.nixosModules.home-manager
-          sharedHomeManagerModule
+          (makeHomeManagerModule false)
         ];
       };
 
@@ -61,7 +64,7 @@
           {nixpkgs.hostPlatform = "x86_64-linux";}
           ./hosts/laptop/configuration.nix
           home-manager.nixosModules.home-manager
-          sharedHomeManagerModule
+          (makeHomeManagerModule true)
         ];
       };
 
@@ -74,7 +77,8 @@
       };
     };
 
-    # Alias for desktop target
+    # Hostname aliases
     nixosConfigurations.nixos-desktop = self.nixosConfigurations.desktop;
+    nixosConfigurations.thinkpad-t14s-gen1-amd = self.nixosConfigurations.laptop;
   };
 }

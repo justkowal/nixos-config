@@ -38,6 +38,28 @@ in {
       fi
     '';
 
+    initMatugenColors = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      if [ ! -f ${homeDir}/.config/hypr/matugen.conf ]; then
+        mkdir -p ${homeDir}/.config/hypr
+        cat << 'EOF' > ${homeDir}/.config/hypr/matugen.conf
+$background = rgba(1a1111ff)
+$background_transparent = rgba(1a1111cc)
+$surface = rgba(1a1111ff)
+$surface_variant = rgba(524343ff)
+$on_surface = rgba(f0dedeff)
+$primary = rgba(ffb3b5ff)
+$secondary = rgba(e6bdbdff)
+$tertiary = rgba(e6c18dff)
+$outline = rgba(9f8c8cff)
+EOF
+      fi
+
+      if [ ! -f ${homeDir}/Pictures/wallpaper.png ]; then
+        mkdir -p ${homeDir}/Pictures
+        cp ${./wallpaper.png} ${homeDir}/Pictures/wallpaper.png
+      fi
+    '';
+
     # MangoHud needs a mutable config file (not a symlink)
     copyMangoHud = lib.hm.dag.entryAfter ["linkGeneration"] ''
       if [ -L ${homeDir}/.config/MangoHud/MangoHud.conf ]; then
