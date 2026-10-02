@@ -148,6 +148,19 @@
     tctiEnvironment.enable = true;
   };
 
+  # Passwordless decryption of TPM2-sealed keyring credentials
+  security.sudo.extraRules = [
+    {
+      users = [ "justkowal" ];
+      commands = [
+        {
+          command = "/run/current-system/sw/bin/systemd-creds decrypt /etc/keyring.cred";
+          options = [ "NOPASSWD" ];
+        }
+      ];
+    }
+  ];
+
   # Laptop-specific packages
   environment.systemPackages = with pkgs; [
     brightnessctl
