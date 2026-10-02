@@ -170,6 +170,7 @@ in {
           exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
           exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
           exec-once = ${pkgs.gnome-keyring}/bin/gnome-keyring-daemon --start --components=secrets,pkcs11,ssh
+          exec-once = ${pkgs.bash}/bin/bash -c "sleep 0.5 && if [ -f ~/.config/keyring.cred ]; then ${pkgs.systemd}/bin/systemd-creds --user decrypt ~/.config/keyring.cred 2>/dev/null | ${pkgs.gnome-keyring}/bin/gnome-keyring-daemon --unlock 2>/dev/null || true; fi"
           exec-once = systemctl --user start waybar
           exec-once = ${pkgs.bash}/bin/bash -c "sleep 1 && ${pkgs.awww}/bin/awww img /home/justkowal/Pictures/wallpaper.png --transition-type wipe --transition-step 90 && ${pkgs.matugen}/bin/matugen image --source-color-index 0 /home/justkowal/Pictures/wallpaper.png"
         ${lib.optionalString laptop ''

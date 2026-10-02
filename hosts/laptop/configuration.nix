@@ -141,6 +141,13 @@
   };
 
 
+  # TPM 2.0 Hardware Security Subsystem
+  security.tpm2 = {
+    enable = true;
+    pkcs11.enable = true;
+    tctiEnvironment.enable = true;
+  };
+
   # Laptop-specific packages
   environment.systemPackages = with pkgs; [
     brightnessctl
@@ -148,6 +155,9 @@
     libnotify
     howdy
     fprintd
+    tpm2-tools
+    cryptsetup
+    seahorse
   ];
 
   # Hostname
@@ -160,7 +170,7 @@
   users.users.justkowal = {
     isNormalUser = true;
     description = "justkowal";
-    extraGroups = ["networkmanager" "wheel" "video" "render" "docker" "input"];
+    extraGroups = ["networkmanager" "wheel" "video" "render" "docker" "input" "tss"];
   };
 
   # NixOS State Version
