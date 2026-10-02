@@ -12,7 +12,7 @@
     version = "3.6";
     src = pkgs.fetchzip {
       url = "https://flamenco.blender.org/downloads/flamenco-3.6-linux-amd64.tar.gz";
-      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      hash = "sha256-aZ5hqxssAyeOj/SMGqU0p8aL02I2tidndFAcvjpgMCk=";
     };
     dontBuild = true;
     dontFixup = true;

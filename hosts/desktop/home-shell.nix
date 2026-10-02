@@ -64,9 +64,9 @@
 
   programs.git = {
     enable = true;
-    userName = "justkowal";
-    userEmail = "justkowal@users.noreply.github.com";
-    extraConfig = {
+    settings = {
+      user.name = "justkowal";
+      user.email = "justkowal@users.noreply.github.com";
       init.defaultBranch = "main";
     };
   };
@@ -116,7 +116,9 @@
   # seamlessly as soon as port 22 opens.
   programs.ssh = {
     enable = true;
+    enableDefaultConfig = false;
     settings = {
+      "*" = {};
       "nixos-desktop nixos-desktop.lab desktop.lab" = {
         hostname = "nixos-desktop.lab";
         proxyCommand = "${pkgs.openssh}/bin/ssh -T justkowal@nixos-rpi4.lab wake-and-proxy %h %p";
