@@ -125,6 +125,9 @@
         "editor.formatOnSave" = true;
         "nix.enableLanguageServer" = true;
         "nix.serverPath" = "nixd";
+        "git.enabled" = true;
+        "git.path" = "${pkgs.git}/bin/git";
+        "git.autofetch" = true;
       };
     };
   };
