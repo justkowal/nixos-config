@@ -42,6 +42,54 @@
       cliphist list | rofi -dmenu -p "Clipboard" -theme-str 'window {width: 700px;}' | cliphist decode | wl-copy
     '';
   };
+
+  unlock-keyring = pkgs.writers.writePython3Bin "unlock-keyring-tool" {
+    libraries = [pkgs.python3Packages.jeepney];
+  } ''
+    import sys
+    from jeepney import DBusAddress, new_method_call
+    from jeepney.io.blocking import open_dbus_connection
+
+    password = sys.stdin.read().strip()
+    if not password:
+        sys.exit(0)
+
+    try:
+        conn = open_dbus_connection(bus="SESSION")
+        service = DBusAddress(
+            "/org/freedesktop/secrets",
+            "org.freedesktop.secrets",
+            "org.freedesktop.Secret.Service",
+        )
+        msg = new_method_call(
+            service, "OpenSession", "sv", ("plain", ("s", ""))
+        )
+        _, session_path = conn.send_and_get_reply(msg).body
+
+        guilt_iface = (
+            "org.gnome.keyring.InternalUnsupportedGuiltRiddenInterface"
+        )
+        guilt = DBusAddress(
+            "/org/freedesktop/secrets",
+            "org.freedesktop.secrets",
+            guilt_iface,
+        )
+        secret = (session_path, b"", password.encode(), "text/plain")
+        msg_unlock = new_method_call(
+            guilt,
+            "UnlockWithMasterPassword",
+            "o(oayays)",
+            ("/org/freedesktop/secrets/collection/login", secret),
+        )
+        reply = conn.send_and_get_reply(msg_unlock)
+        if reply.body:
+            print(f"Keyring unlock failed: {reply.body[0]}", file=sys.stderr)
+            sys.exit(1)
+        print("Keyring successfully unlocked.")
+    except Exception as e:
+        print(f"Keyring unlock exception: {e}", file=sys.stderr)
+        sys.exit(1)
+  '';
 in {
   home.packages =
     [
@@ -52,7 +100,7 @@ in {
       resize-split
       cliphist-picker
     ]
-    ++ lib.optionals laptop [pkgs.blueman pkgs.brightnessctl];
+    ++ lib.optionals laptop [pkgs.blueman pkgs.brightnessctl unlock-keyring];
 
   wayland.windowManager.hyprland = {
     enable = true;
@@ -171,7 +219,7 @@ in {
           exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
           exec-once = ${pkgs.gnome-keyring}/bin/gnome-keyring-daemon --start --components=secrets,pkcs11,ssh
         ${lib.optionalString laptop ''
-          exec-once = sudo /run/current-system/sw/bin/systemd-creds decrypt /etc/keyring.cred | gnome-keyring-daemon --unlock
+          exec-once = ${pkgs.bash}/bin/bash -c "sleep 1 && if [ -f /etc/keyring.cred ]; then systemctl start unlock-keyring.service; fi"
         ''}
           exec-once = systemctl --user start waybar
           exec-once = ${pkgs.bash}/bin/bash -c "sleep 1 && ${pkgs.awww}/bin/awww img /home/justkowal/Pictures/wallpaper.png --transition-type wipe --transition-step 90 && ${pkgs.matugen}/bin/matugen image --source-color-index 0 /home/justkowal/Pictures/wallpaper.png"

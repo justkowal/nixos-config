@@ -72,7 +72,33 @@
   services.upower.enable = true;
 
   # Deep sleep power savings (avoids Modern Standby battery drain on ThinkPad AMD)
-  boot.kernelParams = ["mem_sleep_default=deep"];
+  boot.kernelParams = [
+    "mem_sleep_default=deep"
+    # Initrd Hardening (prevent dropping to root debug shell on failure)
+    "rd.shell=0"
+    "rd.emergency=reboot"
+    # Kernel & Memory Exploit Mitigations
+    "page_alloc.shuffle=1"
+    "slab_nomerge"
+    "init_on_alloc=1"
+    "init_on_free=1"
+    "vsyscall=none"
+    "debugfs=off"
+    "oops=panic"
+    "lockdown=integrity"
+  ];
+
+  # Secure Boot via Lanzaboote (signs kernels and bootloader with sbctl keys)
+  security.protectKernelImage = true;
+  boot.loader.systemd-boot.enable = lib.mkForce false;
+  boot.loader.systemd-boot.editor = false;
+  boot.lanzaboote = {
+    enable = true;
+    pkiBundle = "/var/lib/sbctl";
+    settings = {
+      editor = false;
+    };
+  };
 
   # Logind lid switch handling: suspend on battery, keep active when docked/external monitor
   services.logind.settings = {
@@ -86,10 +112,15 @@
   # Biometrics: Synaptics Prometheus MIS Touch Fingerprint Reader (06cb:00bd)
   services.fprintd.enable = true;
 
-  # Allow members of wheel group to enroll and manage fingerprints without a Polkit agent dialog
+  # Allow members of wheel group to enroll fingerprints, and allow justkowal to trigger unlock-keyring
   security.polkit.extraConfig = ''
     polkit.addRule(function(action, subject) {
       if (action.id.indexOf("net.reactivated.fprint.") == 0 && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+      }
+      if (action.id == "org.freedesktop.systemd1.manage-units" &&
+          action.lookup("unit") == "unlock-keyring.service" &&
+          subject.user == "justkowal") {
         return polkit.Result.YES;
       }
     });
@@ -148,18 +179,64 @@
     tctiEnvironment.enable = true;
   };
 
-  # Passwordless decryption of TPM2-sealed keyring credentials
-  security.sudo.extraRules = [
-    {
-      users = [ "justkowal" ];
-      commands = [
-        {
-          command = "/run/current-system/sw/bin/systemd-creds decrypt /etc/keyring.cred";
-          options = [ "NOPASSWD" ];
-        }
-      ];
-    }
-  ];
+  # Hardware TPM2 Keyring Unsealer Service (completely eliminates insecure NOPASSWD sudo rule)
+  systemd.services.unlock-keyring = {
+    description = "Hardware TPM2 Keyring Unsealer";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = false;
+      LoadCredentialEncrypted = "keyring:/etc/keyring.cred";
+      ExecStart = pkgs.writeShellScript "unlock-keyring-tpm-service" ''
+        if [ -s "$CREDENTIALS_DIRECTORY/keyring" ] && [ -S "/run/user/1000/bus" ]; then
+          exec ${pkgs.su}/bin/su -s /bin/sh justkowal -c "export DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/1000/bus'; exec ${pkgs.writers.writePython3Bin "unlock-keyring-tool" {
+            libraries = [pkgs.python3Packages.jeepney];
+          } ''
+            import sys
+            from jeepney import DBusAddress, new_method_call
+            from jeepney.io.blocking import open_dbus_connection
+
+            password = sys.stdin.read().strip()
+            if not password:
+                print("Keyring unlock failed: No password provided in credential", file=sys.stderr)
+                sys.exit(1)
+
+            try:
+                conn = open_dbus_connection(bus="SESSION")
+                service = DBusAddress(
+                    "/org/freedesktop/secrets",
+                    "org.freedesktop.secrets",
+                    "org.freedesktop.Secret.Service",
+                )
+                msg = new_method_call(
+                    service, "OpenSession", "sv", ("plain", ("s", ""))
+                )
+                _, session_path = conn.send_and_get_reply(msg).body
+
+                guilt = DBusAddress(
+                    "/org/freedesktop/secrets",
+                    "org.freedesktop.secrets",
+                    "org.gnome.keyring.InternalUnsupportedGuiltRiddenInterface",
+                )
+                secret = (session_path, b"", password.encode(), "text/plain")
+                msg_unlock = new_method_call(
+                    guilt,
+                    "UnlockWithMasterPassword",
+                    "o(oayays)",
+                    ("/org/freedesktop/secrets/collection/login", secret),
+                )
+                reply = conn.send_and_get_reply(msg_unlock)
+                if reply.body:
+                    print(f"Keyring unlock failed: {reply.body[0]}", file=sys.stderr)
+                    sys.exit(1)
+                print("Keyring successfully unlocked.")
+            except Exception as e:
+                print(f"Keyring unlock exception: {e}", file=sys.stderr)
+                sys.exit(1)
+          ''}/bin/unlock-keyring-tool" < "$CREDENTIALS_DIRECTORY/keyring"
+        fi
+      '';
+    };
+  };
 
   # Laptop-specific packages
   environment.systemPackages = with pkgs; [
@@ -171,6 +248,8 @@
     tpm2-tools
     cryptsetup
     seahorse
+    sbctl
+    e2fsprogs
   ];
 
   # Hostname
