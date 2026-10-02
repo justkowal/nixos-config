@@ -34,6 +34,8 @@
   # ── Distributed Builds (Offload to Desktop) ────────────────────────────
   # Dispatches heavy compilation and ARM64 SD image builds to the Desktop's
   # 16-thread Ryzen 7 7800X3D over Tailscale/LAN with automatic fallback.
+  networking.hosts."192.168.1.127" = [ "nixos-desktop" "nixos-desktop.lab" ];
+
   nix.buildMachines = [
     {
       hostName = "nixos-desktop.lab";
