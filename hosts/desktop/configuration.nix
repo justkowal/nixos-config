@@ -86,43 +86,36 @@ in {
     }
   ];
 
-  # ── Bootloader: GRUB (replaces systemd-boot from shared module) ────────
-  boot.loader.grub = {
+  # ── Bootloader: systemd-boot (UEFI / bcachefs compatible) ───────────────
+  boot.loader.systemd-boot = {
     enable = true;
-    device = "nodev";
-    efiSupport = true;
-    useOSProber = false;
+    configurationLimit = 10;
+  };
+  boot.loader.timeout = 3;
 
-    # Dynamic boot routing:
-    #  SHIFT held → boot desktop immediately
-    #  Otherwise  → fetch boot-state.cfg from RPi4 Caddy on port 80
-    #               my_boot_target=server → boot worker specialisation
-    #               Pi unreachable        → boot desktop with autoshutdown_timer=1
-    extraConfig = ''
-      # --- Scale-to-Zero Boot Logic ---
-      if keystatus --shift; then
-        # Operator override: boot default desktop, skip network probe
-        set timeout=3
-      else
-        insmod net
-        insmod efinet
-        insmod http
-
-        if net_bootp; then
-          if http_get http://nixos-rpi4.lab/boot-state.cfg /tmp/boot-state.cfg; then
-            source /tmp/boot-state.cfg
-            if [ "$my_boot_target" = "server" ]; then
-              # Route to the worker specialisation
-              set default="NixOS - Worker"
-            fi
-          else
-            # Pi unreachable — boot desktop but schedule auto-shutdown
-            set extra_cmdline="autoshutdown_timer=1"
-          fi
+  # ── Dynamic Boot Target Router (Scale-to-Zero) ─────────────────────────
+  # On boot, queries the RPi4 orchestrator. If the orchestrator requested
+  # worker mode, immediately transitions to the headless worker specialisation.
+  systemd.services.boot-target-router = {
+    description = "Scale-to-zero boot target router";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      STATE_FILE="/tmp/boot-state.cfg"
+      if ${pkgs.curl}/bin/curl -s --connect-timeout 2 http://nixos-rpi4.lab/boot-state.cfg -o "$STATE_FILE"; then
+        if grep -q 'my_boot_target="server"' "$STATE_FILE"; then
+          echo "Orchestrator requested worker specialisation. Switching..."
+          /run/current-system/specialisation/worker/bin/switch-to-configuration switch
         else
-          # No DHCP lease — boot desktop but schedule auto-shutdown
-          set extra_cmdline="autoshutdown_timer=1"
+          echo "Orchestrator requested desktop mode. Staying in default session."
         fi
+      else
+        echo "Orchestrator unreachable on boot."
       fi
     '';
   };
