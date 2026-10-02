@@ -1,5 +1,5 @@
 {
-  description = "Modular NixOS configuration across Desktop, VM, and Laptop hosts with unified Home Manager userland experience";
+  description = "Modular NixOS configuration across Desktop, VM, Laptop, and RPi4 hosts with unified Home Manager userland experience and scale-to-zero serverless homelab architecture";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
@@ -19,6 +19,10 @@
     };
     lanzaboote = {
       url = "github:nix-community/lanzaboote";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -78,6 +82,19 @@
         modules = [
           {nixpkgs.hostPlatform = "x86_64-linux";}
           ./hosts/iso/configuration.nix
+        ];
+      };
+
+      # ── Raspberry Pi 4 (Orchestrator) ────────────────────────────────
+      # Build bootable SD image:
+      #   nix build .#nixosConfigurations.rpi4.config.system.build.sdImage
+      rpi4 = nixpkgs.lib.nixosSystem {
+        specialArgs = {inherit inputs;};
+        modules = [
+          {nixpkgs.hostPlatform = "aarch64-linux";}
+          "${nixpkgs}/nixos/modules/installer/sd-card/sd-image-aarch64.nix"
+          inputs.sops-nix.nixosModules.sops
+          ./hosts/rpi4/configuration.nix
         ];
       };
     };

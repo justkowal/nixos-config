@@ -24,6 +24,10 @@
     ../../modules/power-saving.nix
   ];
 
+  # Bootloader: Lanzaboote configured below (systemd-boot disabled for Lanzaboote)
+  boot.loader.timeout = 0;
+  systemd.services.systemd-boot-random-seed.enable = false;
+
   home-manager.backupFileExtension = "backup";
   home-manager.extraSpecialArgs = {
     laptop = true;

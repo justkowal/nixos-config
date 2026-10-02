@@ -1,8 +1,8 @@
 { pkgs, ... }:
 
 {
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.timeout = 0;
+  # Generic boot settings shared across all hosts.
+  # Bootloader-specific config (systemd-boot vs GRUB) lives in each host's configuration.nix.
   boot.loader.efi.canTouchEfiVariables = true;
   boot.loader.efi.efiSysMountPoint = "/boot/efi";
   boot.supportedFilesystems = [ "bcachefs" ];
@@ -17,7 +17,4 @@
   # RAM-backed /tmp for high-speed scratch and build I/O
   boot.tmp.useTmpfs = true;
   boot.tmp.tmpfsSize = "75%";
-
-  # Avoid slow early boot VFAT write syncs
-  systemd.services.systemd-boot-random-seed.enable = false;
 }

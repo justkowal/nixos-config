@@ -12,6 +12,7 @@
     ../../modules/systemd-minimal.nix
     ../../modules/performance.nix
     ../../modules/networking.nix
+    ../../modules/overlays.nix
   ];
 
   home-manager.backupFileExtension = "backup";
@@ -20,6 +21,7 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.timeout = 0;
   boot.loader.efi.canTouchEfiVariables = true;
+  systemd.services.systemd-boot-random-seed.enable = false;
 
   # QEMU / KVM / VirtualBox Guest Integration Agents & Display Scaling
   services.qemuGuest.enable = true;

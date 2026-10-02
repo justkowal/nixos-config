@@ -5,3 +5,12 @@ core.*
 .git.bak_nobody/
 hosts_old/
 .git_old/
+
+# Sensitive credentials & private keys
+*.key
+*.pem
+*.env
+*.p12
+*credentials*.json
+secrets.dec.yaml
+

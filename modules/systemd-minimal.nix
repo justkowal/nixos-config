@@ -18,6 +18,9 @@
     MaxRetentionSec=14day
   '';
 
-  systemd.targets.network-online.wantedBy = lib.mkForce [];
-  systemd.services.NetworkManager-wait-online.enable = false;
+  # Disabled by default for fast-boot headless/laptop hosts.
+  # Desktop overrides these in its configuration.nix so WoL DHCP leases
+  # are guaranteed before CI agents start.
+  systemd.targets.network-online.wantedBy = lib.mkDefault [];
+  systemd.services.NetworkManager-wait-online.enable = lib.mkDefault false;
 }

@@ -108,4 +108,19 @@
              ▟███▛  ▜███▙         ▜███▙
              ▝▀▀▀    ▀▀▀▀▘         ▀▀▀▘
   '';
+
+  # ── SSH Client Automation ──────────────────────────────────────────────
+  # When connecting to the Desktop from laptop/client machines, automatically
+  # proxy through the Pi's `wake-and-proxy` script. If the Desktop is asleep,
+  # it outputs real-time wake and boot progress to stderr, then hands off
+  # seamlessly as soon as port 22 opens.
+  programs.ssh = {
+    enable = true;
+    settings = {
+      "nixos-desktop nixos-desktop.lab desktop.lab" = {
+        hostname = "nixos-desktop.lab";
+        proxyCommand = "${pkgs.openssh}/bin/ssh -T justkowal@nixos-rpi4.lab wake-and-proxy %h %p";
+      };
+    };
+  };
 }
