@@ -82,7 +82,7 @@ UP_COUNT=1
 [ "$RP_STATUS" = "online" ] && ((UP_COUNT++))
 [ "$REMOTE1_STATUS" = "online" ] && ((UP_COUNT++))
 
-if [ "$1" = "probe" ]; then
+if [ "${1:-}" = "probe" ]; then
   if [ "$IS_LAPTOP" = true ]; then
     printf "Laptop: Online (Local)\nDesktop: %s (Ping: %sms | IP: %s)\nRPi4 Core: %s (Ping: %sms | IP: %s)\nNodes Active: %d/3" \
       "$REMOTE1_STATUS" "${REMOTE1_PING:-timeout}" "$REMOTE1_IP" "$RP_STATUS" "${RP_PING:-timeout}" "$RP_IP" "$UP_COUNT"

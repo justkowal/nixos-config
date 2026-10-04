@@ -399,13 +399,8 @@ in {
         background-color: alpha(@surface_variant, 0.45);
         border-radius: 10px;
       }
-      #tray:empty {
-        padding: 0;
-        margin: 0;
-        background-color: transparent;
-      }
 
-      #custom-pomodoro:empty, #custom-sysinfo:empty, .empty {
+      .empty {
         padding: 0;
         margin: 0;
         background-color: transparent;
