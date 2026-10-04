@@ -166,7 +166,6 @@ in {
           format = "{}";
           on-click = "control-center-gui";
           tooltip = true;
-          tooltip-format = "{tooltip}";
         };
 
         "memory" = {format = "󰍛 {percentage}%";};
@@ -228,7 +227,6 @@ in {
           on-click-right = "${fleet-menu}/bin/fleet-menu";
           on-click-middle = "${fleet-status}/bin/fleet-status probe";
           tooltip = true;
-          tooltip-format = "{tooltip}";
         };
 
 
