@@ -166,6 +166,7 @@ in {
           format = "{}";
           on-click = "control-center-gui";
           tooltip = true;
+          escape = true;
         };
 
         "memory" = {format = "󰍛 {percentage}%";};
@@ -227,6 +228,7 @@ in {
           on-click-right = "${fleet-menu}/bin/fleet-menu";
           on-click-middle = "${fleet-status}/bin/fleet-status probe";
           tooltip = true;
+          escape = true;
         };
 
 
@@ -239,6 +241,7 @@ in {
           on-click = "${pkgs.xdg-utils}/bin/xdg-open https://lab";
           on-click-right = "${fleet-menu}/bin/fleet-menu";
           tooltip = true;
+          escape = true;
         };
 
         "custom/controlcenter" = {

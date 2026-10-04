@@ -124,7 +124,7 @@ if [ "$IS_LAPTOP" = true ]; then
   └─ Services: Glance, Git, CI, Vault, IDM, Kuma
 ─────────────────────────────────────────────────
 󰍽 Left-Click: Open Fleet Manager (GUI)
-󰍽 Right-Click: Fleet Command & Services Menu
+󰍽 Right-Click: Fleet Command and Services Menu
 󰍽 Middle-Click: Quick Probe Latencies
 EOF
 )
@@ -145,7 +145,7 @@ else
   └─ ThinkPad T14s Gen 1 AMD | Tailscale Mesh
 ─────────────────────────────────────────────────
 󰍽 Left-Click: Open Fleet Manager (GUI)
-󰍽 Right-Click: Fleet Command & Services Menu
+󰍽 Right-Click: Fleet Command and Services Menu
 󰍽 Middle-Click: Quick Probe Latencies
 EOF
 )
