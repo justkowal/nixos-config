@@ -42,18 +42,13 @@ resolve_target_ip() {
 
 # Dynamically resolve remote nodes based on current machine
 if [ "$IS_LAPTOP" = true ]; then
-  LOCAL_NAME="thinkpad-t14s-gen1-amd"
-  REMOTE1_NAME="nixos-desktop"
   REMOTE1_LABEL="󰞷 nixos-desktop    (Workstation)"
   REMOTE1_IP=$(resolve_target_ip "nixos-desktop")
 else
-  LOCAL_NAME="nixos-desktop"
-  REMOTE1_NAME="thinkpad-t14s-gen1-amd"
   REMOTE1_LABEL="󰌢 thinkpad-laptop  (Mobile Client)"
   REMOTE1_IP=$(resolve_target_ip "thinkpad-t14s-gen1-amd")
 fi
 
-RP_NAME="nixos-rpi4"
 RP_IP=$(resolve_target_ip "nixos-rpi4")
 
 RP_STATUS="offline"

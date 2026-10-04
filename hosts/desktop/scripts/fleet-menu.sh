@@ -35,10 +35,8 @@ resolve_target_ip() {
 
 if [ "$IS_LAPTOP" = true ]; then
   REMOTE_PEER_LABEL="󰞷 SSH into Desktop Workstation"
-  REMOTE_PEER_NAME="nixos-desktop"
 else
   REMOTE_PEER_LABEL="󰌢 SSH into ThinkPad Laptop"
-  REMOTE_PEER_NAME="thinkpad-t14s-gen1-amd"
 fi
 
 MENU_ITEMS="󰖟 Homelab Portal (Glance) — https://lab

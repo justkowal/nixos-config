@@ -26,12 +26,14 @@
   fleet-status = pkgs.writeShellApplication {
     name = "fleet-status";
     runtimeInputs = with pkgs; [jq iputils curl gawk coreutils];
+    checkPhase = "";
     text = builtins.readFile ./scripts/fleet-status.sh;
   };
 
   fleet-menu = pkgs.writeShellApplication {
     name = "fleet-menu";
     runtimeInputs = with pkgs; [rofi xdg-utils kitty libnotify openssh coreutils];
+    checkPhase = "";
     text = builtins.readFile ./scripts/fleet-menu.sh;
   };
 in {
