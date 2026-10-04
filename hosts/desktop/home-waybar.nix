@@ -427,11 +427,11 @@ in {
     settings = {
       positionX = "right";
       positionY = "top";
-      control-center-margin-top = 12;
-      control-center-margin-bottom = 20;
-      control-center-margin-right = 16;
-      control-center-width = 420;
-      control-center-height = 680;
+      control-center-margin-top = if laptop then 8 else 12;
+      control-center-margin-bottom = if laptop then 12 else 20;
+      control-center-margin-right = if laptop then 10 else 16;
+      control-center-width = if laptop then 360 else 420;
+      control-center-height = if laptop then 560 else 660;
       fit-to-screen = false;
       layer = "top";
     };
@@ -444,11 +444,11 @@ in {
       }
 
       .control-center {
-        background-color: alpha(@background, 0.90);
-        border: 1px solid alpha(@outline, 0.75);
-        border-radius: 20px;
-        padding: 15px;
-        margin: 12px 16px 20px 16px;
+        background-color: alpha(@background, 0.88);
+        border: 1px solid alpha(@outline, 0.35);
+        border-radius: 18px;
+        padding: 14px;
+        margin: 10px 14px 16px 14px;
       }
 
       .notification {

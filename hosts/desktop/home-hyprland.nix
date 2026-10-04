@@ -186,35 +186,41 @@ in {
           }
 
           decoration {
-              rounding = 12
+              rounding = 14
               active_opacity = 1.0
-              inactive_opacity = 0.92
+              inactive_opacity = 0.94
 
               blur {
                   enabled = true
-                  size = 6
+                  size = 8
                   passes = 3
                   new_optimizations = true
+                  vibrancy = 0.2
+                  vibrancy_darkness = 0.2
               }
               shadow {
-                  enabled = false
+                  enabled = true
+                  range = 22
+                  render_power = 3
+                  color = rgba(00000035)
+                  color_inactive = rgba(00000018)
               }
           }
 
           animations {
               enabled = true
+              bezier = apple_ease, 0.16, 1, 0.3, 1
+              bezier = apple_spring, 0.2, 0.9, 0.25, 1.05
               bezier = md3_decel, 0.05, 0.7, 0.1, 1.0
-              bezier = bouncy, 0.175, 0.885, 0.32, 1.275
-              bezier = win_decel, 0.05, 0.9, 0.1, 1.05
 
-              animation = windows, 1, 4, bouncy, popin 85%
-              animation = windowsIn, 1, 4, bouncy, popin 85%
-              animation = windowsOut, 1, 3, md3_decel, popin 80%
-              animation = windowsMove, 1, 4, win_decel
-              animation = border, 1, 6, md3_decel
-              animation = fade, 1, 4, md3_decel
-              animation = workspaces, 1, 5, md3_decel, slide
-              animation = specialWorkspace, 1, 4, bouncy, slidevert
+              animation = windows, 1, 5, apple_spring, popin 88%
+              animation = windowsIn, 1, 5, apple_spring, popin 88%
+              animation = windowsOut, 1, 4, apple_ease, popin 82%
+              animation = windowsMove, 1, 5, apple_ease
+              animation = border, 1, 6, apple_ease
+              animation = fade, 1, 4, apple_ease
+              animation = workspaces, 1, 5, apple_ease, slide
+              animation = specialWorkspace, 1, 5, apple_spring, slidevert
           }
 
           misc {
@@ -245,6 +251,9 @@ in {
           bind = $mod, E, exec, thunar
           bind = $mod, B, exec, firefox
           bind = $mod, C, exec, control-center-gui
+          bind = $mod ALT, M, exec, lan-mouse-gui
+          bind = $mod ALT, F, exec, fleet-manager-gui
+          bind = $mod ALT, T, exec, tablet-display-gui
           bind = $mod, ESCAPE, exec, power-menu
           bind = $mod SHIFT, T, exec, tablet-display toggle
           bind = $mod, grave, togglespecialworkspace, term
