@@ -109,42 +109,30 @@ REMOTE1_PING_FMT=${REMOTE1_PING:-"timeout"}
 
 if [ "$IS_LAPTOP" = true ]; then
   TOOLTIP=$(cat <<EOF
-── 󰒋 NixOS Deployment Fleet ─────────────────────
-󰌢 thinkpad-laptop  (Mobile Client)  [Local Active]
-  └─ Role: Workstation Client | Tailscale Mesh
-
-󰞷 nixos-desktop    (Workstation)    [${REMOTE1_IP}]
-  ├─ Status: $REMOTE1_STATUS | Latency: ${REMOTE1_PING_FMT}ms
-  └─ Role: Primary Workstation & Build Machine
-
-󰒋 nixos-rpi4       (Homelab Core)   [${RP_IP}]
-  ├─ Status: $RP_STATUS | Latency: ${RP_PING_FMT}ms
-  ├─ Web Portal: $RP_WEB (https://lab)
-  └─ Services: Glance, Git, CI, Vault, IDM, Kuma
-─────────────────────────────────────────────────
-󰍽 Left-Click: Open Glance Portal (https://lab)
-󰍽 Right-Click: Fleet Command & Services Menu
-󰍽 Middle-Click: Quick Probe Latencies
+󰒋 NixOS Deployment Fleet
+󰌢 thinkpad-laptop (ThinkPad T14s) [Active Host]
+󰞷 nixos-desktop (Workstation) [${REMOTE1_IP}]
+  Status: $REMOTE1_STATUS · Latency: ${REMOTE1_PING_FMT}ms
+󰒋 nixos-rpi4 (Homelab Core) [${RP_IP}]
+  Status: $RP_STATUS · Latency: ${RP_PING_FMT}ms
+  Portal: $RP_WEB (https://lab)
+─────────────────────────────────────
+Click: Open Fleet Manager
+Right-Click: Fleet Command Menu
 EOF
 )
 else
   TOOLTIP=$(cat <<EOF
-── 󰒋 NixOS Deployment Fleet ─────────────────────
-󰞷 nixos-desktop    (Workstation)    [Local Active]
-  └─ Role: Primary Workstation & Build Machine
-
-󰒋 nixos-rpi4       (Homelab Core)   [${RP_IP}]
-  ├─ Status: $RP_STATUS | Latency: ${RP_PING_FMT}ms
-  ├─ Web Portal: $RP_WEB (https://lab)
-  └─ Services: Glance, Git, CI, Vault, IDM, Kuma
-
-󰌢 thinkpad-laptop  (Mobile Client)  [${REMOTE1_IP}]
-  ├─ Status: $REMOTE1_STATUS | Latency: ${REMOTE1_PING_FMT}ms
-  └─ Role: ThinkPad T14s Mobile Client
-─────────────────────────────────────────────────
-󰍽 Left-Click: Open Glance Portal (https://lab)
-󰍽 Right-Click: Fleet Command & Services Menu
-󰍽 Middle-Click: Quick Probe Latencies
+󰒋 NixOS Deployment Fleet
+󰞷 nixos-desktop (Workstation) [Active Host]
+󰒋 nixos-rpi4 (Homelab Core) [${RP_IP}]
+  Status: $RP_STATUS · Latency: ${RP_PING_FMT}ms
+  Portal: $RP_WEB (https://lab)
+󰌢 thinkpad-laptop (ThinkPad T14s) [${REMOTE1_IP}]
+  Status: $REMOTE1_STATUS · Latency: ${REMOTE1_PING_FMT}ms
+─────────────────────────────────────
+Click: Open Fleet Manager
+Right-Click: Fleet Command Menu
 EOF
 )
 fi
