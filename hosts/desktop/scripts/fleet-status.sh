@@ -111,12 +111,11 @@ if [ "$IS_LAPTOP" = true ]; then
   TOOLTIP=$(cat <<EOF
 ── 󰒋 NixOS Deployment Fleet ─────────────────────
 󰌢 thinkpad-laptop  (Mobile Client)  [Local Active]
-  ├─ CPU: AMD Ryzen 7 PRO 4750U (16T)
-  └─ ThinkPad T14s Gen 1 AMD | Tailscale Mesh
+  └─ Role: Workstation Client | Tailscale Mesh
 
 󰞷 nixos-desktop    (Workstation)    [${REMOTE1_IP}]
   ├─ Status: $REMOTE1_STATUS | Latency: ${REMOTE1_PING_FMT}ms
-  └─ Ryzen 7 5700X | RX 6700 XT | ROCm HIP
+  └─ Role: Primary Workstation & Build Machine
 
 󰒋 nixos-rpi4       (Homelab Core)   [${RP_IP}]
   ├─ Status: $RP_STATUS | Latency: ${RP_PING_FMT}ms
@@ -132,8 +131,7 @@ else
   TOOLTIP=$(cat <<EOF
 ── 󰒋 NixOS Deployment Fleet ─────────────────────
 󰞷 nixos-desktop    (Workstation)    [Local Active]
-  ├─ CPU: AMD Ryzen 7 5700X | GPU: RX 6700 XT
-  └─ ROCm HIP Accelerated | Hyprland Wayland
+  └─ Role: Primary Workstation & Build Machine
 
 󰒋 nixos-rpi4       (Homelab Core)   [${RP_IP}]
   ├─ Status: $RP_STATUS | Latency: ${RP_PING_FMT}ms
@@ -142,7 +140,7 @@ else
 
 󰌢 thinkpad-laptop  (Mobile Client)  [${REMOTE1_IP}]
   ├─ Status: $REMOTE1_STATUS | Latency: ${REMOTE1_PING_FMT}ms
-  └─ ThinkPad T14s Gen 1 AMD | Tailscale Mesh
+  └─ Role: ThinkPad T14s Mobile Client
 ─────────────────────────────────────────────────
 󰍽 Left-Click: Open Glance Portal (https://lab)
 󰍽 Right-Click: Fleet Command & Services Menu
