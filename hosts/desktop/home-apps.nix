@@ -1,6 +1,93 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, laptop ? false, ... }:
 
-{
+let
+  guisDir = ./scripts/guis;
+
+  lan-mouse-gui = pkgs.writeShellApplication {
+    name = "lan-mouse-gui";
+    runtimeInputs = with pkgs; [
+      (python3.withPackages (ps: [ps.pygobject3]))
+      gtk4
+      libadwaita
+      gobject-introspection
+      lan-mouse
+      iputils
+      procps
+      coreutils
+    ];
+    text = ''
+      export GI_TYPELIB_PATH="${pkgs.gtk4}/lib/girepository-1.0:${pkgs.libadwaita}/lib/girepository-1.0:${pkgs.glib.out}/lib/girepository-1.0''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
+      exec python3 "${guisDir}/lan_mouse_gui.py" "$@"
+    '';
+  };
+
+  tablet-display-gui = pkgs.writeShellApplication {
+    name = "tablet-display-gui";
+    runtimeInputs = with pkgs; [
+      (python3.withPackages (ps: [ps.pygobject3]))
+      gtk4
+      libadwaita
+      gobject-introspection
+      hyprland
+      jq
+      coreutils
+      swayosd
+    ];
+    text = ''
+      export GI_TYPELIB_PATH="${pkgs.gtk4}/lib/girepository-1.0:${pkgs.libadwaita}/lib/girepository-1.0:${pkgs.glib.out}/lib/girepository-1.0''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
+      exec python3 "${guisDir}/tablet_display_gui.py" "$@"
+    '';
+  };
+
+  fleet-manager-gui = pkgs.writeShellApplication {
+    name = "fleet-manager-gui";
+    runtimeInputs = with pkgs; [
+      (python3.withPackages (ps: [ps.pygobject3]))
+      gtk4
+      libadwaita
+      gobject-introspection
+      iputils
+      kitty
+      openssh
+      coreutils
+    ];
+    text = ''
+      export GI_TYPELIB_PATH="${pkgs.gtk4}/lib/girepository-1.0:${pkgs.libadwaita}/lib/girepository-1.0:${pkgs.glib.out}/lib/girepository-1.0''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
+      exec python3 "${guisDir}/fleet_manager_gui.py" "$@"
+    '';
+  };
+
+  control-center-gui = pkgs.writeShellApplication {
+    name = "control-center-gui";
+    runtimeInputs = with pkgs; [
+      (python3.withPackages (ps: [ps.pygobject3]))
+      gtk4
+      libadwaita
+      gobject-introspection
+      wireplumber
+      brightnessctl
+      coreutils
+      iputils
+      procps
+      systemd
+    ];
+    text = ''
+      export GI_TYPELIB_PATH="${pkgs.gtk4}/lib/girepository-1.0:${pkgs.libadwaita}/lib/girepository-1.0:${pkgs.glib.out}/lib/girepository-1.0''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
+      exec python3 "${guisDir}/control_center_gui.py" "$@"
+    '';
+  };
+in {
+  home.packages = [
+    control-center-gui
+    lan-mouse-gui
+    fleet-manager-gui
+    tablet-display-gui
+  ];
+
   programs.kitty = {
     enable = true;
     font = {
@@ -66,6 +153,12 @@
       DisableFirefoxAccounts = false;
       OverrideFirstRunPage = "";
       OverridePostUpdatePage = "";
+      ExtensionSettings = {
+        "{446900e4-71c2-419f-a6a7-df9c091e268b}" = {
+          installation_mode = "normal_installed";
+          install_url = "https://addons.mozilla.org/firefox/downloads/latest/bitwarden-password-manager/latest.xpi";
+        };
+      };
     };
   };
 
@@ -200,6 +293,13 @@
     platformTheme.name = "gtk3";
   };
 
+  services.udiskie = {
+    enable = true;
+    tray = "auto";
+    automount = true;
+    notify = true;
+  };
+
   xdg.userDirs = {
     enable = true;
     createDirectories = true;
@@ -218,6 +318,62 @@
     settings = {
       Keywords = "discord;vencord;electron;chat";
       StartupWMClass = "Vesktop";
+    };
+  };
+
+  xdg.desktopEntries.control-center-gui = {
+    name = "System Control Center";
+    genericName = "Apple-Style Quick Settings";
+    comment = "System volume, brightness, power profiles, and quick hardware utilities";
+    exec = "control-center-gui";
+    icon = "preferences-system";
+    terminal = false;
+    type = "Application";
+    categories = [ "Settings" "HardwareSettings" ];
+    settings = {
+      Keywords = "control;center;volume;brightness;power;battery;tailscale;audio;settings";
+    };
+  };
+
+  xdg.desktopEntries.lan-mouse-gui = {
+    name = "Seamless Mouse Sharing";
+    genericName = "Software KVM & Desk Layout";
+    comment = "Configure cross-machine mouse/keyboard sharing and physical desk arrangement";
+    exec = "lan-mouse-gui";
+    icon = "input-mouse";
+    terminal = false;
+    type = "Application";
+    categories = [ "Settings" "HardwareSettings" ];
+    settings = {
+      Keywords = "mouse;kvm;lan-mouse;screen;sharing;laptop;desk;layout;orientation";
+    };
+  };
+
+  xdg.desktopEntries.tablet-display-gui = {
+    name = "Tablet Display Studio";
+    genericName = "Virtual Headless Display Manager";
+    comment = "Manage headless virtual displays for Sunshine and Moonlight tablet streaming";
+    exec = "tablet-display-gui";
+    icon = "video-display";
+    terminal = false;
+    type = "Application";
+    categories = [ "Settings" "HardwareSettings" ];
+    settings = {
+      Keywords = "tablet;display;sunshine;moonlight;headless;virtual;streaming;ipad";
+    };
+  };
+
+  xdg.desktopEntries.fleet-manager-gui = {
+    name = "Deployment Fleet Center";
+    genericName = "NixOS Homelab & Machine Control";
+    comment = "Monitor and manage multi-node NixOS machines, services, and connections";
+    exec = "fleet-manager-gui";
+    icon = "network-server";
+    terminal = false;
+    type = "Application";
+    categories = [ "System" "Settings" ];
+    settings = {
+      Keywords = "fleet;nixos;homelab;rpi4;thinkpad;services;glance;kuma;git";
     };
   };
 

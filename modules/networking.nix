@@ -4,6 +4,14 @@
   networking.firewall = {
     enable = true;
     trustedInterfaces = [ "tailscale0" ];
+    allowedTCPPorts = [
+      4242    # lan-mouse software KVM
+      53317   # LocalSend file transfer
+    ];
+    allowedUDPPorts = [
+      4242    # lan-mouse software KVM
+      53317   # LocalSend peer discovery
+    ];
   };
 
   networking.nameservers = [ "1.1.1.1" "1.0.0.1" ];
@@ -15,5 +23,8 @@
     user = "justkowal";
     dataDir = "/home/justkowal/Sync";
     configDir = "/home/justkowal/.config/syncthing";
+    openDefaultPorts = true;
   };
+
+  programs.mosh.enable = true;
 }

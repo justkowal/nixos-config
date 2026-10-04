@@ -66,6 +66,7 @@ in {
 
   networking.hostName = "nixos-desktop";
   networking.networkmanager.enable = true;
+  networking.interfaces.enp4s0.wakeOnLan.enable = true;
 
   # ── Cross-Compilation ──────────────────────────────────────────────────
   # Allows native aarch64 builds (RPi4 SD images) via QEMU user-mode emulation
@@ -75,7 +76,21 @@ in {
   # Allows the Laptop (ThinkPad T14s) to assist with parallel x86_64 compilation
   # when available over Tailscale/LAN. Capped at 2 jobs and x86_64 only so it
   # never starves the Desktop or takes slow QEMU ARM64 emulation tasks.
-  networking.hosts."192.168.1.20" = [ "thinkpad-t14s-gen1-amd" "thinkpad-t14s-gen1-amd.lab" ];
+  networking.hosts."100.69.154.81" = [ "thinkpad-t14s-gen1-amd" "thinkpad-t14s-gen1-amd.lab" ];
+  networking.hosts."100.113.193.14" = [
+    "nixos-rpi4"
+    "nixos-rpi4.lab"
+    "lab"
+    "home.lab"
+    "status.lab"
+    "idm.lab"
+    "git.lab"
+    "ci.lab"
+    "vault.lab"
+    "bookmarks.lab"
+    "render.lab"
+    "portfolio.lab"
+  ];
 
   nix.buildMachines = [
     {
@@ -132,7 +147,7 @@ in {
 
   # ── Dedicated Docker Scratch Disk (120GB SATA SSD) ─────────────────────
   fileSystems."/var/lib/docker" = {
-    device = "/dev/disk/by-label/docker";
+    device = "/dev/disk/by-id/ata-ADATA_SP900_7F1520009632-part1";
     fsType = "btrfs";
     options = [ "noatime" "compress=zstd" "discard=async" "nofail" ];
   };
@@ -231,6 +246,45 @@ in {
 
   powerManagement.cpuFreqGovernor = "performance";
 
+  # ── Dedicated Docker Engine (btrfs SSD partition) ──────────────────────
+  virtualisation.docker = {
+    enable = lib.mkForce true;
+    enableOnBoot = lib.mkForce true;
+    storageDriver = "btrfs";
+    daemon.settings = {
+      "data-root" = "/var/lib/docker";
+      "default-runtime" = "runc";
+    };
+  };
+
+  # ── GPU Compute: expose ROCm devices to containers ─────────────────────
+  services.udev.extraRules = ''
+    KERNEL=="kfd", GROUP="render", MODE="0666"
+    SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="0666"
+  '';
+
+  # ── Ephemeral SSH Sandbox (available in both desktop & worker modes) ───
+  users.users.sandbox = {
+    isNormalUser = true;
+    description = "Ephemeral Docker sandbox user";
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINq047VZyk7koA7QCAW8RuGaqu8YePnLPnOIIgo0TiBS justkowal@desktop"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG1S6Xyulmhl+KjN9oM/jsXsQlDi1I6gd9KFmkvnYV+9 justkowal@thinkpad"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFcpRlVj1XgB7fm5tuY5GJqTLpsAlYeZCgkIH3cZofFl sandbox@nixos-rpi4"
+    ];
+    extraGroups = [ "docker" ];
+  };
+
+  services.openssh.extraConfig = ''
+    Match User sandbox
+      ForceCommand ${sandboxScript}
+      AllowTcpForwarding no
+      AllowStreamLocalForwarding no
+      AllowAgentForwarding no
+      X11Forwarding no
+      PermitTunnel no
+  '';
+
   # ── Specialisation: Worker (headless GPU compute node) ─────────────────
   specialisation.worker = {
     inheritParentConfig = true;
@@ -239,24 +293,6 @@ in {
       # Disable graphical UI to prevent greetd crash loops
       services.xserver.enable = false;
       services.greetd.enable = lib.mkForce false;
-
-      # GPU Compute: expose ROCm devices to containers
-      hardware.graphics.enable = lib.mkForce true;
-      services.udev.extraRules = ''
-        KERNEL=="kfd", GROUP="render", MODE="0666"
-        SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="0666"
-      '';
-
-      # Docker engine on the dedicated btrfs SSD
-      virtualisation.docker = {
-        enable = lib.mkForce true;
-        enableOnBoot = lib.mkForce true;
-        storageDriver = "btrfs";
-        daemon.settings = {
-          "data-root" = "/var/lib/docker";
-          "default-runtime" = "runc";
-        };
-      };
 
       # Woodpecker CI agent → RPi4 orchestrator
       services.woodpecker-agents.agents.docker = {
@@ -268,7 +304,7 @@ in {
           WOODPECKER_MAX_WORKFLOWS = "4";
         };
         extraGroups = [ "docker" ];
-        environmentFile = [ "/etc/woodpecker/agent.env" ];
+        environmentFile = [ config.sops.templates."woodpecker-agent.env".path ];
       };
 
       # ── Blender + Flamenco Render Worker ─────────────────────────────
@@ -297,36 +333,6 @@ in {
       systemd.tmpfiles.rules = [
         "d /home/justkowal/Sync/Render 0755 justkowal users -"
       ];
-
-      # ── Ephemeral SSH Sandbox ──────────────────────────────────────────
-      # ForceCommand traps the login into an auto-removing Docker container
-      # with GPU passthrough. The sandbox user cannot escape to a host shell.
-      #
-      # Security hardening:
-      #  - --cap-drop ALL: no Linux capabilities inside container
-      #  - --security-opt no-new-privileges: blocks suid/setuid escalation
-      #  - --network bridge: isolated from host network
-      #  - No --privileged: no raw host device/kernel access
-      #  - No docker socket mount: cannot control the Docker daemon
-      #  - All forwarding disabled: no tunneling out of the sandbox
-      users.users.sandbox = {
-        isNormalUser = true;
-        description = "Ephemeral Docker sandbox user";
-        openssh.authorizedKeys.keys = [
-          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINq047VZyk7koA7QCAW8RuGaqu8YePnLPnOIIgo0TiBS justkowal@desktop"
-        ];
-        extraGroups = [ "docker" ];
-      };
-
-      services.openssh.extraConfig = ''
-        Match User sandbox
-          ForceCommand ${sandboxScript}
-          AllowTcpForwarding no
-          AllowStreamLocalForwarding no
-          AllowAgentForwarding no
-          X11Forwarding no
-          PermitTunnel no
-      '';
 
       # ── Unified Worker Watchdog ────────────────────────────────────────
       # Monitors ALL worker workloads every 30 seconds:
@@ -373,5 +379,79 @@ in {
     };
   };
 
+  # ── SOPS Secrets & Automated Tailnet Auto-Join ────────────────────────
+  sops = {
+    defaultSopsFile = ../rpi4/secrets/secrets.yaml;
+    defaultSopsFormat = "yaml";
+    age.sshKeyPaths = [
+      "/home/justkowal/.ssh/id_ed25519"
+    ];
+    age.keyFile = "/home/justkowal/.config/sops/age/keys.txt";
+    validateSopsFiles = false;
+    secrets."tailscale_auth_key" = {};
+    secrets."woodpecker_agent_secret" = {};
+    templates."woodpecker-agent.env".content = ''
+      WOODPECKER_AGENT_SECRET=''${config.sops.placeholder.woodpecker_agent_secret}
+    '';
+  };
+
+  # Ensure Syncthing, Render, Notes, GameSaves, and Documents directories exist with correct user ownership
+  systemd.tmpfiles.rules = [
+    "d /home/justkowal/Sync 0755 justkowal users -"
+    "d /home/justkowal/Sync/Render 0755 justkowal users -"
+    "d /home/justkowal/Sync/Notes 0755 justkowal users -"
+    "d /home/justkowal/Sync/GameSaves 0755 justkowal users -"
+    "d /home/justkowal/Sync/Documents 0755 justkowal users -"
+    "d /home/justkowal/Sync/Documents/consume 0755 justkowal users -"
+  ];
+
+  # ── Sunshine: Low-latency Game & Desktop Streaming Host for Moonlight ──
+  services.sunshine = {
+    enable = true;
+    autoStart = true;
+    capSysAdmin = true;
+    openFirewall = true;
+  };
+
+  services.tailscale = {
+    enable = true;
+    authKeyFile = config.sops.secrets."tailscale_auth_key".path;
+    extraUpFlags = [ "--accept-routes" "--operator=justkowal" ];
+  };
+
+  # ── Unified Homelab Alert Listener (ntfy → SwayNC) ─────────────────────
+  systemd.user.services.ntfy-listener = {
+    description = "Homelab ntfy alert listener (SwayNC desktop notifications)";
+    wantedBy = [ "graphical-session.target" ];
+    after = [ "graphical-session.target" ];
+    serviceConfig = {
+      Restart = "always";
+      RestartSec = 10;
+    };
+    path = with pkgs; [ curl jq libnotify ];
+    script = ''
+      while true; do
+        curl -s --connect-timeout 5 -m 3600 "https://ntfy.lab/alerts/json" 2>/dev/null | while read -r line; do
+          event=$(echo "$line" | jq -r '.event // empty' 2>/dev/null)
+          if [ "$event" = "message" ]; then
+            title=$(echo "$line" | jq -r '.title // "Homelab Alert"' 2>/dev/null)
+            message=$(echo "$line" | jq -r '.message // ""' 2>/dev/null)
+            priority=$(echo "$line" | jq -r '.priority // 3' 2>/dev/null)
+            urgency="normal"
+            if [ "$priority" -ge 4 ]; then
+              urgency="critical"
+            elif [ "$priority" -le 2 ]; then
+              urgency="low"
+            fi
+            notify-send -u "$urgency" -a "Homelab" "$title" "$message"
+          fi
+        done
+        sleep 5
+      done
+    '';
+  };
+
   system.stateVersion = "26.05";
 }
+
+

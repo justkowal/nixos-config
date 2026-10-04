@@ -13,6 +13,8 @@
     enable32Bit = true;
   };
 
+  hardware.uinput.enable = true;
+
   services.flatpak.enable = true;
 
   xdg.portal = {

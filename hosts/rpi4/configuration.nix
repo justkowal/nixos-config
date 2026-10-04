@@ -34,8 +34,8 @@
   # ── Scale-to-Zero Webhook Scripts ──────────────────────────────────────
   wakeWorkerScript = pkgs.writeShellScript "wake-worker" ''
     echo 'set my_boot_target="server"' > /var/www/boot-state/boot-state.cfg
-    # TODO: Replace AA:BB:CC:DD:EE:FF with the Desktop's actual NIC MAC address
-    ${pkgs.wakeonlan}/bin/wakeonlan AA:BB:CC:DD:EE:FF
+    # Desktop NIC MAC address (enp4s0) for Scale-to-Zero Wake-on-LAN
+    ${pkgs.wakeonlan}/bin/wakeonlan 10:ff:e0:40:7d:6e
     echo "Worker wake signal sent"
   '';
 
@@ -118,6 +118,7 @@
     fi
 
     exec ${pkgs.openssh}/bin/ssh -tt \
+      -i /home/sandbox/.ssh/id_ed25519 \
       -o StrictHostKeyChecking=no \
       -o UserKnownHostsFile=/dev/null \
       -o LogLevel=ERROR \
@@ -150,32 +151,109 @@ in {
   # native services.hardware.argonone module, enabling I2C bus and device-tree overlays.
   services.hardware.argonone.enable = true;
 
+  # ── Front-panel OLED Dashboard ─────────────────────────────────────────
+  # Drives the 128×64 monochrome I2C OLED (SSD1306/SH1106) on /dev/i2c-1.
+  # Displays: hostname, clock, CPU%, RAM, disk, CPU temp, net rates, uptime, IP.
+  # argonone already enables the i2c-1 bus via device-tree; we add the kernel
+  # module and group access so the Python daemon can reach /dev/i2c-1 directly.
+  boot.kernelModules = [ "i2c-dev" ];
+  hardware.i2c.enable = true;
+
+  systemd.services.oled-dashboard = let
+    python = pkgs.python3.withPackages (ps: with ps; [
+      smbus2
+      pillow
+      psutil
+    ]);
+  in {
+    description = "Front-panel OLED Dashboard (128×64 SSD1306)";
+    after       = [ "network-online.target" "multi-user.target" ];
+    wants       = [ "network-online.target" ];
+    wantedBy    = [ "multi-user.target" ];
+
+    serviceConfig = {
+      Type       = "simple";
+      ExecStart  = "${python}/bin/python3 /etc/nixos/hosts/rpi4/scripts/oled-dashboard.py";
+      Restart    = "on-failure";
+      RestartSec = "5s";
+      # i2c group owns /dev/i2c-* via udev rule below; run as root for simplicity
+      User       = "root";
+      Environment = [
+        "OLED_I2C_BUS=1"
+        "OLED_I2C_ADDR=0x3C"
+        "PYTHONUNBUFFERED=1"
+      ];
+    };
+  };
+
+  # udev rule: grant i2c group read/write access to all I2C bus devices
+  services.udev.extraRules = ''
+    KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
+  '';
+
   # ── Networking ─────────────────────────────────────────────────────────
   networking.hostName = "nixos-rpi4";
   networking.networkmanager.enable = true;
+  networking.hosts."127.0.0.1" = [
+    "nixos-rpi4.lab"
+    "lab"
+    "home.lab"
+    "bookmarks.lab"
+    "docs.lab"
+    "idm.lab"
+    "git.lab"
+    "ci.lab"
+    "render.lab"
+    "portfolio.lab"
+    "vault.lab"
+    "ntfy.lab"
+    "status.lab"
+  ];
+  networking.hosts."192.168.1.127" = [ "nixos-desktop" "nixos-desktop.lab" ];
+
+  # Kernel IP forwarding for Tailscale exit node & subnet router
+  boot.kernel.sysctl = {
+    "net.ipv4.ip_forward" = 1;
+    "net.ipv6.conf.all.forwarding" = 1;
+  };
 
   networking.firewall = {
     enable = true;
+    checkReversePath = "loose";
     trustedInterfaces = [ "tailscale0" ];
     allowedTCPPorts = [
       22    # SSH
+      53    # DNS (Blocky)
       80    # HTTP (Caddy — GRUB boot-state fetch, Flamenco worker HTTP)
       443   # HTTPS (Caddy — all *.lab vhosts)
       9000  # Woodpecker gRPC (agent ↔ server)
+      9100  # Webhook receiver (Scale-to-Zero wake / reset triggers)
+    ];
+    allowedUDPPorts = [
+      53    # DNS (Blocky)
     ];
   };
 
   services.tailscale = {
     enable = true;
     authKeyFile = config.sops.secrets."tailscale_auth_key".path;
-    extraUpFlags = [ "--ssh" "--accept-routes" ];
+    extraUpFlags = [
+      "--accept-routes"
+      "--advertise-exit-node"
+      "--advertise-routes=192.168.1.0/24"
+    ];
   };
+
+  programs.mosh.enable = true;
+
+  # ── Sudo: passwordless for wheel on headless orchestrator ──────────────
+  security.sudo.wheelNeedsPassword = false;
 
   # ── User ───────────────────────────────────────────────────────────────
   users.users.justkowal = {
     isNormalUser = true;
     description = "justkowal";
-    extraGroups = [ "networkmanager" "wheel" "podman" ];
+    extraGroups = [ "networkmanager" "wheel" "podman" "i2c" ];
     # SSH keys inherited cluster-wide from modules/security.nix
   };
 
@@ -192,6 +270,7 @@ in {
     description = "Interactive bridge to Desktop sandbox";
     openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINq047VZyk7koA7QCAW8RuGaqu8YePnLPnOIIgo0TiBS justkowal@desktop"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG1S6Xyulmhl+KjN9oM/jsXsQlDi1I6gd9KFmkvnYV+9 justkowal@thinkpad"
     ];
   };
 
@@ -245,26 +324,73 @@ in {
       };
       "https://portfolio.lab" = {
         extraConfig = ''
+          tls internal
           reverse_proxy localhost:3080
         '';
       };
       "https://git.lab" = {
         extraConfig = ''
+          tls internal
           reverse_proxy localhost:3000
         '';
       };
       "https://ci.lab" = {
         extraConfig = ''
+          tls internal
           reverse_proxy localhost:8000
         '';
       };
       "https://idm.lab" = {
         extraConfig = ''
+          tls internal
           reverse_proxy https://localhost:8443 {
             transport http {
               tls_insecure_skip_verify
             }
           }
+        '';
+      };
+      "https://vault.lab" = {
+        extraConfig = ''
+          tls internal
+          reverse_proxy localhost:8222
+        '';
+      };
+      "https://ntfy.lab" = {
+        extraConfig = ''
+          tls internal
+          reverse_proxy localhost:2586
+        '';
+      };
+      "https://status.lab" = {
+        extraConfig = ''
+          tls internal
+          reverse_proxy localhost:3001
+        '';
+      };
+      # Glance: Private Homelab Dashboard (Strictly Tailnet & LAN only, no Cloudflare tunnel)
+      "https://lab" = {
+        extraConfig = ''
+          tls internal
+          reverse_proxy localhost:8095
+        '';
+      };
+      "https://home.lab" = {
+        extraConfig = ''
+          tls internal
+          reverse_proxy localhost:8095
+        '';
+      };
+      "https://bookmarks.lab" = {
+        extraConfig = ''
+          tls internal
+          reverse_proxy localhost:8085
+        '';
+      };
+      "https://docs.lab" = {
+        extraConfig = ''
+          tls internal
+          reverse_proxy localhost:28981
         '';
       };
     };
@@ -274,14 +400,28 @@ in {
   # Runs outbound connection to Cloudflare edge — functions 100% cleanly behind CGNAT.
   # Wildcard *.23012006.xyz routes directly to Traefik, which dynamically connects
   # to any container exposing `traefik.enable=true` and matching Host rules.
+  # Cloudflared will be enabled once credentials exist at /var/lib/cloudflared/homelab-credentials.json
+  # (See docs/DEPLOYMENT.md §2.5.A)
   services.cloudflared = {
     enable = true;
-    tunnels."homelab" = {
+    tunnels."fd29c003-2ef3-45e8-bd0f-a453b25a4c31" = {
       credentialsFile = "/var/lib/cloudflared/homelab-credentials.json";
       default = "http_status:404";
       ingress = {
+        "portfolio.23012006.xyz" = {
+          service = "http://localhost:3080";
+        };
         "portfolio.justkowal.dev" = {
           service = "http://localhost:3080";
+        };
+        "vault.23012006.xyz" = {
+          service = "http://localhost:8222";
+        };
+        "ntfy.23012006.xyz" = {
+          service = "http://localhost:2586";
+        };
+        "status.23012006.xyz" = {
+          service = "http://localhost:3001";
         };
         "*.23012006.xyz" = {
           service = "http://127.0.0.1:8088";
@@ -333,7 +473,7 @@ in {
         image = "ghcr.io/justkowal/portfolio:latest";
         ports = [ "3080:3000" ];
         extraOptions = [ "--pull=always" ];
-        autoStart = true;
+        autoStart = false;
       };
 
       # ── Flamenco Render Manager ──────────────────────────────────────
@@ -355,6 +495,10 @@ in {
   systemd.tmpfiles.rules = [
     "d /var/lib/flamenco 0755 root root -"
     "d /home/justkowal/Sync/Render 0755 justkowal users -"
+    "d /home/justkowal/Sync/Notes 0755 justkowal users -"
+    "d /home/justkowal/Sync/GameSaves 0755 justkowal users -"
+    "d /home/justkowal/Sync/Documents 0755 justkowal users -"
+    "d /home/justkowal/Sync/Documents/consume 0777 justkowal users -"
     "d /var/www/boot-state 0755 webhook webhook -"
     "d /var/lib/caddy/pki 0700 caddy caddy -"
     "C /var/lib/caddy/pki/homelab-ca.crt 0644 caddy caddy - ${../../modules/certs/homelab-ca.crt}"
@@ -402,16 +546,26 @@ in {
           cp -r /var/lib/caddy/pki/* "$TMP_DIR/caddy-pki/" 2>/dev/null || true
         fi
 
-        # 4. Pack into zstd archive
+        # 4. Backup Vaultwarden DB & keys if present
+        if [ -d /var/lib/vaultwarden ]; then
+          mkdir -p "$TMP_DIR/vaultwarden"
+          if [ -f /var/lib/vaultwarden/db.sqlite3 ]; then
+            sqlite3 /var/lib/vaultwarden/db.sqlite3 ".backup $TMP_DIR/vaultwarden/db.sqlite3"
+          fi
+          cp -r /var/lib/vaultwarden/rsa_key* "$TMP_DIR/vaultwarden/" 2>/dev/null || true
+        fi
+
+        # 5. Pack into zstd archive
         tar -C "$TMP_DIR" -c . | zstd -19 -o "$ARCHIVE"
         rm -rf "$TMP_DIR"
 
         chown -R justkowal:users "$BACKUP_DIR"
         chmod 0600 "$ARCHIVE"
 
-        # 5. Prune backups older than 14 days
+        # 6. Prune backups older than 14 days
         find "$BACKUP_DIR" -type f -name "homelab-state-*.tar.zst" -mtime +14 -delete
         echo "State backup completed: $ARCHIVE"
+        curl -s -d "Homelab state backup completed: homelab-state-$DATE.tar.zst" -H "Title: Backup" -H "Tags: white_check_mark" http://localhost:2586/alerts 2>/dev/null || true
       '';
     };
   };
@@ -433,6 +587,7 @@ in {
     age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
     validateSopsFiles = false;
     secrets."tailscale_auth_key" = {};
+    secrets."cloudflare_tunnel_credentials" = {};
   };
 
   # ── Forgejo (Git forge + OCI container registry) ───────────────────────
@@ -519,6 +674,7 @@ in {
     dataDir = "/home/justkowal/Sync";
     configDir = "/home/justkowal/.config/syncthing";
     guiAddress = "127.0.0.1:8384";
+    openDefaultPorts = true;
   };
 
   # ── Kanidm Server (Identity Provider) ──────────────────────────────────
@@ -575,5 +731,164 @@ in {
     memoryPercent = 50;
   };
 
+  # ── Vaultwarden: Lightweight Bitwarden Password Manager ───────────────
+  services.vaultwarden = {
+    enable = true;
+    config = {
+      ROCKET_PORT = 8222;
+      ROCKET_ADDRESS = "127.0.0.1";
+      DOMAIN = "https://vault.lab";
+      SIGNUPS_ALLOWED = true;
+    };
+  };
+
+  # ── ntfy: Unified Push Notification Dispatcher ─────────────────────────
+  services.ntfy-sh = {
+    enable = true;
+    settings = {
+      base-url = "https://ntfy.lab";
+      listen-http = "127.0.0.1:2586";
+    };
+  };
+
+  # ── Uptime Kuma: Homelab Status & Health Dashboard ─────────────────────
+  services.uptime-kuma = {
+    enable = true;
+    settings = {
+      PORT = "3001";
+      HOST = "127.0.0.1";
+    };
+  };
+
+  # ── Glance: Private Homelab Dashboard (Tailnet & LAN Only) ─────────────
+  services.glance = {
+    enable = true;
+    settings = {
+      server = {
+        host = "127.0.0.1";
+        port = 8095;
+      };
+      theme = {
+        background-color = "240 10 4";
+        primary-color = "350 80 75";
+      };
+      pages = [
+        {
+          name = "Homelab";
+          columns = [
+            {
+              size = "small";
+              widgets = [
+                {
+                  type = "clock";
+                  time-format = "24h";
+                }
+                {
+                  type = "monitor";
+                  title = "RPi4 Node";
+                }
+              ];
+            }
+            {
+              size = "full";
+              widgets = [
+                {
+                  type = "bookmarks";
+                  groups = [
+                    {
+                      title = "Core Infrastructure";
+                      links = [
+                        { title = "Kanidm IDM"; url = "https://idm.lab"; }
+                        { title = "Forgejo Git"; url = "https://git.lab"; }
+                        { title = "Woodpecker CI"; url = "https://ci.lab"; }
+                        { title = "Uptime Kuma Status"; url = "https://status.lab"; }
+                      ];
+                    }
+                    {
+                      title = "Workstation & Services";
+                      links = [
+                        { title = "Vaultwarden"; url = "https://vault.lab"; }
+                        { title = "Flamenco Render Manager"; url = "http://render.lab"; }
+                        { title = "ntfy Push Alerts"; url = "https://ntfy.lab"; }
+                        { title = "Desktop Sunshine"; url = "https://nixos-desktop.lab:47990"; }
+                        { title = "Shiori Bookmarks"; url = "https://bookmarks.lab"; }
+                        { title = "Paperless Docs"; url = "https://docs.lab"; }
+                      ];
+                    }
+                  ];
+                }
+              ];
+            }
+          ];
+        }
+      ];
+    };
+  };
+
+  # ── Shiori: Self-Hosted Bookmarks & Web Archiver ───────────────────────
+  services.shiori = {
+    enable = true;
+    port = 8085;
+  };
+
+  # ── Paperless-ngx: Automated Document & Receipt Archiver ───────────────
+  services.paperless = {
+    enable = true;
+    address = "127.0.0.1";
+    port = 28981;
+    consumptionDir = "/home/justkowal/Sync/Documents/consume";
+    consumptionDirIsPublic = true;
+    settings = {
+      PAPERLESS_URL = "https://docs.lab";
+      PAPERLESS_OCR_LANGUAGE = "pol+eng";
+      PAPERLESS_TIME_ZONE = "Europe/Warsaw";
+      PAPERLESS_TASK_WORKERS = 1;
+      PAPERLESS_THREADS_PER_WORKER = 1;
+    };
+  };
+
+  # ── Blocky: Fast DNS Proxy, Ad-Blocker & Homelab Split-DNS ─────────────
+  services.blocky = {
+    enable = true;
+    settings = {
+      ports.dns = 53;
+      upstreams.groups.default = [
+        "1.1.1.1"
+        "1.0.0.1"
+      ];
+      customDNS = {
+        customTTL = "1h";
+        mapping = {
+          "lab" = "192.168.1.22";
+          "home.lab" = "192.168.1.22";
+          "bookmarks.lab" = "192.168.1.22";
+          "docs.lab" = "192.168.1.22";
+          "idm.lab" = "192.168.1.22";
+          "git.lab" = "192.168.1.22";
+          "ci.lab" = "192.168.1.22";
+          "render.lab" = "192.168.1.22";
+          "portfolio.lab" = "192.168.1.22";
+          "nixos-rpi4.lab" = "192.168.1.22";
+          "vault.lab" = "192.168.1.22";
+          "ntfy.lab" = "192.168.1.22";
+          "status.lab" = "192.168.1.22";
+          "thinkpad-t14s-gen1-amd.lab" = "192.168.1.20";
+          "nixos-desktop.lab" = "192.168.1.127";
+        };
+      };
+      blocking = {
+        denylists = {
+          ads = [
+            "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+          ];
+        };
+        clientGroupsBlock = {
+          default = [ "ads" ];
+        };
+      };
+    };
+  };
+
   system.stateVersion = "26.05";
 }
+

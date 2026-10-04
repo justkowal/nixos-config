@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, ... }:
 
 {
   programs.dconf.enable = true;
@@ -20,10 +20,11 @@
 
   services.gvfs.enable = true;
   services.tumbler.enable = true;
+  services.udisks2.enable = true;
 
   virtualisation.docker = {
     enable = true;
-    enableOnBoot = false;
+    enableOnBoot = lib.mkDefault false;
   };
 
   virtualisation.podman.enable = true;

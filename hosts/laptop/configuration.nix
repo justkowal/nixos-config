@@ -34,7 +34,21 @@
   # ── Distributed Builds (Offload to Desktop) ────────────────────────────
   # Dispatches heavy compilation and ARM64 SD image builds to the Desktop's
   # 16-thread Ryzen 7 7800X3D over Tailscale/LAN with automatic fallback.
-  networking.hosts."192.168.1.127" = [ "nixos-desktop" "nixos-desktop.lab" ];
+  networking.hosts."100.109.222.110" = [ "nixos-desktop" "nixos-desktop.lab" ];
+  networking.hosts."100.113.193.14" = [
+    "nixos-rpi4"
+    "nixos-rpi4.lab"
+    "lab"
+    "home.lab"
+    "status.lab"
+    "idm.lab"
+    "git.lab"
+    "ci.lab"
+    "vault.lab"
+    "bookmarks.lab"
+    "render.lab"
+    "portfolio.lab"
+  ];
 
   nix.buildMachines = [
     {
@@ -307,6 +321,15 @@
     authKeyFile = config.sops.secrets."tailscale_auth_key".path;
     extraUpFlags = [ "--accept-routes" ];
   };
+
+  # Ensure Syncthing, Notes, GameSaves, and Documents directories exist with correct user ownership
+  systemd.tmpfiles.rules = [
+    "d /home/justkowal/Sync 0755 justkowal users -"
+    "d /home/justkowal/Sync/Notes 0755 justkowal users -"
+    "d /home/justkowal/Sync/GameSaves 0755 justkowal users -"
+    "d /home/justkowal/Sync/Documents 0755 justkowal users -"
+    "d /home/justkowal/Sync/Documents/consume 0755 justkowal users -"
+  ];
 
   # Hostname
   networking.hostName = "thinkpad-t14s-gen1-amd";

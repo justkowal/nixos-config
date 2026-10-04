@@ -34,4 +34,10 @@
       };
     };
   };
+
+  # Ensure local /etc/passwd and /etc/group resolve before Kanidm
+  # to prevent local accounts (justkowal, root) from colliding with domain accounts
+  system.nssDatabases.passwd = lib.mkForce [ "files" "kanidm" "systemd" ];
+  system.nssDatabases.group = lib.mkForce [ "files" "kanidm" "[success=merge] systemd" ];
 }
+

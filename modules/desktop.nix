@@ -19,6 +19,7 @@
   systemd.tmpfiles.rules = [ "L+ /opt/rocm/hip - - - - ${pkgs.rocmPackages.clr}" ];
 
   services.flatpak.enable = true;
+  programs.kdeconnect.enable = true;
 
   xdg.portal = {
     enable = true;

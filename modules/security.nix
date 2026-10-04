@@ -55,6 +55,7 @@
   # Laptop, RPi4) without password prompts.
   users.users.justkowal.openssh.authorizedKeys.keys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINq047VZyk7koA7QCAW8RuGaqu8YePnLPnOIIgo0TiBS justkowal@desktop"
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG1S6Xyulmhl+KjN9oM/jsXsQlDi1I6gd9KFmkvnYV+9 justkowal@thinkpad"
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFWMDlHUXnZP+8GHiZ9qGUrWs1SKDk0t7pbzQjDus5T9 github-actions-deploy-talented"
   ];
 }

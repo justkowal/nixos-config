@@ -847,7 +847,7 @@
           fi
 
           SUMMARY_TEXT=$(echo "$RESPONSE" | ${pkgs.coreutils}/bin/head -n 2 | ${pkgs.coreutils}/bin/tr '\n' ' ')
-          CHOICE=$(echo -e "📖 Response Summary: $SUMMARY_TEXT\n💬 Continue Chat\n📋 Copy Response\n🌐 Open in Open-WebUI\n❌ Close" | rofi -dmenu -i -p "Spotlight AI ($MODEL_LABEL)" -mesg "$RESPONSE" -font "Outfit 11" -theme-str 'window {width: 850px;} message {border: 2px; border-radius: 12px; padding: 12px; margin: 0px 0px 10px 0px;} textbox {wrap: true;} listview {lines: 5;} element {padding: 8px;}')
+          CHOICE=$(echo -e "󰈙 Response Summary: $SUMMARY_TEXT\n󰭻 Continue Chat\n󰆏 Copy Response\n󰖟 Open in Open-WebUI\n󰅖 Close" | rofi -dmenu -i -p "Spotlight AI ($MODEL_LABEL)" -mesg "$RESPONSE" -font "Outfit 11" -theme-str 'window {width: 850px;} message {border: 2px; border-radius: 12px; padding: 12px; margin: 0px 0px 10px 0px;} textbox {wrap: true;} listview {lines: 5;} element {padding: 8px;}')
 
           if [ -z "$CHOICE" ] || [[ "$CHOICE" =~ "Close" ]]; then exit 0
           elif [[ "$CHOICE" =~ "Copy Response" ]]; then
@@ -859,7 +859,7 @@
             ( ${pkgs.xdg-utils}/bin/xdg-open "http://127.0.0.1:11111/?q=$ENCODED_PROMPT" ) >/dev/null 2>&1 & disown
             exit 0
           else
-            TYPED_REPLY=$(echo "$CHOICE" | ${pkgs.gnused}/bin/sed -E 's/^\s*(📖|💬|📋|🌐|❌).*\s*//')
+            TYPED_REPLY=$(echo "$CHOICE" | ${pkgs.gnused}/bin/sed -E 's/^\s*([󰈙󰭻󰆏󰖟󰅖]|📖|💬|📋|🌐|❌).*\s*//')
             [ -z "$TYPED_REPLY" ] && TYPED_REPLY=$(rofi -dmenu -i -p "Your Reply ($MODEL_LABEL)" -font "Outfit 12" -theme-str 'window {width: 650px;}')
             [ -z "$TYPED_REPLY" ] && exit 0
             CURRENT_PROMPT="$TYPED_REPLY"
@@ -883,26 +883,35 @@
         exit 0
       fi
 
-      # ── NEW: AI Instant Answer Fallback (E2B) ──
-      # When nothing matched, try a quick local LLM answer before falling to web
-      AI_FALLBACK_MODEL="hf.co/huihui-ai/Huihui-gemma-4-E2B-it-qat-q4_0-unquantized-abliterated-GGUF"
-      TAGS=$(${pkgs.curl}/bin/curl -s http://127.0.0.1:11434/api/tags 2>/dev/null || echo '{}')
-      FB_MODEL=$(echo "$TAGS" | ${pkgs.jq}/bin/jq -r --arg pref "$AI_FALLBACK_MODEL" '.models[]? | .name | select(contains($pref))' | head -n 1)
-      FB_FIRST=$(echo "$TAGS" | ${pkgs.jq}/bin/jq -r '.models[]? | select(.name != "nomic-embed-text:latest") | .name' | head -n 1)
-      FB_TARGET="''${FB_MODEL:-''${FB_FIRST:-$AI_FALLBACK_MODEL}}"
+      # Fallback: No matching application or file found
+      # Apple HIG Agency & Transparency: Provide explicit choice rather than silent AI/web fallback
+      ACTION=$(echo -e "󰖟 Search Web for \"$CLEAN_INPUT\"\n󰧑 Ask Local AI: \"$CLEAN_INPUT\"\n󰅖 Dismiss" | rofi -dmenu -i -p "No Match Found" -mesg "Query \"$CLEAN_INPUT\" did not match any applications or files." -font "Outfit 11" -theme-str 'window {width: 650px;} listview {lines: 3;} element {padding: 8px 12px;}')
 
-      FB_PAYLOAD=$(${pkgs.jq}/bin/jq -n --arg m "$FB_TARGET" --arg p "Answer in 1-2 sentences: $CLEAN_INPUT" '{model: $m, prompt: $p, stream: false}')
-      FB_RES=$(${pkgs.curl}/bin/curl -s --max-time 5 http://127.0.0.1:11434/api/generate -d "$FB_PAYLOAD" 2>/dev/null)
-      FB_ANSWER=$(echo "$FB_RES" | ${pkgs.jq}/bin/jq -r '.response // empty' 2>/dev/null)
+      case "$ACTION" in
+        *"Search Web"*)
+          ENCODED=$(${pkgs.jq}/bin/jq -rr --arg q "$CLEAN_INPUT" '$q | @uri')
+          ${pkgs.xdg-utils}/bin/xdg-open "http://127.0.0.1:8888/search?q=$ENCODED"
+          ;;
+        *"Ask Local AI"*)
+          AI_FALLBACK_MODEL="hf.co/huihui-ai/Huihui-gemma-4-E2B-it-qat-q4_0-unquantized-abliterated-GGUF"
+          TAGS=$(${pkgs.curl}/bin/curl -s http://127.0.0.1:11434/api/tags 2>/dev/null || echo '{}')
+          FB_MODEL=$(echo "$TAGS" | ${pkgs.jq}/bin/jq -r --arg pref "$AI_FALLBACK_MODEL" '.models[]? | .name | select(contains($pref))' | head -n 1)
+          FB_FIRST=$(echo "$TAGS" | ${pkgs.jq}/bin/jq -r '.models[]? | select(.name != "nomic-embed-text:latest") | .name' | head -n 1)
+          FB_TARGET="''${FB_MODEL:-''${FB_FIRST:-$AI_FALLBACK_MODEL}}"
 
-      if [ -n "$FB_ANSWER" ] && [ "$FB_ANSWER" != "null" ] && [ ''${#FB_ANSWER} -gt 5 ]; then
-        echo "$FB_ANSWER" | ${pkgs.wl-clipboard}/bin/wl-copy
-        ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:spotlight-ai "✨ Spotlight AI" "$FB_ANSWER" -i dialog-information
-      fi
+          FB_PAYLOAD=$(${pkgs.jq}/bin/jq -n --arg m "$FB_TARGET" --arg p "Answer directly and concisely: $CLEAN_INPUT" '{model: $m, prompt: $p, stream: false}')
+          FB_RES=$(${pkgs.curl}/bin/curl -s --max-time 10 http://127.0.0.1:11434/api/generate -d "$FB_PAYLOAD" 2>/dev/null)
+          FB_ANSWER=$(echo "$FB_RES" | ${pkgs.jq}/bin/jq -r '.response // empty' 2>/dev/null)
 
-      # Always fall through to web search as secondary
-      ENCODED=$(${pkgs.jq}/bin/jq -rr --arg q "$CLEAN_INPUT" '$q | @uri')
-      ${pkgs.xdg-utils}/bin/xdg-open "http://127.0.0.1:8888/search?q=$ENCODED"
+          if [ -n "$FB_ANSWER" ] && [ "$FB_ANSWER" != "null" ]; then
+            echo "$FB_ANSWER" | ${pkgs.wl-clipboard}/bin/wl-copy
+            ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:spotlight-ai "󰧑 Spotlight AI" "$FB_ANSWER" -i dialog-information
+          fi
+          ;;
+        *)
+          exit 0
+          ;;
+      esac
     '';
   };
 
@@ -987,7 +996,7 @@
           *) return ;;
         esac
 
-        ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:clip-ai "🧠 Clipboard AI" "Processing..." -i dialog-information
+        ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:clip-ai "󰧑 Clipboard AI" "Processing..." -i dialog-information
 
         local PAYLOAD=$(${pkgs.jq}/bin/jq -n --arg m "$MODEL" --arg p "$PROMPT" '{model: $m, prompt: $p, stream: false}')
         local RAW_RES=$(${pkgs.curl}/bin/curl -s "$OLLAMA_URL" -d "$PAYLOAD" 2>/dev/null)
@@ -995,7 +1004,7 @@
 
         if [ -n "$RESPONSE" ] && [ "$RESPONSE" != "null" ]; then
           echo "$RESPONSE" | ${pkgs.wl-clipboard}/bin/wl-copy
-          ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:clip-ai "✅ Clipboard AI" "$RESPONSE" -i dialog-information
+          ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:clip-ai "󰄬 Clipboard AI" "$RESPONSE" -i dialog-information
         fi
       }
 
@@ -1006,20 +1015,20 @@
 
         case "$content_type" in
           code)
-            CHOICE=$(echo -e "✨ Format Code\n💡 Explain Code\n❌ Dismiss" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "📋 Code Detected" -mesg "$preview" -font "Outfit 11" -theme-str 'window {width: 500px;} listview {lines: 3;}')
+            CHOICE=$(echo -e "󰉦 Format Code\n󰌵 Explain Code\n󰅖 Dismiss" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "󰅩 Code Detected" -mesg "$preview" -font "Outfit 11" -theme-str 'window {width: 500px;} listview {lines: 3;}')
             if [[ "$CHOICE" =~ "Format" ]]; then do_ai_action "format_code" "$text"
             elif [[ "$CHOICE" =~ "Explain" ]]; then do_ai_action "explain_code" "$text"
             fi ;;
           url)
-            CHOICE=$(echo -e "📝 Summarize Page\n❌ Dismiss" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "🔗 URL Detected" -mesg "$preview" -font "Outfit 11" -theme-str 'window {width: 500px;} listview {lines: 2;}')
+            CHOICE=$(echo -e "󰈙 Summarize Page\n󰅖 Dismiss" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "󰌹 URL Detected" -mesg "$preview" -font "Outfit 11" -theme-str 'window {width: 500px;} listview {lines: 2;}')
             [[ "$CHOICE" =~ "Summarize" ]] && do_ai_action "summarize_url" "$text"
             ;;
           error)
-            CHOICE=$(echo -e "🔍 Diagnose Error\n❌ Dismiss" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "⚠️ Error Detected" -mesg "$preview" -font "Outfit 11" -theme-str 'window {width: 500px;} listview {lines: 2;}')
+            CHOICE=$(echo -e "󰡏 Diagnose Error\n󰅖 Dismiss" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "󰅚 Error Detected" -mesg "$preview" -font "Outfit 11" -theme-str 'window {width: 500px;} listview {lines: 2;}')
             [[ "$CHOICE" =~ "Diagnose" ]] && do_ai_action "diagnose_error" "$text"
             ;;
           prose)
-            CHOICE=$(echo -e "📝 Summarize\n🌍 Translate\n❌ Dismiss" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "📄 Text Detected" -mesg "$preview" -font "Outfit 11" -theme-str 'window {width: 500px;} listview {lines: 3;}')
+            CHOICE=$(echo -e "󰈙 Summarize\n󰖟 Translate\n󰅖 Dismiss" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "󰈙 Text Detected" -mesg "$preview" -font "Outfit 11" -theme-str 'window {width: 500px;} listview {lines: 3;}')
             if [[ "$CHOICE" =~ "Summarize" ]]; then do_ai_action "summarize_prose" "$text"
             elif [[ "$CHOICE" =~ "Translate" ]]; then do_ai_action "translate_prose" "$text"
             fi ;;
@@ -1310,7 +1319,7 @@
 
       TOOLTIP="System: Up $UPTIME | RAM ''${RAM_PCT}% | Disk $DISK_PCT\nWorkspaces: $WORKSPACES | Last commit: $LAST_GIT"
 
-      OUTPUT=$(${pkgs.jq}/bin/jq -n -c --arg text "✨ $TIP" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}')
+      OUTPUT=$(${pkgs.jq}/bin/jq -n -c --arg text "󰧑 $TIP" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}')
       echo "$OUTPUT" > "$CACHE_FILE"
       echo "$OUTPUT"
     '';

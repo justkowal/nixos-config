@@ -297,15 +297,15 @@ SSH authentication is declaratively synchronized across all nodes via `modules/s
 
 ### 2.6 Initialize Kanidm Identity Provider
 
-1. Recover the built-in admin account:
+1. Recover the identity management administrator account:
    ```bash
-   sudo kanidm recover-account admin
+   sudo kanidmd recover-account -c /etc/kanidm/server.toml idm_admin
    ```
    Save the temporary password printed to stdout.
 
-2. Log into the CLI as admin:
+2. Log into the CLI as `idm_admin`:
    ```bash
-   kanidm login --name admin -H https://idm.lab
+   kanidm login --name idm_admin -H https://idm.lab
    ```
 
 3. Create the standard Linux users group and your personal account:

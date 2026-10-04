@@ -50,6 +50,12 @@
     tesseract
     kicad
     qmapshack
+    obsidian
+    moonlight-qt
+    lan-mouse
+    localsend
+    ludusavi
+    zellij
 
     (texlive.combine {inherit (pkgs.texlive) scheme-medium cancel physics siunitx mathtools tcolorbox environ;})
     anki

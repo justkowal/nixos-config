@@ -5,6 +5,6 @@
     isNormalUser = true;
     description = "justkowal";
     shell = pkgs.nushell;
-    extraGroups = [ "networkmanager" "wheel" "video" "render" "docker" "audio" "realtime" ];
+    extraGroups = [ "networkmanager" "wheel" "video" "render" "docker" "audio" "realtime" "input" "uinput" ];
   };
 }

@@ -7,13 +7,13 @@
   # Script wrappers — installed on PATH as commands
   volume-osd = pkgs.writeShellApplication {
     name = "volume-osd";
-    runtimeInputs = with pkgs; [wireplumber gawk gnugrep libnotify coreutils];
+    runtimeInputs = with pkgs; [wireplumber gawk gnugrep swayosd coreutils];
     text = builtins.readFile ./scripts/volume-osd.sh;
   };
 
   brightness-osd = pkgs.writeShellApplication {
     name = "brightness-osd";
-    runtimeInputs = with pkgs; [brightnessctl ddcutil gnugrep libnotify coreutils];
+    runtimeInputs = with pkgs; [brightnessctl ddcutil gnugrep swayosd gawk coreutils];
     text = builtins.readFile ./scripts/brightness-osd.sh;
   };
 
@@ -41,6 +41,12 @@
     text = ''
       cliphist list | rofi -dmenu -p "Clipboard" -theme-str 'window {width: 700px;}' | cliphist decode | wl-copy
     '';
+  };
+
+  tablet-display = pkgs.writeShellApplication {
+    name = "tablet-display";
+    runtimeInputs = with pkgs; [jq hyprland swayosd coreutils];
+    text = builtins.readFile ./scripts/tablet-display.sh;
   };
 
   unlock-keyring = pkgs.writers.writePython3Bin "unlock-keyring-tool" {
@@ -100,6 +106,8 @@ in {
       change-wallpaper
       resize-split
       cliphist-picker
+      tablet-display
+      pkgs.swayosd
     ]
     ++ lib.optionals laptop [pkgs.blueman pkgs.brightnessctl unlock-keyring];
 
@@ -229,12 +237,16 @@ in {
       ''}
           exec-once = [workspace special:term silent] kitty --class scratchpad
           exec-once = easyeffects --gapplication-service
+          exec-once = ${pkgs.swayosd}/bin/swayosd-server
+          exec-once = kdeconnect-indicator
 
           $mod = SUPER
           bind = $mod, RETURN, exec, kitty
           bind = $mod, E, exec, thunar
           bind = $mod, B, exec, firefox
+          bind = $mod, C, exec, control-center-gui
           bind = $mod, ESCAPE, exec, power-menu
+          bind = $mod SHIFT, T, exec, tablet-display toggle
           bind = $mod, grave, togglespecialworkspace, term
       ${
         if laptop
@@ -249,7 +261,8 @@ in {
         ''
       }
           bind = $mod, Q, killactive,
-          bind = $mod, M, exit,
+          bind = $mod, M, togglespecialworkspace, minimized
+          bind = $mod SHIFT, M, movetoworkspacesilent, special:minimized
           bind = $mod, F, togglefloating,
           bind = $mod, L, exec, loginctl lock-session
           bind = $mod, left, movefocus, l
@@ -394,6 +407,22 @@ in {
           windowrule = no_blur 1, match:class ^(steam_app_.*)$
 
           windowrule = float 1, match:class ^(thunar|Thunar)$, match:title ^(File Operation Progress|Confirm to replace files|Attention)$
+
+          windowrule = float 1, match:class ^(io\.github\.justkowal\.ControlCenter)$
+          windowrule = size ${if laptop then "540 580" else "560 620"}, match:class ^(io\.github\.justkowal\.ControlCenter)$
+          windowrule = center 1, match:class ^(io\.github\.justkowal\.ControlCenter)$
+
+          windowrule = float 1, match:class ^(io\.github\.justkowal\.LanMouseConfig)$
+          windowrule = size ${if laptop then "560 600" else "580 640"}, match:class ^(io\.github\.justkowal\.LanMouseConfig)$
+          windowrule = center 1, match:class ^(io\.github\.justkowal\.LanMouseConfig)$
+
+          windowrule = float 1, match:class ^(io\.github\.justkowal\.FleetManager)$
+          windowrule = size ${if laptop then "560 600" else "600 640"}, match:class ^(io\.github\.justkowal\.FleetManager)$
+          windowrule = center 1, match:class ^(io\.github\.justkowal\.FleetManager)$
+
+          windowrule = float 1, match:class ^(io\.github\.justkowal\.TabletDisplayStudio)$
+          windowrule = size ${if laptop then "540 580" else "560 620"}, match:class ^(io\.github\.justkowal\.TabletDisplayStudio)$
+          windowrule = center 1, match:class ^(io\.github\.justkowal\.TabletDisplayStudio)$
     '';
   };
 

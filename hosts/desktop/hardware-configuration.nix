@@ -20,7 +20,7 @@
   fileSystems."/" =
     { device = "/dev/disk/by-uuid/91169176-2eea-4719-8327-2e0bbc3cc0c1";
       fsType = "bcachefs";
-      options = [ "compression=zstd" "noatime" ];
+      options = [ "noatime" ];
     };
 
   fileSystems."/boot/efi" =

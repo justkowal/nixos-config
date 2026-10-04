@@ -22,8 +22,20 @@
     runtimeInputs = with pkgs; [jq hyprland coreutils];
     text = builtins.readFile ./scripts/pip-toggle.sh;
   };
+
+  fleet-status = pkgs.writeShellApplication {
+    name = "fleet-status";
+    runtimeInputs = with pkgs; [jq iputils curl gawk coreutils];
+    text = builtins.readFile ./scripts/fleet-status.sh;
+  };
+
+  fleet-menu = pkgs.writeShellApplication {
+    name = "fleet-menu";
+    runtimeInputs = with pkgs; [rofi xdg-utils kitty libnotify openssh coreutils];
+    text = builtins.readFile ./scripts/fleet-menu.sh;
+  };
 in {
-  home.packages = [sys-info pomodoro pip-toggle];
+  home.packages = [sys-info pomodoro pip-toggle fleet-status fleet-menu];
 
   programs.waybar = {
     enable = true;
@@ -55,8 +67,8 @@ in {
         modules-center = ["clock" "custom/pomodoro" "clock#date"];
         modules-right =
           if laptop
-          then ["battery" "backlight" "network" "bluetooth" "pulseaudio" "custom/thinkdot" "custom/notification" "custom/power" "tray"]
-          else ["mpris" "group/system" "group/hardware" "pulseaudio" "custom/pip" "custom/notification" "custom/power"];
+          then ["battery" "backlight" "network" "bluetooth" "pulseaudio" "custom/fleet" "custom/controlcenter" "custom/thinkdot" "custom/notification" "custom/power" "tray"]
+          else ["mpris" "custom/fleet" "group/system" "group/hardware" "pulseaudio" "custom/pip" "custom/controlcenter" "custom/notification" "custom/power"];
 
         "hyprland/workspaces" = {
           disable-scroll = true;
@@ -179,10 +191,10 @@ in {
 
         "custom/notification" = {
           tooltip = false;
-          format = "🔔 {icon}";
+          format = "{icon}";
           format-icons = {
             notification = "󱅫";
-            none = "󰂜";
+            none = "󰂚";
             dnd-notification = "󰂛";
             dnd-none = "󰂛";
           };
@@ -202,8 +214,36 @@ in {
           tooltip = true;
         };
 
+        "custom/fleet" = {
+          format = "{}";
+          return-type = "json";
+          exec = "${fleet-status}/bin/fleet-status";
+          interval = 10;
+          on-click = "${pkgs.xdg-utils}/bin/xdg-open https://lab";
+          on-click-right = "${fleet-menu}/bin/fleet-menu";
+          on-click-middle = "${fleet-status}/bin/fleet-status probe";
+          tooltip = true;
+        };
+
+        "custom/homelab" = {
+          format = "{}";
+          return-type = "json";
+          exec = "${fleet-status}/bin/fleet-status";
+          interval = 10;
+          on-click = "${pkgs.xdg-utils}/bin/xdg-open https://lab";
+          on-click-right = "${fleet-menu}/bin/fleet-menu";
+          tooltip = true;
+        };
+
+        "custom/controlcenter" = {
+          format = "󰕮";
+          tooltip = true;
+          tooltip-format = "Control Center (Super+C)";
+          on-click = "control-center-gui";
+        };
+
         "custom/power" = {
-          format = "⏻ ";
+          format = "󰐥 ";
           on-click = "power-menu";
         };
 
@@ -284,12 +324,12 @@ in {
       }
 
       window#waybar {
-        background-color: alpha(@background, 0.68);
-        border: 1px solid alpha(@outline, 0.75);
-        border-radius: 20px;
+        background-color: alpha(@background, 0.90);
+        border: 1px solid alpha(@outline, 0.40);
+        border-radius: 18px;
         color: @on_background;
         transition-property: background-color;
-        transition-duration: .5s;
+        transition-duration: .3s;
         padding: 0;
       }
 
@@ -300,26 +340,26 @@ in {
         padding: 0 10px;
         color: @on_surface_variant;
         background-color: transparent;
-        border-radius: 12px;
+        border-radius: 10px;
         margin: 4px 2px;
       }
 
       #workspaces button.active {
         color: @primary;
-        background-color: @surface_variant;
+        background-color: alpha(@primary_container, 0.65);
       }
 
-      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-thinkdot, #custom-power, #custom-pomodoro, #custom-update, #custom-pip, #custom-hw_trigger, #custom-sys_trigger, #backlight, #bluetooth {
-        padding: 0 16px;
+      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-thinkdot, #custom-power, #custom-pomodoro, #custom-update, #custom-pip, #custom-fleet, #custom-homelab, #custom-hw_trigger, #custom-sys_trigger, #backlight, #bluetooth {
+        padding: 0 14px;
         margin: 4px 2px;
-        background-color: alpha(@surface_variant, 0.82);
+        background-color: alpha(@surface_variant, 0.45);
         border-radius: 12px;
       }
 
       #battery {
-        padding: 0 16px;
+        padding: 0 14px;
         margin: 4px 2px;
-        background-color: alpha(@surface_variant, 0.82);
+        background-color: alpha(@surface_variant, 0.45);
         border-radius: 12px;
         color: @primary;
       }
@@ -331,7 +371,6 @@ in {
       #custom-hw_trigger, #custom-sys_trigger {
         color: @primary;
         font-size: 15px;
-        box-shadow: -16px 0px 18px -4px @background;
       }
 
       #custom-notification { color: @primary; }
@@ -355,8 +394,9 @@ in {
       #submap {
         padding: 0 12px;
         margin: 4px 2px;
-        background-color: @primary;
-        color: @on_primary;
+        background-color: alpha(@primary_container, 0.70);
+        color: @primary;
+        border: 1px solid alpha(@primary, 0.50);
         border-radius: 12px;
       }
 
@@ -372,6 +412,11 @@ in {
       #idle_inhibitor { color: @tertiary; }
       #memory { color: @primary; }
       #disk { color: @primary; }
+      #custom-fleet, #custom-homelab { color: @primary; font-weight: bold; }
+      #custom-fleet.online, #custom-homelab.online { color: @primary; }
+      #custom-fleet.partial { color: @tertiary; }
+      #custom-fleet.warning, #custom-homelab.offline { color: @error; }
+      #custom-controlcenter { color: @primary; font-size: 15px; }
       #custom-power { color: @error; }
       #tray { margin: 4px 2px; padding: 0 10px; }
     '';

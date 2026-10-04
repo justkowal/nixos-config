@@ -50,6 +50,7 @@
         specialArgs = {inherit inputs;};
         modules = [
           {nixpkgs.hostPlatform = "x86_64-linux";}
+          inputs.sops-nix.nixosModules.sops
           ./hosts/desktop/configuration.nix
           home-manager.nixosModules.home-manager
           (makeHomeManagerModule false)
