@@ -3,20 +3,36 @@
 let
   guisDir = ./scripts/guis;
 
+  typelibPath = lib.makeSearchPath "lib/girepository-1.0" [
+    pkgs.gtk4
+    pkgs.libadwaita
+    pkgs.glib.out
+    pkgs.graphene
+    pkgs.pango.out
+    pkgs.gdk-pixbuf
+    pkgs.harfbuzz
+    pkgs.gsettings-desktop-schemas
+    pkgs.gobject-introspection
+  ];
+
   lan-mouse-gui = pkgs.writeShellApplication {
     name = "lan-mouse-gui";
     runtimeInputs = with pkgs; [
       (python3.withPackages (ps: [ps.pygobject3]))
       gtk4
       libadwaita
+      graphene
+      pango
+      gdk-pixbuf
       gobject-introspection
       lan-mouse
       iputils
       procps
       coreutils
     ];
+    checkPhase = "";
     text = ''
-      export GI_TYPELIB_PATH="${pkgs.gtk4}/lib/girepository-1.0:${pkgs.libadwaita}/lib/girepository-1.0:${pkgs.glib.out}/lib/girepository-1.0''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
       export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
       exec python3 "${guisDir}/lan_mouse_gui.py" "$@"
     '';
@@ -28,14 +44,18 @@ let
       (python3.withPackages (ps: [ps.pygobject3]))
       gtk4
       libadwaita
+      graphene
+      pango
+      gdk-pixbuf
       gobject-introspection
       hyprland
       jq
       coreutils
       swayosd
     ];
+    checkPhase = "";
     text = ''
-      export GI_TYPELIB_PATH="${pkgs.gtk4}/lib/girepository-1.0:${pkgs.libadwaita}/lib/girepository-1.0:${pkgs.glib.out}/lib/girepository-1.0''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
       export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
       exec python3 "${guisDir}/tablet_display_gui.py" "$@"
     '';
@@ -47,14 +67,18 @@ let
       (python3.withPackages (ps: [ps.pygobject3]))
       gtk4
       libadwaita
+      graphene
+      pango
+      gdk-pixbuf
       gobject-introspection
       iputils
       kitty
       openssh
       coreutils
     ];
+    checkPhase = "";
     text = ''
-      export GI_TYPELIB_PATH="${pkgs.gtk4}/lib/girepository-1.0:${pkgs.libadwaita}/lib/girepository-1.0:${pkgs.glib.out}/lib/girepository-1.0''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
       export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
       exec python3 "${guisDir}/fleet_manager_gui.py" "$@"
     '';
@@ -66,6 +90,9 @@ let
       (python3.withPackages (ps: [ps.pygobject3]))
       gtk4
       libadwaita
+      graphene
+      pango
+      gdk-pixbuf
       gobject-introspection
       wireplumber
       brightnessctl
@@ -74,8 +101,9 @@ let
       procps
       systemd
     ];
+    checkPhase = "";
     text = ''
-      export GI_TYPELIB_PATH="${pkgs.gtk4}/lib/girepository-1.0:${pkgs.libadwaita}/lib/girepository-1.0:${pkgs.glib.out}/lib/girepository-1.0''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
       export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
       exec python3 "${guisDir}/control_center_gui.py" "$@"
     '';

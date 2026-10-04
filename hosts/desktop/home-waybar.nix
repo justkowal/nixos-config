@@ -69,8 +69,8 @@ in {
         modules-center = ["clock" "custom/pomodoro" "clock#date"];
         modules-right =
           if laptop
-          then ["battery" "backlight" "network" "bluetooth" "pulseaudio" "custom/fleet" "custom/controlcenter" "custom/thinkdot" "custom/notification" "custom/power" "tray"]
-          else ["mpris" "custom/fleet" "group/system" "group/hardware" "pulseaudio" "custom/pip" "custom/controlcenter" "custom/notification" "custom/power"];
+          then ["mpris" "custom/fleet" "battery" "backlight" "network" "bluetooth" "pulseaudio" "custom/controlcenter" "custom/thinkdot" "custom/notification" "custom/power" "tray"]
+          else ["mpris" "custom/fleet" "custom/sysinfo" "network" "pulseaudio" "custom/controlcenter" "custom/notification" "custom/power" "tray"];
 
         "hyprland/workspaces" = {
           disable-scroll = true;
@@ -245,7 +245,9 @@ in {
         };
 
         "custom/power" = {
-          format = "󰐥 ";
+          format = "󰐥";
+          tooltip = true;
+          tooltip-format = "Power / Session Menu";
           on-click = "power-menu";
         };
 
@@ -257,55 +259,6 @@ in {
           on-click = "pomodoro toggle";
           on-click-middle = "pomodoro reset";
           on-click-right = "pomodoro skip";
-        };
-
-        "custom/pip" = {
-          exec = "pip-toggle";
-          interval = 1;
-          return-type = "json";
-          format = "{}";
-          on-click = "pip-toggle toggle";
-        };
-
-        "custom/hw_trigger" = {
-          format = "󰻠";
-          tooltip = false;
-        };
-
-        "custom/sys_trigger" = {
-          format = "󰒓";
-          tooltip = false;
-        };
-
-        "group/hardware" = {
-          orientation = "inherit";
-          drawer = {
-            transition-duration = 500;
-            transition-left-to-right = false;
-            click-to-reveal = true;
-          };
-          modules = [
-            "custom/hw_trigger"
-            "custom/sysinfo"
-            "memory"
-            "disk"
-          ];
-        };
-
-        "group/system" = {
-          orientation = "inherit";
-          drawer = {
-            transition-duration = 500;
-            transition-left-to-right = false;
-            click-to-reveal = true;
-          };
-          modules = [
-            "custom/sys_trigger"
-            "network"
-            "custom/update"
-            "idle_inhibitor"
-            "tray"
-          ];
         };
       }
     ];
@@ -320,30 +273,32 @@ in {
         then "12px"
         else "13px"
       };
-        font-weight: bold;
+        font-weight: 600;
         border: none;
         border-radius: 0;
       }
 
       window#waybar {
-        background-color: alpha(@background, 0.90);
-        border: 1px solid alpha(@outline, 0.40);
-        border-radius: 18px;
+        background-color: alpha(@background, 0.85);
+        border: 1px solid alpha(@outline, 0.25);
+        border-radius: 15px;
         color: @on_background;
         transition-property: background-color;
-        transition-duration: .3s;
+        transition-duration: .2s;
         padding: 0;
       }
 
-      .modules-left { margin-left: 12px; }
-      .modules-right { margin-right: 12px; }
+      .modules-left { margin-left: 6px; }
+      .modules-center { margin: 0 4px; }
+      .modules-right { margin-right: 6px; }
 
       #workspaces button {
         padding: 0 10px;
         color: @on_surface_variant;
         background-color: transparent;
         border-radius: 10px;
-        margin: 4px 2px;
+        margin: 3px 2px;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
       #workspaces button.active {
@@ -351,76 +306,110 @@ in {
         background-color: alpha(@primary_container, 0.65);
       }
 
-      #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #idle_inhibitor, #network, #disk, #custom-notification, #custom-thinkdot, #custom-power, #custom-pomodoro, #custom-update, #custom-pip, #custom-fleet, #custom-homelab, #custom-hw_trigger, #custom-sys_trigger, #backlight, #bluetooth {
-        padding: 0 14px;
-        margin: 4px 2px;
+      #workspaces button:hover {
+        background-color: alpha(@surface_variant, 0.50);
+        color: @on_surface;
+      }
+
+      /* Unified Apple Pill Design for ALL status items and action buttons */
+      #clock, #clock.date, #pulseaudio, #custom-sysinfo, #memory, #mpris, #network, #disk, #custom-notification, #custom-thinkdot, #custom-power, #custom-pomodoro, #custom-fleet, #custom-homelab, #backlight, #bluetooth, #custom-controlcenter, #battery {
+        padding: 0 12px;
+        margin: 3px 2px;
         background-color: alpha(@surface_variant, 0.45);
-        border-radius: 12px;
+        border-radius: 10px;
+        color: @on_surface;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
-      #battery {
-        padding: 0 14px;
-        margin: 4px 2px;
-        background-color: alpha(@surface_variant, 0.45);
-        border-radius: 12px;
-        color: @primary;
-      }
-
-      window#waybar group.hardware, window#waybar group.system {
-        background-color: transparent;
-      }
-
-      #custom-hw_trigger, #custom-sys_trigger {
+      /* Distinctive Apple Interactive Action Pills */
+      #custom-controlcenter {
         color: @primary;
         font-size: 15px;
+        padding: 0 10px;
+      }
+      #custom-controlcenter:hover {
+        background-color: alpha(@primary_container, 0.65);
+        color: @primary;
       }
 
-      #custom-notification { color: @primary; }
-      #custom-thinkdot { color: @error; font-size: 15px; }
-      #custom-thinkdot.stealth { color: @outline; }
-      #custom-thinkdot.privacy { color: @error; font-weight: bold; }
-      #custom-thinkdot.focus { color: @primary; }
-      #custom-thinkdot.break { color: @secondary; }
-      #custom-thinkdot.critical { color: @error; }
-      #custom-thinkdot.idle { color: @on_surface_variant; }
-      #custom-update { color: @tertiary; }
-      #custom-update.ready { color: @primary; background-color: alpha(@primary, 0.25); }
-      #custom-pomodoro.work { color: @error; }
-      #custom-pomodoro.break { color: @primary; }
-      #custom-pomodoro.paused { color: @on_surface_variant; }
-      #custom-pip { color: @secondary; }
-      #custom-pip.hidden { color: @on_surface_variant; }
+      #custom-notification {
+        color: @primary;
+        font-size: 15px;
+        padding: 0 10px;
+      }
+      #custom-notification:hover {
+        background-color: alpha(@primary_container, 0.65);
+        color: @primary;
+      }
+
+      #custom-power {
+        color: @error;
+        font-size: 15px;
+        padding: 0 10px;
+      }
+      #custom-power:hover {
+        background-color: alpha(@error_container, 0.65);
+      }
+
+      #pulseaudio:hover, #network:hover, #custom-fleet:hover, #custom-sysinfo:hover, #clock:hover, #clock.date:hover {
+        background-color: alpha(@primary_container, 0.50);
+        color: @primary;
+      }
+
+      #custom-fleet, #custom-homelab {
+        color: @primary;
+        font-weight: bold;
+      }
+      #custom-fleet.online, #custom-homelab.online { color: @primary; }
+      #custom-fleet.partial { color: @tertiary; }
+      #custom-fleet.warning, #custom-homelab.offline { color: @error; }
+
+      #battery { color: @primary; }
       #battery.warning { color: @tertiary; }
       #battery.critical { color: @error; }
 
-      #submap {
-        padding: 0 12px;
-        margin: 4px 2px;
-        background-color: alpha(@primary_container, 0.70);
-        color: @primary;
-        border: 1px solid alpha(@primary, 0.50);
-        border-radius: 12px;
-      }
-
-      #mpris { color: @secondary; }
-      #mpris.playing { color: @primary; }
-      #mpris.paused { color: @on_surface_variant; }
-      #clock { color: @on_background; font-size: 14px; }
       #pulseaudio { color: @secondary; }
       #network { color: @secondary; }
       #backlight { color: @tertiary; }
       #bluetooth { color: @primary; }
       #custom-sysinfo { color: @primary; }
-      #idle_inhibitor { color: @tertiary; }
-      #memory { color: @primary; }
-      #disk { color: @primary; }
-      #custom-fleet, #custom-homelab { color: @primary; font-weight: bold; }
-      #custom-fleet.online, #custom-homelab.online { color: @primary; }
-      #custom-fleet.partial { color: @tertiary; }
-      #custom-fleet.warning, #custom-homelab.offline { color: @error; }
-      #custom-controlcenter { color: @primary; font-size: 15px; }
-      #custom-power { color: @error; }
-      #tray { margin: 4px 2px; padding: 0 10px; }
+
+      #clock {
+        color: @on_background;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      #mpris { color: @secondary; }
+      #mpris.playing { color: @primary; }
+      #mpris.paused { color: @on_surface_variant; }
+
+      #submap {
+        padding: 0 12px;
+        margin: 3px 2px;
+        background-color: alpha(@primary_container, 0.70);
+        color: @primary;
+        border: 1px solid alpha(@primary, 0.50);
+        border-radius: 10px;
+      }
+
+      #tray {
+        margin: 3px 2px;
+        padding: 0 8px;
+        background-color: alpha(@surface_variant, 0.45);
+        border-radius: 10px;
+      }
+      #tray:empty {
+        padding: 0;
+        margin: 0;
+        background-color: transparent;
+      }
+
+      #custom-pomodoro:empty, #custom-sysinfo:empty, .empty {
+        padding: 0;
+        margin: 0;
+        background-color: transparent;
+      }
     '';
   };
 
