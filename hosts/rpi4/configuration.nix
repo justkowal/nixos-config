@@ -4,22 +4,9 @@
   lib,
   ...
 }: let
-  # ── Flamenco Manager — not in nixpkgs ──────────────────────────────────
-  # ponytail: first build will fail with hash mismatch — copy the correct hash from the error
-  flamenco = pkgs.stdenv.mkDerivation {
-    pname = "flamenco";
-    version = "3.6";
-    src = pkgs.fetchzip {
-      url = "https://flamenco.blender.org/downloads/flamenco-3.6-linux-arm64.tar.gz";
-      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-    };
-    dontBuild = true;
-    dontFixup = true;
-    installPhase = ''
-      mkdir -p $out/bin
-      install -m755 flamenco-manager $out/bin/
-    '';
-  };
+  # ── Flamenco Manager — built from source (upstream does not provide arm64 binaries)
+  flamenco = pkgs.callPackage ../../pkgs/flamenco { };
+
 
   flamencoManagerConfig = pkgs.writeText "flamenco-manager.yaml" ''
     _meta:

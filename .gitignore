@@ -14,3 +14,8 @@ hosts_old/
 *credentials*.json
 secrets.dec.yaml
 
+# Python cache
+__pycache__/
+*.pyc
+
+

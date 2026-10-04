@@ -71,19 +71,20 @@ in {
   # Allows native aarch64 builds (RPi4 SD images) via QEMU user-mode emulation
   boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
 
-  # ── Distributed Builds (Offload to Laptop) ─────────────────────────────
-  # Distributes parallel compilation jobs to the Laptop (ThinkPad T14s)
-  # when available over Tailscale/LAN with automatic local fallback.
+  # ── Distributed Builds (Laptop Assist) ─────────────────────────────────
+  # Allows the Laptop (ThinkPad T14s) to assist with parallel x86_64 compilation
+  # when available over Tailscale/LAN. Capped at 2 jobs and x86_64 only so it
+  # never starves the Desktop or takes slow QEMU ARM64 emulation tasks.
   networking.hosts."192.168.1.20" = [ "thinkpad-t14s-gen1-amd" "thinkpad-t14s-gen1-amd.lab" ];
 
   nix.buildMachines = [
     {
       hostName = "thinkpad-t14s-gen1-amd.lab";
-      systems = [ "x86_64-linux" "aarch64-linux" ];
+      systems = [ "x86_64-linux" ];
       sshUser = "justkowal";
       sshKey = "/home/justkowal/.ssh/id_ed25519";
       publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSVAxQzFtTDVzRzFwVXBHVjJjR2daWHRKWHNLTm1ndmxBM1JvbU16NDFiSi8=";
-      maxJobs = 8;
+      maxJobs = 2;
       speedFactor = 1;
       supportedFeatures = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
     }
