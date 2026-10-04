@@ -96,6 +96,8 @@ let
       gobject-introspection
       wireplumber
       brightnessctl
+      ddcutil
+      swayosd
       coreutils
       iputils
       procps

@@ -18,7 +18,8 @@ FLEET_SPECS = {
     "desktop": {
         "key": "desktop",
         "name": "nixos-desktop",
-        "title": "󰞷 nixos-desktop (Workstation)",
+        "glyph": "󰞷",
+        "title": "nixos-desktop (Workstation)",
         "role": "Workstation (Ryzen 7 5700X · RX 6700 XT)",
         "dns_candidates": ["nixos-desktop.lab", "nixos-desktop.local", "nixos-desktop"],
         "tailscale_match": ["desktop", "nixos-desktop"]
@@ -26,7 +27,8 @@ FLEET_SPECS = {
     "laptop": {
         "key": "laptop",
         "name": "thinkpad-t14s-gen1-amd",
-        "title": "󰌢 thinkpad-laptop (ThinkPad T14s)",
+        "glyph": "󰌢",
+        "title": "thinkpad-laptop (ThinkPad T14s)",
         "role": "Mobile Client (Ryzen 7 PRO 4750U · Tailscale Mesh)",
         "dns_candidates": ["thinkpad-t14s-gen1-amd.lab", "thinkpad-t14s-gen1-amd.local", "thinkpad-t14s-gen1-amd"],
         "tailscale_match": ["thinkpad", "t14s", "thinkpad-t14s-gen1-amd"]
@@ -34,7 +36,8 @@ FLEET_SPECS = {
     "rpi4": {
         "key": "rpi4",
         "name": "nixos-rpi4",
-        "title": "󰒋 nixos-rpi4 (Homelab Core Server)",
+        "glyph": "󰒋",
+        "title": "nixos-rpi4 (Homelab Core Server)",
         "role": "Homelab Infrastructure (DNS, Caddy, Vault, Git, CI)",
         "dns_candidates": ["nixos-rpi4.lab", "nixos-rpi4.local", "nixos-rpi4"],
         "tailscale_match": ["rpi4", "raspberry", "nixos-rpi4"]

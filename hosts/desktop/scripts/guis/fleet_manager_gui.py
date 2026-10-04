@@ -38,9 +38,9 @@ except ImportError:
 
     def resolve_all_nodes():
         return {
-            "desktop": {"key": "desktop", "name": "nixos-desktop", "title": "󰞷 nixos-desktop (Workstation)", "role": "Workstation", "local": get_local_host_key() == "desktop", "online": True, "active_ip": "127.0.0.1", "route_type": "Loopback", "latency_ms": 0.0},
-            "laptop": {"key": "laptop", "name": "thinkpad-t14s-gen1-amd", "title": "󰌢 thinkpad-laptop (ThinkPad T14s)", "role": "Mobile Client", "local": get_local_host_key() == "laptop", "online": True, "active_ip": "thinkpad-t14s-gen1-amd", "route_type": "mDNS", "latency_ms": 1.0},
-            "rpi4": {"key": "rpi4", "name": "nixos-rpi4", "title": "󰒋 nixos-rpi4 (Homelab Core Server)", "role": "Homelab Server", "local": False, "online": True, "active_ip": "nixos-rpi4.lab", "route_type": "DNS", "latency_ms": 0.5}
+            "desktop": {"key": "desktop", "name": "nixos-desktop", "title": "nixos-desktop (Workstation)", "role": "Workstation", "local": get_local_host_key() == "desktop", "online": True, "active_ip": "127.0.0.1", "route_type": "Loopback", "latency_ms": 0.0},
+            "laptop": {"key": "laptop", "name": "thinkpad-t14s-gen1-amd", "title": "thinkpad-laptop (ThinkPad T14s)", "role": "Mobile Client", "local": get_local_host_key() == "laptop", "online": True, "active_ip": "thinkpad-t14s-gen1-amd", "route_type": "mDNS", "latency_ms": 1.0},
+            "rpi4": {"key": "rpi4", "name": "nixos-rpi4", "title": "nixos-rpi4 (Homelab Core Server)", "role": "Homelab Server", "local": False, "online": True, "active_ip": "nixos-rpi4.lab", "route_type": "DNS", "latency_ms": 0.5}
         }
 
 APPLE_MATUGEN_CSS = """
@@ -55,12 +55,25 @@ window.fleet-manager {
     padding: 12px;
 }
 
+.apple-icon-prefix {
+    font-size: 16px;
+    color: @accent_color;
+    margin-right: 6px;
+}
+
+.apple-pill-btn {
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-weight: 500;
+    font-size: 12px;
+}
+
 .apple-status-green {
     color: #34C759;
     background-color: rgba(52, 199, 89, 0.14);
     border: 1px solid rgba(52, 199, 89, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -70,7 +83,7 @@ window.fleet-manager {
     background-color: rgba(255, 149, 0, 0.14);
     border: 1px solid rgba(255, 149, 0, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -80,7 +93,7 @@ window.fleet-manager {
     background-color: rgba(255, 59, 48, 0.14);
     border: 1px solid rgba(255, 59, 48, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -90,21 +103,43 @@ window.fleet-manager {
     background-color: alpha(@accent_color, 0.14);
     border: 1px solid alpha(@accent_color, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
 """
 
+def make_icon_prefix(glyph: str) -> Gtk.Label:
+    lbl = Gtk.Label(label=glyph)
+    lbl.add_css_class("apple-icon-prefix")
+    lbl.set_valign(Gtk.Align.CENTER)
+    lbl.set_halign(Gtk.Align.CENTER)
+    lbl.set_size_request(28, 28)
+    return lbl
+
+def set_badge(lbl: Gtk.Label, text: str, css_class: str):
+    lbl.set_text(text)
+    for c in ["apple-status-green", "apple-status-orange", "apple-status-red", "apple-status-accent"]:
+        lbl.remove_css_class(c)
+    if css_class:
+        lbl.add_css_class(css_class)
+    lbl.set_valign(Gtk.Align.CENTER)
+
 SERVICES_DEF = [
-    ("glance", "󰖟 Glance Homelab Portal", "https://lab", "Unified service landing page & node dashboard"),
-    ("kuma", "󰈸 Status & Uptime Kuma", "https://status.lab", "Live health monitoring & incident reporting"),
-    ("git", "󰊢 Forgejo Git Repositories", "https://git.lab", "Self-hosted Git forge for dotfiles and code"),
-    ("ci", "󰑮 Woodpecker CI Pipelines", "https://ci.lab", "Automated builds and deployment workflows"),
-    ("idm", "󰌆 Kanidm Identity Provider", "https://idm.lab", "Decentralized single sign-on authentication"),
-    ("vault", "󰌾 Vaultwarden Password Vault", "https://vault.lab", "Encrypted secrets and credentials management"),
-    ("bookmarks", "󰃁 Shiori Web Archiver", "https://bookmarks.lab", "Self-hosted bookmarks and offline reader"),
+    ("glance", "󰖟", "Glance Homelab Portal", "https://lab", "Unified service landing page and node dashboard"),
+    ("kuma", "󰈸", "Status and Uptime Kuma", "https://status.lab", "Live health monitoring and incident reporting"),
+    ("git", "󰊢", "Forgejo Git Repositories", "https://git.lab", "Self-hosted Git forge for dotfiles and code"),
+    ("ci", "󰑮", "Woodpecker CI Pipelines", "https://ci.lab", "Automated builds and deployment workflows"),
+    ("idm", "󰌆", "Kanidm Identity Provider", "https://idm.lab", "Decentralized single sign-on authentication"),
+    ("vault", "󰌾", "Vaultwarden Password Vault", "https://vault.lab", "Encrypted secrets and credentials management"),
+    ("bookmarks", "󰃁", "Shiori Web Archiver", "https://bookmarks.lab", "Self-hosted bookmarks and offline reader"),
 ]
+
+NODE_GLYPHS = {
+    "desktop": "󰞷",
+    "laptop": "󰌢",
+    "rpi4": "󰒋"
+}
 
 class FleetManagerApp(Adw.Application):
     def __init__(self):
@@ -149,6 +184,8 @@ class FleetManagerWindow(Adw.ApplicationWindow):
 
         self.btn_probe = Gtk.Button(label="Probe All")
         self.btn_probe.add_css_class("suggested-action")
+        self.btn_probe.add_css_class("apple-pill-btn")
+        self.btn_probe.set_valign(Gtk.Align.CENTER)
         self.btn_probe.connect("clicked", lambda b: self.trigger_full_probe(show_toast=True))
         header.pack_end(self.btn_probe)
 
@@ -173,12 +210,20 @@ class FleetManagerWindow(Adw.ApplicationWindow):
         self.node_rows = {}
         for node_key in ["desktop", "rpi4", "laptop"]:
             row = Adw.ActionRow()
+            glyph = NODE_GLYPHS.get(node_key, "󰒋")
+            row.add_prefix(make_icon_prefix(glyph))
+
             lbl_badge = Gtk.Label(label="Discovering...")
-            lbl_badge.add_css_class("apple-status-orange")
+            set_badge(lbl_badge, "Discovering...", "apple-status-orange")
+            lbl_badge.set_valign(Gtk.Align.CENTER)
             row.add_suffix(lbl_badge)
 
             btn_ssh = Gtk.Button(label="SSH Terminal")
+            btn_ssh.add_css_class("apple-pill-btn")
             btn_ssh.set_valign(Gtk.Align.CENTER)
+            btn_ssh._node_key = node_key
+            # Connect ONCE to avoid duplicate callbacks
+            btn_ssh.connect("clicked", self._on_ssh_btn_clicked)
             row.add_suffix(btn_ssh)
 
             self.nodes_group.add(row)
@@ -186,7 +231,8 @@ class FleetManagerWindow(Adw.ApplicationWindow):
                 "row": row,
                 "badge": lbl_badge,
                 "ssh_btn": btn_ssh,
-                "active_ip": None
+                "active_ip": None,
+                "hostname": node_key
             }
 
         # ── Group 2: Live Hosted Homelab Services ──
@@ -197,13 +243,17 @@ class FleetManagerWindow(Adw.ApplicationWindow):
         pref_page.add(self.services_group)
 
         self.service_rows = {}
-        for s_id, name, url, desc in SERVICES_DEF:
+        for s_id, glyph, name, url, desc in SERVICES_DEF:
             row = Adw.ActionRow(title=name, subtitle=f"{url} · Probing HTTP...")
+            row.add_prefix(make_icon_prefix(glyph))
+
             lbl_stat = Gtk.Label(label="Probing...")
-            lbl_stat.add_css_class("apple-status-orange")
+            set_badge(lbl_stat, "Probing...", "apple-status-orange")
+            lbl_stat.set_valign(Gtk.Align.CENTER)
             row.add_suffix(lbl_stat)
 
             btn_open = Gtk.Button(label="Open Web")
+            btn_open.add_css_class("apple-pill-btn")
             btn_open.set_valign(Gtk.Align.CENTER)
             btn_open.connect("clicked", lambda b, u=url: subprocess.Popen(["xdg-open", u]))
             row.add_suffix(btn_open)
@@ -218,18 +268,21 @@ class FleetManagerWindow(Adw.ApplicationWindow):
 
         # ── Group 3: Flake & Host Telemetry ──
         telemetry_group = Adw.PreferencesGroup(
-            title="Local Flake & System Health",
+            title="Local Flake and System Health",
             description="Active NixOS system generation, kernel, and storage metrics"
         )
         pref_page.add(telemetry_group)
 
         self.row_flake = Adw.ActionRow(title="Nix Flake Revision", subtitle="Checking...")
+        self.row_flake.add_prefix(make_icon_prefix("󰘬"))
         telemetry_group.add(self.row_flake)
 
-        self.row_system = Adw.ActionRow(title="Operating System & Kernel", subtitle="Checking...")
+        self.row_system = Adw.ActionRow(title="Operating System and Kernel", subtitle="Checking...")
+        self.row_system.add_prefix(make_icon_prefix("󰌽"))
         telemetry_group.add(self.row_system)
 
         self.row_storage = Adw.ActionRow(title="Root Storage Allocation", subtitle="Checking...")
+        self.row_storage.add_prefix(make_icon_prefix("󰋊"))
         telemetry_group.add(self.row_storage)
 
         # ── Group 4: Companion Hardware Utilities ──
@@ -241,10 +294,12 @@ class FleetManagerWindow(Adw.ApplicationWindow):
 
         # Control Center
         row_cc = Adw.ActionRow(
-            title="󰕮 System Control Center",
+            title="System Control Center",
             subtitle="Audio volume, brightness, battery wattage, and power profiles"
         )
+        row_cc.add_prefix(make_icon_prefix("󰕮"))
         btn_cc = Gtk.Button(label="Open Control Center")
+        btn_cc.add_css_class("apple-pill-btn")
         btn_cc.set_valign(Gtk.Align.CENTER)
         btn_cc.connect("clicked", lambda b: subprocess.Popen(["control-center-gui"]))
         row_cc.add_suffix(btn_cc)
@@ -252,10 +307,12 @@ class FleetManagerWindow(Adw.ApplicationWindow):
 
         # Seamless Mouse
         row_mouse = Adw.ActionRow(
-            title="󰍽 Seamless Mouse & Desk Layout Setup",
+            title="Seamless Mouse and Desk Layout",
             subtitle="Configure physical screen arrangement and lan-mouse KVM daemon"
         )
+        row_mouse.add_prefix(make_icon_prefix("󰍽"))
         btn_mouse = Gtk.Button(label="Configure Mouse")
+        btn_mouse.add_css_class("apple-pill-btn")
         btn_mouse.set_valign(Gtk.Align.CENTER)
         btn_mouse.connect("clicked", lambda b: subprocess.Popen(["lan-mouse-gui"]))
         row_mouse.add_suffix(btn_mouse)
@@ -263,10 +320,12 @@ class FleetManagerWindow(Adw.ApplicationWindow):
 
         # Tablet Studio
         row_tablet = Adw.ActionRow(
-            title="󰹑 Tablet Display Streaming Studio",
+            title="Tablet Display Streaming Studio",
             subtitle="Headless virtual monitors and Sunshine/Moonlight tablet streaming"
         )
+        row_tablet.add_prefix(make_icon_prefix("󰹑"))
         btn_tablet = Gtk.Button(label="Configure Tablet")
+        btn_tablet.add_css_class("apple-pill-btn")
         btn_tablet.set_valign(Gtk.Align.CENTER)
         btn_tablet.connect("clicked", lambda b: subprocess.Popen(["tablet-display-gui"]))
         row_tablet.add_suffix(btn_tablet)
@@ -276,6 +335,14 @@ class FleetManagerWindow(Adw.ApplicationWindow):
         self.update_telemetry_ui()
         self.trigger_full_probe(show_toast=False)
         GLib.timeout_add_seconds(25, lambda: self.trigger_full_probe(show_toast=False) or True)
+
+    def _on_ssh_btn_clicked(self, btn):
+        node_key = getattr(btn, "_node_key", None)
+        if node_key and node_key in self.node_rows:
+            node_data = self.node_rows[node_key]
+            active_ip = node_data.get("active_ip")
+            hname = node_data.get("hostname", node_key)
+            self.on_ssh_clicked(hname, active_ip)
 
     def update_telemetry_ui(self):
         # 1. Git flake revision
@@ -317,7 +384,7 @@ class FleetManagerWindow(Adw.ApplicationWindow):
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
 
-        for s_id, _, url, _ in SERVICES_DEF:
+        for s_id, _, _, url, _ in SERVICES_DEF:
             t0 = time.time()
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "FleetManager/1.0"})
@@ -367,15 +434,11 @@ class FleetManagerWindow(Adw.ApplicationWindow):
             ssh_btn = ui["ssh_btn"]
 
             row.set_title(info["title"])
-
-            badge.remove_css_class("apple-status-green")
-            badge.remove_css_class("apple-status-orange")
-            badge.remove_css_class("apple-status-red")
+            ui["hostname"] = info["name"]
 
             if info["local"]:
                 row.set_subtitle(f"{info['role']} · Local Host Active")
-                badge.set_text("󰄲 Active Local Host")
-                badge.add_css_class("apple-status-green")
+                set_badge(badge, "󰄲 Active Local Host", "apple-status-green")
                 ssh_btn.set_visible(False)
             else:
                 active_ip = info["active_ip"]
@@ -385,8 +448,7 @@ class FleetManagerWindow(Adw.ApplicationWindow):
                 ui["active_ip"] = active_ip
 
                 if online and latency is not None:
-                    badge.set_text(f"󰄲 Online ({latency:.1f} ms · {route})")
-                    badge.add_css_class("apple-status-green")
+                    set_badge(badge, f"󰄲 Online ({latency:.1f} ms · {route})", "apple-status-green")
                     ip_detail = f"IP: {active_ip} ({route})"
                     if info.get("ts_ip") and route != "Tailscale":
                         ip_detail += f" · Tailscale: {info['ts_ip']}"
@@ -394,24 +456,16 @@ class FleetManagerWindow(Adw.ApplicationWindow):
                     ssh_btn.set_visible(True)
                     ssh_btn.set_sensitive(True)
                 elif online:
-                    badge.set_text(f"󰄲 Online ({route})")
-                    badge.add_css_class("apple-status-green")
+                    set_badge(badge, f"󰄲 Online ({route})", "apple-status-green")
                     row.set_subtitle(f"{info['role']} · IP: {active_ip}")
                     ssh_btn.set_visible(True)
                     ssh_btn.set_sensitive(True)
                 else:
-                    badge.set_text("󰅙 Offline")
-                    badge.add_css_class("apple-status-red")
+                    set_badge(badge, "󰅙 Offline", "apple-status-red")
                     last_known = active_ip or "Unresolved"
                     row.set_subtitle(f"{info['role']} · Target: {last_known}")
                     ssh_btn.set_visible(True)
                     ssh_btn.set_sensitive(False)
-
-                try:
-                    ssh_btn.disconnect_by_func(self.on_ssh_clicked)
-                except Exception:
-                    pass
-                ssh_btn.connect("clicked", lambda b, h=info["name"], ip=active_ip: self.on_ssh_clicked(h, ip))
 
         # Apply Services Results
         for s_id, s_info in services_status.items():
@@ -422,20 +476,14 @@ class FleetManagerWindow(Adw.ApplicationWindow):
             s_row = s_ui["row"]
             s_badge = s_ui["badge"]
 
-            s_badge.remove_css_class("apple-status-green")
-            s_badge.remove_css_class("apple-status-orange")
-            s_badge.remove_css_class("apple-status-red")
-
             if s_info["online"]:
                 code = s_info["code"]
                 ms = s_info["ms"]
-                s_badge.set_text(f"󰄲 HTTP {code} ({ms} ms)")
-                s_badge.add_css_class("apple-status-green")
+                set_badge(s_badge, f"󰄲 HTTP {code} ({ms} ms)", "apple-status-green")
                 s_row.set_subtitle(f"{s_ui['url']} · Active Gateway ({ms} ms latency) — {s_ui['desc']}")
             else:
                 err = s_info["err"] or "Offline"
-                s_badge.set_text(f"󰅙 {err}")
-                s_badge.add_css_class("apple-status-red")
+                set_badge(s_badge, f"󰅙 {err}", "apple-status-red")
                 s_row.set_subtitle(f"{s_ui['url']} · Unreachable ({err}) — {s_ui['desc']}")
 
         if show_toast:

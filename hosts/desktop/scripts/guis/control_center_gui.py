@@ -7,6 +7,7 @@ Grounded in Apple HIG & Matugen Material You:
   - Live system telemetry: active audio sink name, microphone mute toggle, display model & geometry
   - Live hardware metrics: RAM utilization, CPU loadavg, battery wattage & charge threshold, uptime
   - Real-time network telemetry: interface name, gateway, local IP, Tailscale mesh status & peer count
+  - Universal brightness control: brightnessctl on laptop, DDC/CI ddcutil on desktop
   - Compact responsive layout (540x600) engineered for Laptop 1080p viewport and Desktop
 """
 
@@ -14,6 +15,8 @@ import os
 import sys
 import json
 import socket
+import shutil
+import threading
 import subprocess
 import gi
 
@@ -33,10 +36,17 @@ window.control-center {
     padding: 12px;
 }
 
+.apple-icon-prefix {
+    font-size: 16px;
+    color: @accent_color;
+    margin-right: 6px;
+}
+
 .apple-pill-btn {
-    border-radius: 20px;
-    padding: 6px 14px;
-    font-weight: 600;
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-weight: 500;
+    font-size: 12px;
 }
 
 .apple-status-green {
@@ -44,7 +54,7 @@ window.control-center {
     background-color: rgba(52, 199, 89, 0.14);
     border: 1px solid rgba(52, 199, 89, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -54,7 +64,7 @@ window.control-center {
     background-color: rgba(255, 149, 0, 0.14);
     border: 1px solid rgba(255, 149, 0, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -64,7 +74,7 @@ window.control-center {
     background-color: rgba(255, 59, 48, 0.14);
     border: 1px solid rgba(255, 59, 48, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -74,7 +84,7 @@ window.control-center {
     background-color: alpha(@accent_color, 0.14);
     border: 1px solid alpha(@accent_color, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -91,6 +101,22 @@ scale highlight {
 }
 """
 
+def make_icon_prefix(glyph: str) -> Gtk.Label:
+    lbl = Gtk.Label(label=glyph)
+    lbl.add_css_class("apple-icon-prefix")
+    lbl.set_valign(Gtk.Align.CENTER)
+    lbl.set_halign(Gtk.Align.CENTER)
+    lbl.set_size_request(28, 28)
+    return lbl
+
+def set_badge(lbl: Gtk.Label, text: str, css_class: str):
+    lbl.set_text(text)
+    for c in ["apple-status-green", "apple-status-orange", "apple-status-red", "apple-status-accent"]:
+        lbl.remove_css_class(c)
+    if css_class:
+        lbl.add_css_class(css_class)
+    lbl.set_valign(Gtk.Align.CENTER)
+
 class ControlCenterApp(Adw.Application):
     def __init__(self):
         super().__init__(application_id="io.github.justkowal.ControlCenter")
@@ -103,7 +129,7 @@ class ControlCenterWindow(Adw.ApplicationWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.set_title("Control Center")
-        self.set_default_size(540, 600)
+        self.set_default_size(540, 620)
         self.add_css_class("control-center")
 
         # Load Matugen-integrated Apple CSS Provider
@@ -117,6 +143,8 @@ class ControlCenterWindow(Adw.ApplicationWindow):
 
         self.hostname = socket.gethostname()
         self.is_laptop = "laptop" in self.hostname or "thinkpad" in self.hostname or "t14s" in self.hostname
+        self._brightness_timer = None
+        self._target_brightness = 100
 
         self.toast_overlay = Adw.ToastOverlay()
         self.set_content(self.toast_overlay)
@@ -134,6 +162,8 @@ class ControlCenterWindow(Adw.ApplicationWindow):
 
         btn_refresh = Gtk.Button(icon_name="view-refresh-symbolic")
         btn_refresh.set_tooltip_text("Refresh All Statuses")
+        btn_refresh.add_css_class("apple-pill-btn")
+        btn_refresh.set_valign(Gtk.Align.CENTER)
         btn_refresh.connect("clicked", lambda b: self.refresh_all())
         header.pack_end(btn_refresh)
         main_box.append(header)
@@ -148,7 +178,7 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         scrolled.set_child(pref_page)
 
         # ── Group 1: Sound & Audio Devices ──
-        audio_group = Adw.PreferencesGroup(title="Sound & Devices")
+        audio_group = Adw.PreferencesGroup(title="Sound and Audio Devices")
         pref_page.add(audio_group)
 
         # Output Volume
@@ -156,20 +186,24 @@ class ControlCenterWindow(Adw.ApplicationWindow):
             title="Output Volume",
             subtitle="Detecting PipeWire sink..."
         )
+        self.row_volume.add_prefix(make_icon_prefix("󰕾"))
         vol_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         vol_box.set_valign(Gtk.Align.CENTER)
 
         self.lbl_volume = Gtk.Label(label="50%")
         self.lbl_volume.set_size_request(40, -1)
+        self.lbl_volume.set_valign(Gtk.Align.CENTER)
         vol_box.append(self.lbl_volume)
 
         self.scale_volume = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 150, 1)
-        self.scale_volume.set_size_request(150, -1)
+        self.scale_volume.set_size_request(140, -1)
+        self.scale_volume.set_valign(Gtk.Align.CENTER)
         self.scale_volume.connect("value-changed", self.on_volume_changed)
         vol_box.append(self.scale_volume)
 
         self.btn_mute = Gtk.Button(icon_name="audio-volume-high-symbolic")
         self.btn_mute.set_valign(Gtk.Align.CENTER)
+        self.btn_mute.add_css_class("apple-pill-btn")
         self.btn_mute.connect("clicked", self.on_mute_toggle)
         vol_box.append(self.btn_mute)
 
@@ -181,15 +215,18 @@ class ControlCenterWindow(Adw.ApplicationWindow):
             title="Microphone Input",
             subtitle="Detecting microphone source..."
         )
+        self.row_mic.add_prefix(make_icon_prefix("󰍬"))
         mic_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         mic_box.set_valign(Gtk.Align.CENTER)
 
         self.lbl_mic = Gtk.Label(label="100%")
         self.lbl_mic.set_size_request(40, -1)
+        self.lbl_mic.set_valign(Gtk.Align.CENTER)
         mic_box.append(self.lbl_mic)
 
         self.btn_mic_mute = Gtk.Button(icon_name="audio-input-microphone-symbolic")
         self.btn_mic_mute.set_valign(Gtk.Align.CENTER)
+        self.btn_mic_mute.add_css_class("apple-pill-btn")
         self.btn_mic_mute.connect("clicked", self.on_mic_mute_toggle)
         mic_box.append(self.btn_mic_mute)
 
@@ -197,22 +234,25 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         audio_group.add(self.row_mic)
 
         # ── Group 2: Display & Backlight ──
-        display_group = Adw.PreferencesGroup(title="Display & Screen Geometry")
+        display_group = Adw.PreferencesGroup(title="Display and Screen Brightness")
         pref_page.add(display_group)
 
         self.row_bright = Adw.ActionRow(
             title="Display Brightness",
             subtitle="Detecting active display output..."
         )
+        self.row_bright.add_prefix(make_icon_prefix("󰃠"))
         bright_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         bright_box.set_valign(Gtk.Align.CENTER)
 
         self.lbl_bright = Gtk.Label(label="100%")
         self.lbl_bright.set_size_request(40, -1)
+        self.lbl_bright.set_valign(Gtk.Align.CENTER)
         bright_box.append(self.lbl_bright)
 
         self.scale_bright = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 5, 100, 1)
-        self.scale_bright.set_size_request(150, -1)
+        self.scale_bright.set_size_request(140, -1)
+        self.scale_bright.set_valign(Gtk.Align.CENTER)
         self.scale_bright.connect("value-changed", self.on_brightness_changed)
         bright_box.append(self.scale_bright)
 
@@ -220,24 +260,26 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         display_group.add(self.row_bright)
 
         # ── Group 3: Hardware Health & Performance ──
-        power_group = Adw.PreferencesGroup(title="System Resources & Power")
+        power_group = Adw.PreferencesGroup(title="System Resources and Power")
         pref_page.add(power_group)
 
         self.row_battery = Adw.ActionRow(
-            title="Power Supply & Battery",
+            title="Power Supply and Battery",
             subtitle="Detecting power source..."
         )
+        self.row_battery.add_prefix(make_icon_prefix("󰚥"))
         self.lbl_battery = Gtk.Label(label="Checking...")
-        self.lbl_battery.add_css_class("apple-status-green")
+        set_badge(self.lbl_battery, "Checking...", "apple-status-green")
         self.row_battery.add_suffix(self.lbl_battery)
         power_group.add(self.row_battery)
 
         self.row_perf = Adw.ActionRow(
-            title="CPU Load & System RAM",
+            title="CPU Load and System RAM",
             subtitle="Reading /proc telemetry..."
         )
+        self.row_perf.add_prefix(make_icon_prefix("󰍛"))
         self.lbl_perf_ram = Gtk.Label(label="RAM: ...")
-        self.lbl_perf_ram.add_css_class("apple-status-accent")
+        set_badge(self.lbl_perf_ram, "RAM: ...", "apple-status-accent")
         self.row_perf.add_suffix(self.lbl_perf_ram)
         power_group.add(self.row_perf)
 
@@ -245,45 +287,54 @@ class ControlCenterWindow(Adw.ApplicationWindow):
             title="CPU Power Profile",
             subtitle="Toggle CPU governor and ultra power saving mode"
         )
+        self.row_power_mode.add_prefix(make_icon_prefix("󰓅"))
         self.lbl_power_mode = Gtk.Label(label="Checking...")
+        set_badge(self.lbl_power_mode, "Checking...", "apple-status-accent")
         self.row_power_mode.add_suffix(self.lbl_power_mode)
 
         btn_toggle_power = Gtk.Button(label="Toggle Profile")
+        btn_toggle_power.add_css_class("apple-pill-btn")
         btn_toggle_power.set_valign(Gtk.Align.CENTER)
         btn_toggle_power.connect("clicked", self.on_toggle_power_mode)
         self.row_power_mode.add_suffix(btn_toggle_power)
         power_group.add(self.row_power_mode)
 
         # ── Group 4: Network & Tailscale Mesh ──
-        net_group = Adw.PreferencesGroup(title="Network Connectivity & Tailnet")
+        net_group = Adw.PreferencesGroup(title="Network Connectivity and Mesh")
         pref_page.add(net_group)
 
         self.row_tailscale = Adw.ActionRow(
-            title="󰖟 Tailscale Mesh VPN",
+            title="Tailscale Mesh VPN",
             subtitle="Encrypted peer-to-peer WireGuard mesh"
         )
+        self.row_tailscale.add_prefix(make_icon_prefix("󰒋"))
         self.lbl_tailscale = Gtk.Label(label="Checking...")
+        set_badge(self.lbl_tailscale, "Checking...", "apple-status-orange")
         self.row_tailscale.add_suffix(self.lbl_tailscale)
         net_group.add(self.row_tailscale)
 
         self.row_local_ip = Adw.ActionRow(
-            title="󰈀 Local Network Adapter",
-            subtitle="Primary interface & gateway"
+            title="Local Network Adapter",
+            subtitle="Primary interface and gateway"
         )
+        self.row_local_ip.add_prefix(make_icon_prefix("󰈀"))
         self.lbl_local_ip = Gtk.Label(label="Checking...")
+        set_badge(self.lbl_local_ip, "Checking...", "apple-status-accent")
         self.row_local_ip.add_suffix(self.lbl_local_ip)
         net_group.add(self.row_local_ip)
 
         # ── Group 5: Hardware & Fleet Companion Tools ──
-        utils_group = Adw.PreferencesGroup(title="Hardware & Fleet Utilities")
+        utils_group = Adw.PreferencesGroup(title="Fleet Companion Utilities")
         pref_page.add(utils_group)
 
         # 1. Fleet Manager
         row_fleet = Adw.ActionRow(
-            title="󰒋 Deployment Fleet Center",
+            title="Deployment Fleet Center",
             subtitle="Dynamic multi-node status, SSH access, and hosted services"
         )
+        row_fleet.add_prefix(make_icon_prefix("󰒋"))
         btn_fleet = Gtk.Button(label="Open Fleet")
+        btn_fleet.add_css_class("apple-pill-btn")
         btn_fleet.set_valign(Gtk.Align.CENTER)
         btn_fleet.connect("clicked", lambda b: subprocess.Popen(["fleet-manager-gui"]))
         row_fleet.add_suffix(btn_fleet)
@@ -291,10 +342,12 @@ class ControlCenterWindow(Adw.ApplicationWindow):
 
         # 2. Seamless Mouse
         row_mouse = Adw.ActionRow(
-            title="󰍽 Seamless Mouse & Desk Layout",
-            subtitle="Cross-machine KVM sharing & visual display arrangement"
+            title="Seamless Mouse and Desk Layout",
+            subtitle="Cross-machine KVM sharing and visual display arrangement"
         )
+        row_mouse.add_prefix(make_icon_prefix("󰍽"))
         btn_mouse = Gtk.Button(label="Open Setup")
+        btn_mouse.add_css_class("apple-pill-btn")
         btn_mouse.set_valign(Gtk.Align.CENTER)
         btn_mouse.connect("clicked", lambda b: subprocess.Popen(["lan-mouse-gui"]))
         row_mouse.add_suffix(btn_mouse)
@@ -302,43 +355,50 @@ class ControlCenterWindow(Adw.ApplicationWindow):
 
         # 3. Tablet Studio
         row_tablet = Adw.ActionRow(
-            title="󰹑 Tablet Display Streaming Studio",
+            title="Tablet Display Streaming Studio",
             subtitle="Headless virtual monitors and Sunshine/Moonlight remote streaming"
         )
+        row_tablet.add_prefix(make_icon_prefix("󰹑"))
         btn_tablet = Gtk.Button(label="Open Studio")
+        btn_tablet.add_css_class("apple-pill-btn")
         btn_tablet.set_valign(Gtk.Align.CENTER)
         btn_tablet.connect("clicked", lambda b: subprocess.Popen(["tablet-display-gui"]))
         row_tablet.add_suffix(btn_tablet)
         utils_group.add(row_tablet)
 
         # ── Group 6: System Session Controls & Uptime ──
-        session_group = Adw.PreferencesGroup(title="System Session & Diagnostics")
+        session_group = Adw.PreferencesGroup(title="System Diagnostics and Session")
         pref_page.add(session_group)
 
         self.row_uptime = Adw.ActionRow(
             title="System Diagnostics",
             subtitle="Calculating uptime..."
         )
+        self.row_uptime.add_prefix(make_icon_prefix("󰋊"))
         session_group.add(self.row_uptime)
 
         session_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         session_box.set_halign(Gtk.Align.CENTER)
-        session_box.set_margin_top(6)
-        session_box.set_margin_bottom(10)
+        session_box.set_margin_top(8)
+        session_box.set_margin_bottom(12)
 
-        btn_lock = Gtk.Button(label="󰌾 Lock")
+        btn_lock = Gtk.Button(label="󰌾  Lock")
+        btn_lock.add_css_class("apple-pill-btn")
         btn_lock.connect("clicked", lambda b: subprocess.Popen(["loginctl", "lock-session"]))
         session_box.append(btn_lock)
 
-        btn_suspend = Gtk.Button(label="󰒲 Sleep")
+        btn_suspend = Gtk.Button(label="󰒲  Sleep")
+        btn_suspend.add_css_class("apple-pill-btn")
         btn_suspend.connect("clicked", self.on_suspend)
         session_box.append(btn_suspend)
 
-        btn_reboot = Gtk.Button(label="󰑓 Reboot")
+        btn_reboot = Gtk.Button(label="󰑓  Reboot")
+        btn_reboot.add_css_class("apple-pill-btn")
         btn_reboot.connect("clicked", lambda b: subprocess.Popen(["systemctl", "reboot"]))
         session_box.append(btn_reboot)
 
-        btn_poweroff = Gtk.Button(label="󰐥 Shut Down")
+        btn_poweroff = Gtk.Button(label="󰐥  Shut Down")
+        btn_poweroff.add_css_class("apple-pill-btn")
         btn_poweroff.add_css_class("destructive-action")
         btn_poweroff.connect("clicked", lambda b: subprocess.Popen(["systemctl", "poweroff"]))
         session_box.append(btn_poweroff)
@@ -376,7 +436,6 @@ class ControlCenterWindow(Adw.ApplicationWindow):
                 else:
                     self.btn_mute.set_icon_name("audio-volume-high-symbolic")
 
-            # Inspect sink device name
             sink_desc = "PipeWire Default Sink"
             inspect_proc = subprocess.run(["wpctl", "inspect", "@DEFAULT_AUDIO_SINK@"], capture_output=True, text=True)
             for line in inspect_proc.stdout.splitlines():
@@ -428,21 +487,42 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         self.show_toast("Microphone mute toggled")
 
     def update_brightness_ui(self):
-        # 1. Backlight slider
-        try:
-            backlight_dir = "/sys/class/backlight"
-            if os.path.exists(backlight_dir) and os.listdir(backlight_dir):
+        # 1. Backlight slider - check laptop sysfs first
+        backlight_dir = "/sys/class/backlight"
+        if os.path.exists(backlight_dir) and os.listdir(backlight_dir) and shutil.which("brightnessctl"):
+            try:
                 cur = int(subprocess.run(["brightnessctl", "g"], capture_output=True, text=True).stdout.strip())
                 mx = int(subprocess.run(["brightnessctl", "m"], capture_output=True, text=True).stdout.strip())
                 pct = int((cur / max(mx, 1)) * 100)
-            else:
-                pct = 100
-            self.lbl_bright.set_text(f"{pct}%")
-            self.scale_bright.handler_block_by_func(self.on_brightness_changed)
-            self.scale_bright.set_value(pct)
-            self.scale_bright.handler_unblock_by_func(self.on_brightness_changed)
-        except Exception:
-            pass
+                self.lbl_bright.set_text(f"{pct}%")
+                self.scale_bright.handler_block_by_func(self.on_brightness_changed)
+                self.scale_bright.set_value(pct)
+                self.scale_bright.handler_unblock_by_func(self.on_brightness_changed)
+            except Exception:
+                pass
+        elif shutil.which("ddcutil"):
+            # Desktop DDC/CI monitor
+            def _read_ddc():
+                try:
+                    p = subprocess.run(["ddcutil", "getvcp", "10", "--brief"], capture_output=True, text=True, timeout=2)
+                    # Output format: VCP 10 C 100 100 or standard output
+                    for line in p.stdout.splitlines():
+                        if "VCP 10" in line:
+                            parts = line.split()
+                            if len(parts) >= 4:
+                                cur_val = int(parts[3])
+                                GLib.idle_add(self._apply_brightness_value, cur_val)
+                                return
+                        elif "current value" in line:
+                            import re
+                            m = re.search(r'current value =\s*(\d+)', line)
+                            if m:
+                                cur_val = int(m.group(1))
+                                GLib.idle_add(self._apply_brightness_value, cur_val)
+                                return
+                except Exception:
+                    pass
+            threading.Thread(target=_read_ddc, daemon=True).start()
 
         # 2. Active Monitor Details from Hyprland
         try:
@@ -460,21 +540,49 @@ class ControlCenterWindow(Adw.ApplicationWindow):
                     detail += f" ({model})"
                 self.row_bright.set_subtitle(detail)
             else:
-                self.row_bright.set_subtitle("Internal / External Display")
+                self.row_bright.set_subtitle("Primary Display")
         except Exception:
             self.row_bright.set_subtitle("Primary Display")
+
+    def _apply_brightness_value(self, pct: int):
+        self.lbl_bright.set_text(f"{pct}%")
+        self.scale_bright.handler_block_by_func(self.on_brightness_changed)
+        self.scale_bright.set_value(pct)
+        self.scale_bright.handler_unblock_by_func(self.on_brightness_changed)
 
     def on_brightness_changed(self, scale):
         pct = int(scale.get_value())
         self.lbl_bright.set_text(f"{pct}%")
-        backlight_dir = "/sys/class/backlight"
-        if os.path.exists(backlight_dir) and os.listdir(backlight_dir):
-            subprocess.run(["brightnessctl", "set", f"{pct}%", "-q"])
-        else:
-            try:
-                subprocess.run(["brightness-osd", "up"])
-            except Exception:
-                pass
+        self._target_brightness = pct
+
+        # Debounce the hardware write so sliding is 100% fluid
+        if self._brightness_timer:
+            GLib.source_remove(self._brightness_timer)
+        self._brightness_timer = GLib.timeout_add(150, self._apply_hardware_brightness)
+
+    def _apply_hardware_brightness(self):
+        self._brightness_timer = None
+        pct = self._target_brightness
+
+        def _worker(val):
+            backlight_dir = "/sys/class/backlight"
+            if os.path.exists(backlight_dir) and os.listdir(backlight_dir) and shutil.which("brightnessctl"):
+                subprocess.run(["brightnessctl", "set", f"{val}%", "-q"])
+            elif shutil.which("ddcutil"):
+                subprocess.run(["ddcutil", "setvcp", "10", str(val), "--noverify"], capture_output=True)
+
+            # Integrate with SwayOSD popup if available
+            if shutil.which("swayosd-client"):
+                prog = f"{val / 100.0:.2f}"
+                subprocess.run([
+                    "swayosd-client",
+                    "--custom-progress", prog,
+                    "--custom-icon", "display-brightness",
+                    "--custom-message", f"Brightness {val}%"
+                ], capture_output=True)
+
+        threading.Thread(target=_worker, args=(pct,), daemon=True).start()
+        return False
 
     def update_power_ui(self):
         # 1. Battery check (ThinkPad BAT0 / BAT1)
@@ -512,13 +620,13 @@ class ControlCenterWindow(Adw.ApplicationWindow):
                     if thresh and thresh != "100":
                         thresh_str = f" [Limit: {thresh}%]"
 
-                self.lbl_battery.set_text(f"{icon} {cap}% ({status}{wattage_str}){thresh_str}")
-                self.row_battery.set_subtitle("ThinkPad Internal Battery (TLP Conservation Active)")
+                set_badge(self.lbl_battery, f"{icon} {cap}% ({status}{wattage_str}){thresh_str}", "apple-status-green")
+                self.row_battery.set_subtitle("ThinkPad Internal Battery (TLP Active)")
                 self.row_battery.set_visible(True)
             except Exception:
                 self.row_battery.set_visible(False)
         else:
-            self.lbl_battery.set_text("󰚥 AC Mains")
+            set_badge(self.lbl_battery, "󰚥 AC Mains", "apple-status-green")
             self.row_battery.set_subtitle("Desktop Workstation (Continuous AC Power)")
             self.row_battery.set_visible(True)
 
@@ -538,7 +646,7 @@ class ControlCenterWindow(Adw.ApplicationWindow):
                 used_gib = total_gib - avail_gib
                 pct = int((used_gib / total_gib) * 100)
 
-            self.lbl_perf_ram.set_text(f"RAM: {pct}% ({used_gib:.1f}/{total_gib:.1f} GiB)")
+            set_badge(self.lbl_perf_ram, f"RAM: {pct}% ({used_gib:.1f}/{total_gib:.1f} GiB)", "apple-status-accent")
             self.row_perf.set_subtitle(f"{load_fmt} · Memory: {used_gib:.1f} GiB utilized")
         except Exception:
             pass
@@ -548,11 +656,11 @@ class ControlCenterWindow(Adw.ApplicationWindow):
             res = subprocess.run(["systemctl", "is-active", "--quiet", "ultra-power-save-runtime.service"])
             is_ultra = (res.returncode == 0)
             if is_ultra:
-                self.lbl_power_mode.set_markup("<span class='apple-status-green'>󰌪 Ultra Low Power Active</span>")
+                set_badge(self.lbl_power_mode, "󰌪 Ultra Low Power Active", "apple-status-green")
             else:
-                self.lbl_power_mode.set_markup("<span class='apple-status-accent'>󰓅 Standard / Performance</span>")
+                set_badge(self.lbl_power_mode, "󰓅 Standard / Performance", "apple-status-accent")
         except Exception:
-            self.lbl_power_mode.set_text("Standard")
+            set_badge(self.lbl_power_mode, "Standard", "apple-status-accent")
 
     def on_toggle_power_mode(self, btn):
         try:
@@ -573,12 +681,12 @@ class ControlCenterWindow(Adw.ApplicationWindow):
                 peers = ts.get("Peer", {})
                 online_peers = sum(1 for _, peer in peers.items() if peer.get("Online", False))
                 total_peers = len(peers)
-                self.lbl_tailscale.set_markup(f"<span class='apple-status-green'>󰄲 Connected ({ts_ip})</span>")
+                set_badge(self.lbl_tailscale, f"󰄲 Connected ({ts_ip})", "apple-status-green")
                 self.row_tailscale.set_subtitle(f"Tailnet: {ts.get('MagicDNSSuffix', 'mesh')} · {online_peers}/{total_peers} peers online")
             else:
-                self.lbl_tailscale.set_markup("<span class='apple-status-orange'>󰅙 Mesh Inactive</span>")
+                set_badge(self.lbl_tailscale, "󰅙 Mesh Inactive", "apple-status-orange")
         except Exception:
-            self.lbl_tailscale.set_markup("<span class='apple-status-orange'>󰅙 Unavailable</span>")
+            set_badge(self.lbl_tailscale, "󰅙 Unavailable", "apple-status-orange")
 
         # 2. Local Network (Interface + Gateway)
         try:
@@ -589,12 +697,12 @@ class ControlCenterWindow(Adw.ApplicationWindow):
                 dev = r.get("dev", "net")
                 gw = r.get("gateway", "gateway")
                 src_ip = r.get("prefsrc", "")
-                self.lbl_local_ip.set_markup(f"<span class='apple-status-accent'>{src_ip}</span>")
+                set_badge(self.lbl_local_ip, src_ip, "apple-status-accent")
                 self.row_local_ip.set_subtitle(f"Interface: {dev} · Gateway: {gw}")
             else:
-                self.lbl_local_ip.set_text("Disconnected")
+                set_badge(self.lbl_local_ip, "Disconnected", "apple-status-red")
         except Exception:
-            self.lbl_local_ip.set_text("Active")
+            set_badge(self.lbl_local_ip, "Active", "apple-status-accent")
 
     def update_system_diagnostics(self):
         try:

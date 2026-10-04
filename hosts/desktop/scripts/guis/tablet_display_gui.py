@@ -42,12 +42,35 @@ window.tablet-display {
     padding: 12px;
 }
 
+.apple-icon-prefix {
+    font-size: 16px;
+    color: @accent_color;
+    margin-right: 6px;
+}
+
+.apple-pill-btn {
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-weight: 500;
+    font-size: 12px;
+}
+
 .apple-status-green {
     color: #34C759;
     background-color: rgba(52, 199, 89, 0.14);
     border: 1px solid rgba(52, 199, 89, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.apple-status-orange {
+    color: #FF9500;
+    background-color: rgba(255, 149, 0, 0.14);
+    border: 1px solid rgba(255, 149, 0, 0.25);
+    border-radius: 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -57,7 +80,7 @@ window.tablet-display {
     background-color: rgba(255, 59, 48, 0.14);
     border: 1px solid rgba(255, 59, 48, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -67,11 +90,27 @@ window.tablet-display {
     background-color: alpha(@accent_color, 0.14);
     border: 1px solid alpha(@accent_color, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
 """
+
+def make_icon_prefix(glyph: str) -> Gtk.Label:
+    lbl = Gtk.Label(label=glyph)
+    lbl.add_css_class("apple-icon-prefix")
+    lbl.set_valign(Gtk.Align.CENTER)
+    lbl.set_halign(Gtk.Align.CENTER)
+    lbl.set_size_request(28, 28)
+    return lbl
+
+def set_badge(lbl: Gtk.Label, text: str, css_class: str):
+    lbl.set_text(text)
+    for c in ["apple-status-green", "apple-status-orange", "apple-status-red", "apple-status-accent"]:
+        lbl.remove_css_class(c)
+    if css_class:
+        lbl.add_css_class(css_class)
+    lbl.set_valign(Gtk.Align.CENTER)
 
 class TabletDisplayApp(Adw.Application):
     def __init__(self):
@@ -118,12 +157,14 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
         header = Adw.HeaderBar()
         title_widget = Adw.WindowTitle(
             title="Tablet Display Studio",
-            subtitle="Virtual Headless Display & Moonlight Streaming"
+            subtitle="Virtual Headless Display and Moonlight Streaming"
         )
         header.set_title_widget(title_widget)
 
         btn_refresh = Gtk.Button(icon_name="view-refresh-symbolic")
         btn_refresh.set_tooltip_text("Refresh Status")
+        btn_refresh.add_css_class("apple-pill-btn")
+        btn_refresh.set_valign(Gtk.Align.CENTER)
         btn_refresh.connect("clicked", lambda b: self.update_display_status())
         header.pack_end(btn_refresh)
 
@@ -149,6 +190,7 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             title="Enable Virtual Tablet Display",
             subtitle="Headless output for Moonlight / Sunshine remote connection"
         )
+        self.switch_display.add_prefix(make_icon_prefix("󰹑"))
         self.switch_display.connect("notify::active", self.on_switch_display_toggled)
         display_group.add(self.switch_display)
 
@@ -156,14 +198,16 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             title="Active Output Geometry",
             subtitle="Querying Hyprland monitors..."
         )
+        self.row_display_status.add_prefix(make_icon_prefix("󰍹"))
         self.lbl_display_status = Gtk.Label(label="Checking...")
+        set_badge(self.lbl_display_status, "Checking...", "apple-status-orange")
         self.row_display_status.add_suffix(self.lbl_display_status)
         display_group.add(self.row_display_status)
 
         # ── Group 2: Resolution & Scaling ──
         config_group = Adw.PreferencesGroup(
-            title="Display Geometry & Apple Retina Scaling",
-            description="Configure the resolution and DPI scale factor of the virtual display."
+            title="Display Geometry and Apple Retina Scaling",
+            description="Configure the resolution and DPI scale factor of the virtual display"
         )
         pref_page.add(config_group)
 
@@ -172,9 +216,10 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             res_model.append(desc)
 
         self.combo_res = Adw.ComboRow(
-            title="Screen Resolution & Aspect Ratio",
+            title="Screen Resolution and Aspect Ratio",
             model=res_model
         )
+        self.combo_res.add_prefix(make_icon_prefix("󰍹"))
         self.combo_res.set_selected(0)
         config_group.add(self.combo_res)
 
@@ -188,6 +233,7 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             title="Interface Scale Factor",
             model=scale_model
         )
+        self.combo_scale.add_prefix(make_icon_prefix("󰘔"))
         self.combo_scale.set_selected(0)
         config_group.add(self.combo_scale)
 
@@ -195,8 +241,10 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             title="Apply Geometry Settings",
             subtitle="Re-activates virtual display with selected resolution and scale"
         )
+        apply_res_row.add_prefix(make_icon_prefix("󰒓"))
         btn_apply_res = Gtk.Button(label="Apply Settings")
         btn_apply_res.add_css_class("suggested-action")
+        btn_apply_res.add_css_class("apple-pill-btn")
         btn_apply_res.set_valign(Gtk.Align.CENTER)
         btn_apply_res.connect("clicked", self.on_apply_geometry)
         apply_res_row.add_suffix(btn_apply_res)
@@ -204,7 +252,7 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
 
         # ── Group 3: Sunshine Server & Client Streaming ──
         stream_group = Adw.PreferencesGroup(
-            title="Sunshine Server & Streaming Telemetry",
+            title="Sunshine Server and Streaming Telemetry",
             description="Live daemon status, connection endpoints, and paired tablet clients"
         )
         pref_page.add(stream_group)
@@ -213,7 +261,9 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             title="Sunshine Streaming Daemon",
             subtitle="Checking port 47990 and process state..."
         )
+        self.row_sunshine.add_prefix(make_icon_prefix("󰖟"))
         self.lbl_sunshine = Gtk.Label(label="Checking...")
+        set_badge(self.lbl_sunshine, "Checking...", "apple-status-orange")
         self.row_sunshine.add_suffix(self.lbl_sunshine)
         stream_group.add(self.row_sunshine)
 
@@ -221,6 +271,7 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             title="Tablet Connection Endpoints",
             subtitle="IP addresses to enter into Moonlight on iPad"
         )
+        self.row_endpoints.add_prefix(make_icon_prefix("󰈀"))
         stream_group.add(self.row_endpoints)
 
         # Portal actions
@@ -228,7 +279,9 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             title="Sunshine Web Admin Portal",
             subtitle="Manage paired client tablets, PINs, and video encoders (https://localhost:47990)"
         )
+        portal_row.add_prefix(make_icon_prefix("󰌆"))
         btn_sunshine = Gtk.Button(label="Open Web Admin")
+        btn_sunshine.add_css_class("apple-pill-btn")
         btn_sunshine.set_valign(Gtk.Align.CENTER)
         btn_sunshine.connect("clicked", self.on_open_sunshine)
         portal_row.add_suffix(btn_sunshine)
@@ -238,7 +291,9 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             title="Local Moonlight Client",
             subtitle="Launch local client viewer to test streaming output"
         )
+        moonlight_row.add_prefix(make_icon_prefix("󰕧"))
         btn_moonlight = Gtk.Button(label="Launch Moonlight")
+        btn_moonlight.add_css_class("apple-pill-btn")
         btn_moonlight.set_valign(Gtk.Align.CENTER)
         btn_moonlight.connect("clicked", self.on_launch_moonlight)
         moonlight_row.add_suffix(btn_moonlight)
@@ -266,7 +321,6 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
         return None
 
     def check_sunshine_service(self):
-        # 1. Process or systemd check
         try:
             res = subprocess.run(["systemctl", "--user", "is-active", "--quiet", "sunshine"])
             if res.returncode == 0:
@@ -279,7 +333,6 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
                 return True
         except Exception:
             pass
-        # 2. Check if port 47990 is listening
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(0.2)
@@ -295,13 +348,13 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
         # 1. Headless display state
         headless_detail = self.get_active_headless_info()
         if headless_detail:
-            self.lbl_display_status.set_markup("<span class='apple-status-green'>󰄲 Active</span>")
+            set_badge(self.lbl_display_status, "󰄲 Active", "apple-status-green")
             self.row_display_status.set_subtitle(f"Output: {headless_detail}")
             self.switch_display.handler_block_by_func(self.on_switch_display_toggled)
             self.switch_display.set_active(True)
             self.switch_display.handler_unblock_by_func(self.on_switch_display_toggled)
         else:
-            self.lbl_display_status.set_markup("<span class='apple-status-red'>󰅙 Inactive</span>")
+            set_badge(self.lbl_display_status, "󰅙 Inactive", "apple-status-red")
             self.row_display_status.set_subtitle("No virtual monitor instantiated · Toggle switch to activate")
             self.switch_display.handler_block_by_func(self.on_switch_display_toggled)
             self.switch_display.set_active(False)
@@ -310,10 +363,10 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
         # 2. Sunshine streaming server state
         sunshine_running = self.check_sunshine_service()
         if sunshine_running:
-            self.lbl_sunshine.set_markup("<span class='apple-status-green'>󰄲 Running</span>")
+            set_badge(self.lbl_sunshine, "󰄲 Running", "apple-status-green")
             self.row_sunshine.set_subtitle("Sunshine server listening on 0.0.0.0:47984-47990 · Ready for Moonlight")
         else:
-            self.lbl_sunshine.set_markup("<span class='apple-status-orange'>󰅙 Inactive</span>")
+            set_badge(self.lbl_sunshine, "󰅙 Inactive", "apple-status-orange")
             self.row_sunshine.set_subtitle("Sunshine server not currently running on this machine")
 
         # 3. Connection Endpoints (LAN & Tailscale)

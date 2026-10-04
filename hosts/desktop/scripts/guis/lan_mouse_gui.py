@@ -60,6 +60,19 @@ window.lan-mouse {
     padding: 12px;
 }
 
+.apple-icon-prefix {
+    font-size: 16px;
+    color: @accent_color;
+    margin-right: 6px;
+}
+
+.apple-pill-btn {
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-weight: 500;
+    font-size: 12px;
+}
+
 .screen-box {
     border-radius: 12px;
     border: 2px dashed alpha(@headerbar_border_color, 0.5);
@@ -82,7 +95,17 @@ window.lan-mouse {
     background-color: rgba(52, 199, 89, 0.14);
     border: 1px solid rgba(52, 199, 89, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.apple-status-orange {
+    color: #FF9500;
+    background-color: rgba(255, 149, 0, 0.14);
+    border: 1px solid rgba(255, 149, 0, 0.25);
+    border-radius: 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -92,7 +115,7 @@ window.lan-mouse {
     background-color: rgba(255, 59, 48, 0.14);
     border: 1px solid rgba(255, 59, 48, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
@@ -102,11 +125,27 @@ window.lan-mouse {
     background-color: alpha(@accent_color, 0.14);
     border: 1px solid alpha(@accent_color, 0.25);
     border-radius: 8px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-weight: 600;
     font-size: 11px;
 }
 """
+
+def make_icon_prefix(glyph: str) -> Gtk.Label:
+    lbl = Gtk.Label(label=glyph)
+    lbl.add_css_class("apple-icon-prefix")
+    lbl.set_valign(Gtk.Align.CENTER)
+    lbl.set_halign(Gtk.Align.CENTER)
+    lbl.set_size_request(28, 28)
+    return lbl
+
+def set_badge(lbl: Gtk.Label, text: str, css_class: str):
+    lbl.set_text(text)
+    for c in ["apple-status-green", "apple-status-orange", "apple-status-red", "apple-status-accent"]:
+        lbl.remove_css_class(c)
+    if css_class:
+        lbl.add_css_class(css_class)
+    lbl.set_valign(Gtk.Align.CENTER)
 
 class LanMouseApp(Adw.Application):
     def __init__(self):
@@ -166,8 +205,10 @@ class LanMouseWindow(Adw.ApplicationWindow):
         )
         header.set_title_widget(title_widget)
 
-        apply_btn = Gtk.Button(label="Apply & Restart")
+        apply_btn = Gtk.Button(label="Apply and Restart")
         apply_btn.add_css_class("suggested-action")
+        apply_btn.add_css_class("apple-pill-btn")
+        apply_btn.set_valign(Gtk.Align.CENTER)
         apply_btn.connect("clicked", self.on_apply_clicked)
         header.pack_end(apply_btn)
 
@@ -185,7 +226,7 @@ class LanMouseWindow(Adw.ApplicationWindow):
         # ── Group 1: Service Master Switch & Socket ──
         service_group = Adw.PreferencesGroup(
             title="KVM Sharing Service",
-            description="Software mouse & keyboard sharing across local network (port 4242)"
+            description="Software mouse and keyboard sharing across local network (port 4242)"
         )
         pref_page.add(service_group)
 
@@ -193,22 +234,25 @@ class LanMouseWindow(Adw.ApplicationWindow):
             title="Enable Seamless Mouse",
             subtitle="Automatically switch mouse control when cursor hits screen boundary"
         )
+        self.switch_service.add_prefix(make_icon_prefix("󰍽"))
         self.switch_service.set_active(self.is_service_running())
         self.switch_service.connect("notify::active", self.on_switch_toggled)
         service_group.add(self.switch_service)
 
         self.row_status = Adw.ActionRow(
-            title="Daemon & Socket State",
+            title="Daemon and Socket State",
             subtitle="Verifying port 4242 and background process..."
         )
+        self.row_status.add_prefix(make_icon_prefix("󰒋"))
         self.status_label = Gtk.Label(label="Checking...")
+        set_badge(self.status_label, "Checking...", "apple-status-orange")
         self.row_status.add_suffix(self.status_label)
         service_group.add(self.row_status)
 
         # ── Group 2: Physical Screen Layout ──
         layout_group = Adw.PreferencesGroup(
-            title="Displays & Arrangement",
-            description=f"Arrange where the {self.target_label} is physically placed relative to this machine."
+            title="Displays and Arrangement",
+            description=f"Arrange where the {self.target_label} is physically placed relative to this machine"
         )
         pref_page.add(layout_group)
 
@@ -279,6 +323,7 @@ class LanMouseWindow(Adw.ApplicationWindow):
         pref_page.add(client_group)
 
         self.entry_hostname = Adw.EntryRow(title="Peer Hostname")
+        self.entry_hostname.add_prefix(make_icon_prefix("󰍹"))
         self.entry_hostname.set_text(self.saved_hostname or self.default_target_name)
         client_group.add(self.entry_hostname)
 
@@ -286,6 +331,7 @@ class LanMouseWindow(Adw.ApplicationWindow):
             title="Target IP Address",
             subtitle="Dynamic IP detected across LAN and Tailscale mesh"
         )
+        self.row_ip.add_prefix(make_icon_prefix("󰈀"))
         ip_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         ip_box.set_valign(Gtk.Align.CENTER)
 
@@ -293,9 +339,12 @@ class LanMouseWindow(Adw.ApplicationWindow):
         self.entry_ip.set_placeholder_text("Resolving dynamically...")
         self.entry_ip.set_text(self.saved_ip or "")
         self.entry_ip.set_size_request(180, -1)
+        self.entry_ip.set_valign(Gtk.Align.CENTER)
         ip_box.append(self.entry_ip)
 
         btn_autodetect = Gtk.Button(label="Auto-Detect")
+        btn_autodetect.add_css_class("apple-pill-btn")
+        btn_autodetect.set_valign(Gtk.Align.CENTER)
         btn_autodetect.set_tooltip_text("Query Tailscale and DNS to find active target IP")
         btn_autodetect.connect("clicked", lambda b: self.run_dynamic_peer_discovery(show_toast=True))
         ip_box.append(btn_autodetect)
@@ -307,12 +356,15 @@ class LanMouseWindow(Adw.ApplicationWindow):
             title="Connection Verification",
             subtitle="Live network round-trip probe"
         )
+        ping_row.add_prefix(make_icon_prefix("󰒢"))
         btn_ping = Gtk.Button(label="Test Ping")
+        btn_ping.add_css_class("apple-pill-btn")
         btn_ping.set_valign(Gtk.Align.CENTER)
         btn_ping.connect("clicked", self.on_ping_test)
         ping_row.add_suffix(btn_ping)
 
         self.lbl_ping_res = Gtk.Label(label="")
+        set_badge(self.lbl_ping_res, "", "")
         ping_row.add_suffix(self.lbl_ping_res)
         client_group.add(ping_row)
 
@@ -324,6 +376,7 @@ class LanMouseWindow(Adw.ApplicationWindow):
             title="Universal Clipboard Sharing",
             subtitle="Copy/paste text seamlessly between host and client upon border crossing"
         )
+        self.switch_clipboard.add_prefix(make_icon_prefix("󰅍"))
         self.switch_clipboard.set_active(self.saved_clipboard)
         advanced_group.add(self.switch_clipboard)
 
@@ -365,7 +418,6 @@ class LanMouseWindow(Adw.ApplicationWindow):
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.settimeout(0.2)
-            # Check UDP port 4242 binding or open state
             s.connect(("127.0.0.1", 4242))
             s.close()
             return True
@@ -375,10 +427,10 @@ class LanMouseWindow(Adw.ApplicationWindow):
     def update_status_ui(self):
         running = self.is_service_running()
         if running:
-            self.status_label.set_markup("<span class='apple-status-green'>󰄲 Running (Port 4242)</span>")
+            set_badge(self.status_label, "󰄲 Running (Port 4242)", "apple-status-green")
             self.row_status.set_subtitle("Daemon process active · Listening on 0.0.0.0:4242")
         else:
-            self.status_label.set_markup("<span class='apple-status-red'>󰅙 Stopped</span>")
+            set_badge(self.status_label, "󰅙 Stopped", "apple-status-red")
             self.row_status.set_subtitle("Daemon process offline · Toggle switch to start")
         return True
 
@@ -395,12 +447,12 @@ class LanMouseWindow(Adw.ApplicationWindow):
             route = info.get("route_type", "Network")
             latency = info.get("latency_ms")
             lat_str = f" ({latency:.1f} ms)" if latency is not None else ""
-            self.lbl_ping_res.set_markup(f"<span class='apple-status-green'>󰄲 Found {active_ip} via {route}{lat_str}</span>")
+            set_badge(self.lbl_ping_res, f"󰄲 Found {active_ip} via {route}{lat_str}", "apple-status-green")
             self.row_ip.set_subtitle(f"Resolved via {route} · Peer: {info.get('name')}")
             if show_toast:
                 self.show_toast(f"Detected {self.target_label} at {active_ip} ({route})")
         else:
-            self.lbl_ping_res.set_markup("<span class='apple-status-red'>󰅙 Target unreachable</span>")
+            set_badge(self.lbl_ping_res, "󰅙 Target unreachable", "apple-status-red")
             if show_toast:
                 self.show_toast("Could not dynamically resolve target machine")
 
@@ -418,9 +470,9 @@ class LanMouseWindow(Adw.ApplicationWindow):
     def on_ping_test(self, btn):
         ip = self.entry_ip.get_text().strip()
         if not ip:
-            self.lbl_ping_res.set_markup("<span class='apple-status-red'>Enter IP first</span>")
+            set_badge(self.lbl_ping_res, "Enter IP first", "apple-status-red")
             return
-        self.lbl_ping_res.set_markup("<span>Probing...</span>")
+        set_badge(self.lbl_ping_res, "Probing...", "apple-status-orange")
         def _worker():
             try:
                 proc = subprocess.run(["ping", "-c", "1", "-W", "1", ip], capture_output=True, text=True)
@@ -430,11 +482,11 @@ class LanMouseWindow(Adw.ApplicationWindow):
                         if "rtt" in line or "round-trip" in line:
                             avg = line.split("/")[4] + " ms"
                             break
-                    GLib.idle_add(lambda: self.lbl_ping_res.set_markup(f"<span class='apple-status-green'>󰄲 Online ({avg})</span>"))
+                    GLib.idle_add(lambda: set_badge(self.lbl_ping_res, f"󰄲 Online ({avg})", "apple-status-green"))
                 else:
-                    GLib.idle_add(lambda: self.lbl_ping_res.set_markup("<span class='apple-status-red'>󰅙 Unreachable</span>"))
+                    GLib.idle_add(lambda: set_badge(self.lbl_ping_res, "󰅙 Unreachable", "apple-status-red"))
             except Exception:
-                GLib.idle_add(lambda: self.lbl_ping_res.set_markup("<span class='apple-status-red'>󰅙 Error</span>"))
+                GLib.idle_add(lambda: set_badge(self.lbl_ping_res, "󰅙 Error", "apple-status-red"))
         threading.Thread(target=_worker, daemon=True).start()
 
     def on_apply_clicked(self, btn):
@@ -448,36 +500,45 @@ class LanMouseWindow(Adw.ApplicationWindow):
         self.update_status_ui()
 
     def start_daemon(self):
-        if not self.is_service_running():
-            subprocess.Popen(["lan-mouse", "--daemon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            subprocess.Popen(["lan-mouse", "--daemon"])
+        except Exception as e:
+            self.show_toast(f"Failed to start lan-mouse: {e}")
 
     def stop_daemon(self):
-        subprocess.run(["pkill", "-f", "lan-mouse.*daemon"])
+        try:
+            subprocess.run(["pkill", "-f", "lan-mouse.*daemon"])
+        except Exception:
+            pass
 
     def load_existing_config(self):
-        self.saved_hostname = ""
-        self.saved_ip = ""
+        self.saved_hostname = None
+        self.saved_ip = None
         self.saved_clipboard = True
         if not os.path.exists(CONFIG_FILE):
             return
-
         try:
             with open(CONFIG_FILE, "r") as f:
                 lines = f.readlines()
+            current_section = None
             for line in lines:
                 line = line.strip()
-                if line.startswith("hostname"):
-                    self.saved_hostname = line.split("=")[1].strip().strip('"')
-                elif line.startswith("ips"):
-                    val = line.split("=")[1].strip().strip("[]").strip()
-                    if val:
-                        self.saved_ip = val.split(",")[0].strip().strip('"')
-                elif line.startswith("position"):
-                    pos = line.split("=")[1].strip().strip('"').lower()
-                    if pos in ["left", "right", "top", "bottom"]:
-                        self.current_orientation = pos
-                elif line.startswith("clipboard"):
-                    self.saved_clipboard = "true" in line.lower()
+                if line.startswith("[") and line.endswith("]"):
+                    current_section = line[1:-1].strip()
+                    if current_section.startswith("clients."):
+                        h = current_section.split(".", 1)[1].strip('"')
+                        self.saved_hostname = h
+                if "=" in line:
+                    k, v = [x.strip() for x in line.split("=", 1)]
+                    val = v.strip('"')
+                    if k == "ips":
+                        cleaned = val.strip("[] ").strip('"')
+                        if cleaned:
+                            self.saved_ip = cleaned.split(",")[0].strip('" ')
+                    elif k == "position":
+                        self.current_orientation = val
+                    elif k == "enable_clipboard":
+                        self.saved_clipboard = (val.lower() == "true")
         except Exception:
             pass
 
@@ -488,35 +549,22 @@ class LanMouseWindow(Adw.ApplicationWindow):
         orient = self.current_orientation
         clip = "true" if self.switch_clipboard.get_active() else "false"
 
-        ips_val = f'["{ip}"]' if ip else '[]'
+        ip_line = f'ips = ["{ip}"]' if ip else 'ips = []'
 
-        config_content = f"""# lan-mouse configuration
-# Managed dynamically by Seamless Mouse Setup (io.github.justkowal.LanMouseConfig)
-
+        toml_content = f"""# Generated by Seamless Mouse Configurator
 port = 4242
 frontend = "headless"
 
-[right]
-hostname = "{hostname if orient == 'right' else ''}"
-ips = {ips_val if orient == 'right' else '[]'}
-
-[left]
-hostname = "{hostname if orient == 'left' else ''}"
-ips = {ips_val if orient == 'left' else '[]'}
-
-[top]
-hostname = "{hostname if orient == 'top' else ''}"
-ips = {ips_val if orient == 'top' else '[]'}
-
-[bottom]
-hostname = "{hostname if orient == 'bottom' else ''}"
-ips = {ips_val if orient == 'bottom' else '[]'}
-
-[options]
-clipboard = {clip}
+[clients."{hostname}"]
+{ip_line}
+position = "{orient}"
+enable_clipboard = {clip}
 """
-        with open(CONFIG_FILE, "w") as f:
-            f.write(config_content)
+        try:
+            with open(CONFIG_FILE, "w") as f:
+                f.write(toml_content)
+        except Exception as e:
+            self.show_toast(f"Error saving config: {e}")
 
     def show_toast(self, message):
         toast = Adw.Toast.new(message)
