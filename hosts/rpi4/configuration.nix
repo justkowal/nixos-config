@@ -209,7 +209,8 @@ in {
     "ntfy.lab"
     "status.lab"
   ];
-  networking.hosts."192.168.1.127" = [ "nixos-desktop" "nixos-desktop.lab" ];
+  networking.hosts."100.109.222.110" = [ "nixos-desktop" "nixos-desktop.lab" ];
+  networking.hosts."100.69.154.81" = [ "thinkpad-t14s-gen1-amd" "thinkpad-t14s-gen1-amd.lab" ];
 
   # Kernel IP forwarding for Tailscale exit node & subnet router
   boot.kernel.sysctl = {
@@ -859,21 +860,21 @@ in {
       customDNS = {
         customTTL = "1h";
         mapping = {
-          "lab" = "192.168.1.22";
-          "home.lab" = "192.168.1.22";
-          "bookmarks.lab" = "192.168.1.22";
-          "docs.lab" = "192.168.1.22";
-          "idm.lab" = "192.168.1.22";
-          "git.lab" = "192.168.1.22";
-          "ci.lab" = "192.168.1.22";
-          "render.lab" = "192.168.1.22";
-          "portfolio.lab" = "192.168.1.22";
-          "nixos-rpi4.lab" = "192.168.1.22";
-          "vault.lab" = "192.168.1.22";
-          "ntfy.lab" = "192.168.1.22";
-          "status.lab" = "192.168.1.22";
-          "thinkpad-t14s-gen1-amd.lab" = "192.168.1.20";
-          "nixos-desktop.lab" = "192.168.1.127";
+          "lab" = "100.113.193.14";
+          "home.lab" = "100.113.193.14";
+          "bookmarks.lab" = "100.113.193.14";
+          "docs.lab" = "100.113.193.14";
+          "idm.lab" = "100.113.193.14";
+          "git.lab" = "100.113.193.14";
+          "ci.lab" = "100.113.193.14";
+          "render.lab" = "100.113.193.14";
+          "portfolio.lab" = "100.113.193.14";
+          "nixos-rpi4.lab" = "100.113.193.14";
+          "vault.lab" = "100.113.193.14";
+          "ntfy.lab" = "100.113.193.14";
+          "status.lab" = "100.113.193.14";
+          "thinkpad-t14s-gen1-amd.lab" = "100.69.154.81";
+          "nixos-desktop.lab" = "100.109.222.110";
         };
       };
       blocking = {
