@@ -67,16 +67,10 @@ in {
           else 12;
         modules-left = ["hyprland/workspaces" "hyprland/submap"];
         modules-center = ["clock" "custom/pomodoro" "clock#date"];
-        modules-right = [
-          "mpris"
-          "custom/fleet"
-          "group/hardware"
-          "group/system"
-          "pulseaudio"
-          "custom/controlcenter"
-          "custom/notification"
-          "custom/power"
-        ];
+        modules-right =
+          if laptop
+          then ["mpris" "custom/fleet" "custom/sysinfo" "battery" "backlight" "network" "bluetooth" "pulseaudio" "custom/controlcenter" "custom/thinkdot" "custom/notification" "custom/power" "tray"]
+          else ["mpris" "custom/fleet" "custom/sysinfo" "network" "pulseaudio" "custom/controlcenter" "custom/notification" "custom/power" "tray"];
 
         "hyprland/workspaces" = {
           disable-scroll = true;
@@ -170,6 +164,9 @@ in {
           interval = 2;
           return-type = "json";
           format = "{}";
+          on-click = "control-center-gui";
+          tooltip = true;
+          tooltip-format = "{tooltip}";
         };
 
         "memory" = {format = "󰍛 {percentage}%";};
@@ -234,66 +231,7 @@ in {
           tooltip-format = "{tooltip}";
         };
 
-        "custom/hw_trigger" = {
-          format = "󰻠";
-          tooltip = false;
-        };
 
-        "custom/sys_trigger" = {
-          format = "󰒓";
-          tooltip = false;
-        };
-
-        "group/hardware" = {
-          orientation = "inherit";
-          drawer = {
-            transition-duration = 500;
-            transition-left-to-right = false;
-            click-to-reveal = true;
-          };
-          modules =
-            if laptop
-            then [
-              "custom/hw_trigger"
-              "battery"
-              "backlight"
-              "memory"
-              "disk"
-            ]
-            else [
-              "custom/hw_trigger"
-              "custom/sysinfo"
-              "memory"
-              "disk"
-            ];
-        };
-
-        "group/system" = {
-          orientation = "inherit";
-          drawer = {
-            transition-duration = 500;
-            transition-left-to-right = false;
-            click-to-reveal = true;
-          };
-          modules =
-            if laptop
-            then [
-              "custom/sys_trigger"
-              "network"
-              "bluetooth"
-              "custom/thinkdot"
-              "custom/update"
-              "idle_inhibitor"
-              "tray"
-            ]
-            else [
-              "custom/sys_trigger"
-              "network"
-              "custom/update"
-              "idle_inhibitor"
-              "tray"
-            ];
-        };
 
         "custom/homelab" = {
           format = "{}";
@@ -389,23 +327,7 @@ in {
         transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
-      #custom-hw_trigger, #custom-sys_trigger {
-        color: @primary;
-        font-size: 15px;
-        padding: 0 10px;
-        margin: 3px 2px;
-        background-color: alpha(@surface_variant, 0.45);
-        border-radius: 10px;
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      }
-      #custom-hw_trigger:hover, #custom-sys_trigger:hover {
-        background-color: alpha(@primary_container, 0.65);
-        color: @primary;
-      }
 
-      window#waybar group.hardware, window#waybar group.system {
-        background-color: transparent;
-      }
 
       /* Distinctive Apple Interactive Action Pills */
       #custom-controlcenter {

@@ -77,8 +77,41 @@ for card_dev in /sys/class/drm/card*/device; do
     done
 done
 
+# Memory usage from /proc/meminfo
+MEM_TOTAL=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+MEM_AVAIL=$(awk '/MemAvailable/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+if [ "$MEM_TOTAL" -gt 0 ]; then
+    MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
+    MEM_PCT=$((MEM_USED * 100 / MEM_TOTAL))
+    MEM_USED_GB=$(awk -v u="$MEM_USED" 'BEGIN {printf "%.1f", u / 1048576}')
+    MEM_TOTAL_GB=$(awk -v t="$MEM_TOTAL" 'BEGIN {printf "%.1f", t / 1048576}')
+else
+    MEM_PCT=0
+    MEM_USED_GB="0"
+    MEM_TOTAL_GB="0"
+fi
+
+# Storage usage for main filesystem (/nix or /)
+DISK_INFO=$(df -h /nix / 2>/dev/null | awk 'NR==2 {print $3, $2, $5}')
+DISK_USED=$(echo "$DISK_INFO" | awk '{print $1}')
+DISK_TOTAL=$(echo "$DISK_INFO" | awk '{print $2}')
+DISK_PCT=$(echo "$DISK_INFO" | awk '{print $3}')
+
+# System load average
+LOAD_AVG=$(awk '{print $1, $2, $3}' /proc/loadavg 2>/dev/null || echo "0.0 0.0 0.0")
+
 TEXT="󰻠 ${CPU_UTIL}% (${CPU_TEMP}°C)  󰾲 ${GPU_UTIL}% (${GPU_TEMP}°C)"
-TOOLTIP=$(printf "System Status:\n\nCPU Usage: %s%%\nCPU Temp: %s°C\n\nGPU Usage: %s%%\nGPU Temp: %s°C" "$CPU_UTIL" "$CPU_TEMP" "$GPU_UTIL" "$GPU_TEMP")
+TOOLTIP=$(cat <<EOF
+── 󰍛 System Hardware Telemetry ─────────────────
+󰻠 Processor: ${CPU_UTIL}% utilized (${CPU_TEMP}°C)
+  └─ Load Average: ${LOAD_AVG}
+󰾲 Graphics: RX 6700 XT · ${GPU_UTIL}% utilized (${GPU_TEMP}°C)
+󰍛 Memory: ${MEM_PCT}% utilized (${MEM_USED_GB} / ${MEM_TOTAL_GB} GiB)
+󰋊 Storage: ${DISK_PCT} utilized (${DISK_USED} / ${DISK_TOTAL})
+─────────────────────────────────────────────────
+Click: Open Control Center (Super+C)
+EOF
+)
 
 jq -n -c --arg text "$TEXT" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}'
 
