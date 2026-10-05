@@ -116,15 +116,15 @@ status() {
     icon="󱎫"; text=""; tooltip="Click to start Work session (25m)"; class="idle"
   elif [ "$status" = "paused" ]; then
     if [ "$type" = "work" ]; then
-      icon="🍅"; text="$time_str (Paused)"; tooltip="Paused Work session. Click to resume."; class="paused"
+      icon="󱎫"; text="$time_str (Paused)"; tooltip="Paused Work session. Click to resume."; class="paused"
     else
-      icon=""; text="$time_str (Paused)"; tooltip="Paused Break session. Click to resume."; class="paused"
+      icon="󰔛"; text="$time_str (Paused)"; tooltip="Paused Break session. Click to resume."; class="paused"
     fi
   elif [ "$status" = "running" ]; then
     if [ "$type" = "work" ]; then
-      icon="🍅"; text="$time_str"; tooltip="Working... Click to pause."; class="work"
+      icon="󱎫"; text="$time_str"; tooltip="Working... Click to pause."; class="work"
     else
-      icon=""; text="$time_str"; tooltip="On break... Click to pause."; class="break"
+      icon="󰔛"; text="$time_str"; tooltip="On break... Click to pause."; class="break"
     fi
   fi
 

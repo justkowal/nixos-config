@@ -36,7 +36,20 @@
     echo 'set my_boot_target="server"' > /var/www/boot-state/boot-state.cfg
     # Desktop NIC MAC address (enp4s0) for Scale-to-Zero Wake-on-LAN
     ${pkgs.wakeonlan}/bin/wakeonlan 10:ff:e0:40:7d:6e
-    echo "Worker wake signal sent"
+    echo "Worker wake signal sent (target: server)"
+  '';
+
+  wakeDesktopScript = pkgs.writeShellScript "wake-desktop" ''
+    echo 'set my_boot_target="desktop"' > /var/www/boot-state/boot-state.cfg
+    # Desktop NIC MAC address (enp4s0) for Scale-to-Zero Wake-on-LAN
+    ${pkgs.wakeonlan}/bin/wakeonlan 10:ff:e0:40:7d:6e
+    echo "Desktop wake signal sent (target: desktop)"
+  '';
+
+  wakeWolScript = pkgs.writeShellScript "wake-wol" ''
+    # Desktop NIC MAC address (enp4s0) for Scale-to-Zero Wake-on-LAN
+    ${pkgs.wakeonlan}/bin/wakeonlan 10:ff:e0:40:7d:6e
+    echo "Direct WoL signal sent (preserve boot target)"
   '';
 
   resetWorkerScript = pkgs.writeShellScript "reset-worker" ''
@@ -48,6 +61,16 @@
     {
       id = "wake-worker";
       execute-command = toString wakeWorkerScript;
+      command-working-directory = "/var/www/boot-state";
+    }
+    {
+      id = "wake-desktop";
+      execute-command = toString wakeDesktopScript;
+      command-working-directory = "/var/www/boot-state";
+    }
+    {
+      id = "wake-wol";
+      execute-command = toString wakeWolScript;
       command-working-directory = "/var/www/boot-state";
     }
     {
@@ -64,30 +87,28 @@
     fi
   '';
 
-  # ── Scale-to-Zero SSH Proxy & Wake Helpers ───────────────────────────
-  # Used by client ProxyCommand: prints progress to stderr while waiting for
-  # Desktop to boot, then transparently streams stdio via netcat.
+  # Scale-to-Zero SSH Proxy & Wake Helpers
   wakeAndProxyScript = pkgs.writeShellScriptBin "wake-and-proxy" ''
     target_host="''${1:-nixos-desktop.lab}"
     target_port="''${2:-22}"
 
     if ! ${pkgs.netcat}/bin/nc -z -w 1 "$target_host" "$target_port" 2>/dev/null; then
-      echo "🖥️  Desktop is powered off (scale-to-zero)." >&2
-      echo "⚡ Sending Wake-on-LAN and setting boot target to 'server'..." >&2
+      echo "Desktop is powered off (scale-to-zero)." >&2
+      echo "Sending Wake-on-LAN and setting boot target to 'server'..." >&2
       ${wakeWorkerScript} >&2
-      echo "⏳ Waiting for Desktop to boot and start SSH..." >&2
+      echo "Waiting for Desktop to boot and start SSH..." >&2
 
       start_time=$(date +%s)
       while ! ${pkgs.netcat}/bin/nc -z -w 1 "$target_host" "$target_port" 2>/dev/null; do
         elapsed=$(( $(date +%s) - start_time ))
         if [ "$elapsed" -ge 90 ]; then
-          echo -e "\n❌ Timed out waiting for Desktop to boot after 90 seconds." >&2
+          echo -e "\nTimed out waiting for Desktop to boot after 90 seconds." >&2
           exit 1
         fi
         printf "   Booting Desktop... (%ds elapsed)\r" "$elapsed" >&2
         sleep 2
       done
-      echo -e "\n✨ Desktop is online! Handing off SSH session..." >&2
+      echo -e "\nDesktop is online! Handing off SSH session..." >&2
     fi
 
     exec ${pkgs.netcat}/bin/nc "$target_host" "$target_port"
@@ -99,22 +120,22 @@
     target_port="22"
 
     if ! ${pkgs.netcat}/bin/nc -z -w 1 "$target_host" "$target_port" 2>/dev/null; then
-      echo "🖥️  Desktop is powered off (scale-to-zero)."
-      echo "⚡ Sending Wake-on-LAN and setting boot target to 'server'..."
+      echo "Desktop is powered off (scale-to-zero)."
+      echo "Sending Wake-on-LAN and setting boot target to 'server'..."
       ${wakeWorkerScript}
-      echo "⏳ Waiting for Desktop to boot and start SSH..."
+      echo "Waiting for Desktop to boot and start SSH..."
 
       start_time=$(date +%s)
       while ! ${pkgs.netcat}/bin/nc -z -w 1 "$target_host" "$target_port" 2>/dev/null; do
         elapsed=$(( $(date +%s) - start_time ))
         if [ "$elapsed" -ge 90 ]; then
-          echo -e "\n❌ Timed out waiting for Desktop to boot after 90 seconds."
+          echo -e "\nTimed out waiting for Desktop to boot after 90 seconds."
           exit 1
         fi
         printf "   Booting Desktop... (%ds elapsed)\r" "$elapsed"
         sleep 2
       done
-      echo -e "\n✨ Desktop is online! Launching ephemeral sandbox..."
+      echo -e "\nDesktop is online! Launching ephemeral sandbox..."
     fi
 
     exec ${pkgs.openssh}/bin/ssh -tt \
@@ -277,6 +298,16 @@ in {
 
   environment.systemPackages = [
     wakeAndProxyScript
+    (pkgs.writeShellScriptBin "wake-desktop" ''
+      exec ${wakeDesktopScript}
+    '')
+    (pkgs.writeShellScriptBin "wake-worker" ''
+      exec ${wakeWorkerScript}
+    '')
+    (pkgs.writeShellScriptBin "wake-wol" ''
+      exec ${wakeWolScript}
+    '')
+    pkgs.wakeonlan
   ];
 
   services.openssh = {
@@ -424,6 +455,12 @@ in {
         "status.23012006.xyz" = {
           service = "http://localhost:3001";
         };
+        "git.23012006.xyz" = {
+          service = "http://localhost:3000";
+        };
+        "git.justkowal.dev" = {
+          service = "http://localhost:3000";
+        };
         "*.23012006.xyz" = {
           service = "http://127.0.0.1:8088";
         };
@@ -506,6 +543,8 @@ in {
     "d /home/justkowal/Sync/Backups 0755 justkowal users -"
     "d /home/justkowal/Sync/Backups/forgejo 0755 git git -"
     "d /home/justkowal/Sync/Backups/state 0755 justkowal users -"
+    "d /var/lib/vaultwarden 0700 vaultwarden vaultwarden -"
+    "f /var/lib/vaultwarden/vaultwarden.env 0600 vaultwarden vaultwarden -"
   ];
 
   # ── Automated Homelab State Backup ─────────────────────────────────────
@@ -733,6 +772,17 @@ in {
   };
 
   # ── Vaultwarden: Lightweight Bitwarden Password Manager ───────────────
+  #
+  # ┌─── KANIDM OIDC SSO INITIALIZATION ────────────────────────────────┐
+  # │ 1. In Kanidm, register an OAuth2 client for Vaultwarden:          │
+  # │    kanidm system oauth2 create vaultwarden "Vaultwarden" \         │
+  # │      https://vault.lab                                            │
+  # │    kanidm system oauth2 add-redirect-url vaultwarden \            │
+  # │      https://vault.lab/identity/connect/oidc-signin               │
+  # │    kanidm system oauth2 show-basic-secret vaultwarden             │
+  # │ 2. Populate /var/lib/vaultwarden/vaultwarden.env with:            │
+  # │    SSO_CLIENT_SECRET=<secret from show-basic-secret>              │
+  # └───────────────────────────────────────────────────────────────────┘
   services.vaultwarden = {
     enable = true;
     config = {
@@ -740,7 +790,13 @@ in {
       ROCKET_ADDRESS = "127.0.0.1";
       DOMAIN = "https://vault.lab";
       SIGNUPS_ALLOWED = true;
+      # Kanidm SSO / OpenID Connect
+      SSO_ENABLED = true;
+      SSO_AUTHORITY = "https://idm.lab/oauth2/openid/vaultwarden";
+      SSO_CLIENT_ID = "vaultwarden";
+      SSO_SCOPES = "openid profile email";
     };
+    environmentFile = "/var/lib/vaultwarden/vaultwarden.env";
   };
 
   # ── ntfy: Unified Push Notification Dispatcher ─────────────────────────
@@ -827,12 +883,25 @@ in {
   };
 
   # ── Shiori: Self-Hosted Bookmarks & Web Archiver ───────────────────────
+  # Note: Shiori is a minimalist standalone Go bookmark manager with internal
+  # SQLite user accounts. To register with Kanidm OAuth2:
+  #   kanidm system oauth2 create shiori "Shiori Bookmarks" https://bookmarks.lab
+  #   kanidm system oauth2 add-redirect-url shiori https://bookmarks.lab/oauth/callback
   services.shiori = {
     enable = true;
     port = 8085;
   };
 
   # ── Paperless-ngx: Automated Document & Receipt Archiver ───────────────
+  #
+  # ┌─── KANIDM OIDC SSO INITIALIZATION ────────────────────────────────┐
+  # │ 1. In Kanidm, register an OAuth2 client for Paperless:            │
+  # │    kanidm system oauth2 create paperless "Paperless-ngx" \        │
+  # │      https://docs.lab                                             │
+  # │    kanidm system oauth2 add-redirect-url paperless \              │
+  # │      https://docs.lab/accounts/oidc/kanidm/login/callback/        │
+  # │    kanidm system oauth2 show-basic-secret paperless               │
+  # └───────────────────────────────────────────────────────────────────┘
   services.paperless = {
     enable = true;
     address = "127.0.0.1";
@@ -845,6 +914,24 @@ in {
       PAPERLESS_TIME_ZONE = "Europe/Warsaw";
       PAPERLESS_TASK_WORKERS = 1;
       PAPERLESS_THREADS_PER_WORKER = 1;
+      # Kanidm SSO / OpenID Connect via django-allauth
+      PAPERLESS_APPS = "allauth.socialaccount.providers.openid_connect";
+      PAPERLESS_SOCIALACCOUNT_PROVIDERS = builtins.toJSON {
+        openid_connect = {
+          OAUTH_PKCE_ENABLED = true;
+          APPS = [
+            {
+              provider_id = "kanidm";
+              name = "Kanidm IDM";
+              client_id = "paperless";
+              settings = {
+                server_url = "https://idm.lab/oauth2/openid/paperless/.well-known/openid-configuration";
+              };
+            }
+          ];
+          SCOPE = [ "openid" "profile" "email" ];
+        };
+      };
     };
   };
 

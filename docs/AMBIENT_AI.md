@@ -35,29 +35,29 @@ graph TD
 
 ## Ambient Services
 
-### 📋 Smart Clipboard
+### Smart Clipboard
 Analyzes copied text and offers contextual Rofi actions (e.g., summarize prose, explain code, diagnose error) before executing and re-copying the modified text.
 
-### 🩺 System Health Advisor
+### System Health Advisor
 Runs every 5 minutes (`ai-health-advisor.timer`).
 *   **Behavior**: Silently monitors RAM (>85%), Disk (>90%), CPU Temp (>85°C), and Load.
 *   **Action**: If thresholds breach, queries the E2B model with `ps aux` output for a 1-sentence diagnostic toast.
 
-### 📁 Smart File Auto-Organizer
+### Smart File Auto-Organizer
 Watches `~/Downloads` via `inotifywait`.
 *   **Behavior**: Fast-paths known extensions (e.g., `.pdf` to `Documents/PDFs`).
 *   **Action**: Ambiguous files are routed to the E4B LLM for JSON categorization. Supports manual undo via `ai-organize --undo`.
 
-### ✨ Waybar AI Widget
+### Waybar AI Widget
 Rotates every 300 seconds. Injects system context (RAM, disk, uptime) into a prompt requesting a tip, quote, or system observation.
 
-### 🔔 Notification Digest
+### Notification Digest
 Runs every 30 minutes. Compiles unread `swaync` notifications into an executive summary via the E4B model.
 
-### 📝 AI Conventional Commit Hook
+### AI Conventional Commit Hook
 Triggered automatically on `git commit`. Uses the E4B model to generate standard `type(scope): description` commit messages from staged diffs.
 
-### 🔍 Spotlight Search Fallback
+### Spotlight Search Fallback
 Pressing `SUPER+D` prioritizes apps and files. If no matches are found, it transparently queries the E2B model for a quick answer before falling back to SearXNG web search.
 
 ## Shell Helper Commands

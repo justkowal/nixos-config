@@ -47,7 +47,7 @@
       #!/usr/bin/env bash
       PROMPT="$1"
       if [ -z "$PROMPT" ]; then
-        PROMPT=$(${pkgs.rofi}/bin/rofi -dmenu -i -p "🤖 AI Assistant" -font "Outfit 12" -theme-str 'window {width: 650px;}')
+        PROMPT=$(${pkgs.rofi}/bin/rofi -dmenu -i -p "󰚩 AI Assistant" -font "Outfit 12" -theme-str 'window {width: 650px;}')
       fi
       [ -z "$PROMPT" ] && exit 0
 
@@ -57,7 +57,7 @@
       FIRST_MODEL=$(echo "$TAGS" | ${pkgs.jq}/bin/jq -r '.models[]? | select(.name != "nomic-embed-text:latest") | .name' | head -n 1)
       MODEL="''${TARGET_MODEL:-''${FIRST_MODEL:-$PREF_MODEL}}"
 
-      ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:rofi-ai "🤖 AI Assistant" "Thinking with model: $MODEL..." -i dialog-information
+      ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:rofi-ai "󰚩 AI Assistant" "Thinking with model: $MODEL..." -i dialog-information
 
       # Inject system metrics if query mentions system info
       SYS_METRICS=""
@@ -82,7 +82,7 @@
       CONVERSATION="User: $PROMPT\nAssistant: $RESPONSE\n"
 
       while true; do
-        CHOICE=$(echo -e "💬 Ask Follow-up Question\n📋 Copy Response to Clipboard\n🌐 Open in Open-WebUI\n❌ Close" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "AI Response" -mesg "$RESPONSE" -font "Outfit 11" -theme-str 'window {width: 850px;} message {border: 2px; border-radius: 12px; padding: 12px; margin: 0px 0px 10px 0px;} textbox {wrap: true;} listview {lines: 4;} element {padding: 8px;}')
+        CHOICE=$(echo -e "󰭻 Ask Follow-up Question\n󰆏 Copy Response to Clipboard\n󰖟 Open in Open-WebUI\n󰅖 Close" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "AI Response" -mesg "$RESPONSE" -font "Outfit 11" -theme-str 'window {width: 850px;} message {border: 2px; border-radius: 12px; padding: 12px; margin: 0px 0px 10px 0px;} textbox {wrap: true;} listview {lines: 4;} element {padding: 8px;}')
 
         if [ -z "$CHOICE" ] || [[ "$CHOICE" =~ "Close" ]]; then
           exit 0
@@ -96,7 +96,7 @@
           ( ${pkgs.xdg-utils}/bin/xdg-open "$WEBUI_URL" || ${pkgs.firefox}/bin/firefox "$WEBUI_URL" ) >/dev/null 2>&1 & disown
           exit 0
         else
-          TYPED_REPLY=$(echo "$CHOICE" | ${pkgs.gnused}/bin/sed -E 's/^\s*💬\s*Ask Follow-up Question.*\s*//')
+          TYPED_REPLY=$(echo "$CHOICE" | ${pkgs.gnused}/bin/sed -E 's/^\s*󰭻\s*Ask Follow-up Question.*\s*//')
           if [ -z "$TYPED_REPLY" ]; then
             TYPED_REPLY=$(${pkgs.rofi}/bin/rofi -dmenu -i -p "Follow-up Question" -font "Outfit 12" -theme-str 'window {width: 650px;}')
           fi
@@ -123,7 +123,7 @@
       ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null
 
       if [ -f "$TEMP_IMG" ]; then
-        ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:ai-vision "👁️ Vision AI" "Analyzing screenshot contents..." -i image-x-generic
+        ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:ai-vision "󰹑 Vision AI" "Analyzing screenshot contents..." -i image-x-generic
 
         BASE64_IMG=$(${pkgs.coreutils}/bin/base64 -w 0 "$TEMP_IMG")
         TAGS=$(${pkgs.curl}/bin/curl -s http://127.0.0.1:11434/api/tags 2>/dev/null || echo '{}')
@@ -137,7 +137,7 @@
         if [ -n "$RESPONSE" ] && [ "$RESPONSE" != "null" ]; then
           CONVERSATION="User: [Screenshot Image]\nAssistant: $RESPONSE\n"
           while true; do
-            CHOICE=$(echo -e "💬 Ask Follow-up Question about Screenshot\n📋 Copy Analysis to Clipboard\n🌐 Open in Open-WebUI\n❌ Close" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "AI Screenshot Analysis" -mesg "$RESPONSE" -font "Outfit 11" -theme-str 'window {width: 850px;} message {border: 2px; border-radius: 12px; padding: 12px; margin: 0px 0px 10px 0px;} textbox {wrap: true;} listview {lines: 4;} element {padding: 8px;}')
+            CHOICE=$(echo -e "󰭻 Ask Follow-up Question about Screenshot\n󰆏 Copy Analysis to Clipboard\n󰖟 Open in Open-WebUI\n󰅖 Close" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "AI Screenshot Analysis" -mesg "$RESPONSE" -font "Outfit 11" -theme-str 'window {width: 850px;} message {border: 2px; border-radius: 12px; padding: 12px; margin: 0px 0px 10px 0px;} textbox {wrap: true;} listview {lines: 4;} element {padding: 8px;}')
 
             if [ -z "$CHOICE" ] || [[ "$CHOICE" =~ "Close" ]]; then exit 0
             elif [[ "$CHOICE" =~ "Copy Analysis" ]]; then
@@ -149,7 +149,7 @@
               ( ${pkgs.xdg-utils}/bin/xdg-open "http://127.0.0.1:11111/?q=$ENCODED_PROMPT" ) >/dev/null 2>&1 & disown
               exit 0
             else
-              TYPED_REPLY=$(echo "$CHOICE" | ${pkgs.gnused}/bin/sed -E 's/^\s*💬\s*Ask Follow-up Question.*\s*//')
+              TYPED_REPLY=$(echo "$CHOICE" | ${pkgs.gnused}/bin/sed -E 's/^\s*󰭻\s*Ask Follow-up Question.*\s*//')
               [ -z "$TYPED_REPLY" ] && TYPED_REPLY=$(${pkgs.rofi}/bin/rofi -dmenu -i -p "Follow-up Question" -font "Outfit 12" -theme-str 'window {width: 650px;}')
               [ -z "$TYPED_REPLY" ] && exit 0
 
@@ -432,7 +432,7 @@
           try:
               with urllib.request.urlopen(req, timeout=30) as res:
                   data = json.loads(res.read().decode("utf-8"))
-                  print("\n💡 AI Answer:\n")
+                  print("\nAI Answer:\n")
                   print(data.get("response", "No response generated."))
           except Exception as e: print(f"Ollama API Error: {e}")
 
@@ -494,11 +494,11 @@
 
       if [[ "''${1:-}" == "--toast" ]]; then
         ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:ai-digest \
-          "🔔 AI Digest ($NOTIF_COUNT notifications)" "$RESPONSE" -i dialog-information
+          "󰂚 AI Digest ($NOTIF_COUNT notifications)" "$RESPONSE" -i dialog-information
         command -v thinkdot >/dev/null 2>&1 && thinkdot burst 3 || true
       else
         echo ""
-        echo "🔔 AI Notification Digest ($NOTIF_COUNT notifications)"
+        echo "󰂚 AI Notification Digest ($NOTIF_COUNT notifications)"
         echo "================================================"
         echo "$RESPONSE"
       fi
@@ -859,7 +859,7 @@
             ( ${pkgs.xdg-utils}/bin/xdg-open "http://127.0.0.1:11111/?q=$ENCODED_PROMPT" ) >/dev/null 2>&1 & disown
             exit 0
           else
-            TYPED_REPLY=$(echo "$CHOICE" | ${pkgs.gnused}/bin/sed -E 's/^\s*([󰈙󰭻󰆏󰖟󰅖]|📖|💬|📋|🌐|❌).*\s*//')
+            TYPED_REPLY=$(echo "$CHOICE" | ${pkgs.gnused}/bin/sed -E 's/^\s*([󰈙󰭻󰆏󰖟󰅖]).*\s*//')
             [ -z "$TYPED_REPLY" ] && TYPED_REPLY=$(rofi -dmenu -i -p "Your Reply ($MODEL_LABEL)" -font "Outfit 12" -theme-str 'window {width: 650px;}')
             [ -z "$TYPED_REPLY" ] && exit 0
             CURRENT_PROMPT="$TYPED_REPLY"
@@ -1141,7 +1141,7 @@
       if [ -n "$RESPONSE" ] && [ "$RESPONSE" != "null" ]; then
         PANGO_RES=$(${pkgs.python3}/bin/python3 %h/.config/ai/md_to_pango.py "$RESPONSE")
         ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:health-ai \
-          "🩺 System Health" "$PANGO_RES" -i dialog-warning
+          "󰓅 System Health" "$PANGO_RES" -i dialog-warning
       fi
     '';
   };
@@ -1249,7 +1249,7 @@
 
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] MOVED: $filepath -> $dest_path" >> "$LOG_FILE"
         ${pkgs.libnotify}/bin/notify-send -h string:x-canonical-private-synchronous:file-org \
-          "📁 Auto-Organized" "$filename → $category/" -i folder
+          "󰉋 Auto-Organized" "$filename → $category/" -i folder
       }
 
       echo "File Auto-Organizer daemon watching $WATCH_DIR..."

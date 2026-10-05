@@ -75,6 +75,8 @@ let
       kitty
       openssh
       coreutils
+      wakeonlan
+      curl
     ];
     checkPhase = "";
     text = ''

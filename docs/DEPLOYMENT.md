@@ -8,7 +8,7 @@ This manual provides complete step-by-step instructions for provisioning, config
 
 ```mermaid
 graph TD
-    subgraph Pi["🍓 Raspberry Pi 4 (Orchestrator)"]
+    subgraph Pi["Raspberry Pi 4 (Orchestrator)"]
         Argon["Argon ONE Fan Controller"]
         Caddy["Caddy (*.lab + :80 boot-state)"]
         Forgejo["Forgejo + OCI Registry"]
@@ -20,7 +20,7 @@ graph TD
         SyncthingP["Syncthing (Render Sync)"]
     end
 
-    subgraph Desk["🖥️ Desktop (Scale-to-Zero Muscle)"]
+    subgraph Desk["Desktop (Scale-to-Zero Muscle)"]
         GRUB["GRUB Network Boot Router"]
         DesktopSession["Interactive Hyprland (throttled background workers)"]
         WorkerSpec["Worker Specialisation (Headless Server)"]
@@ -31,7 +31,7 @@ graph TD
         Watchdog["Unified Inactivity Watchdog (10m)"]
     end
 
-    subgraph Lap["💻 Laptop (Client)"]
+    subgraph Lap["Laptop (Client)"]
         KanidmC["Kanidm Client (PAM / NSS / offline cache)"]
         Lanza["Lanzaboote Secure Boot"]
     end
@@ -377,8 +377,8 @@ sudo mkfs.btrfs -L docker -f /dev/nvme1n1p1
    ip link show
    ```
 5. Update the MAC address in the RPi4's wake script:
-   - Edit `/etc/nixos/hosts/rpi4/configuration.nix`.
-   - Replace `AA:BB:CC:DD:EE:FF` in `wakeWorkerScript` with your Desktop NIC's actual MAC address.
+   - Configured in `/etc/nixos/hosts/rpi4/configuration.nix` in `wakeWorkerScript`.
+   - Set to `10:ff:e0:40:7d:6e` (enp4s0 NIC).
    - Run `nixos-rebuild switch --flake .#rpi4` on the Pi.
 
 ### 3.3 Deploy Desktop Configuration
@@ -461,7 +461,7 @@ Because `modules/security.nix` is imported by the laptop configuration, the Home
 
 ```bash
 # Verify warning-free HTTPS
-curl -fsSL https://git.lab > /dev/null && echo "✅ Root CA trusted"
+curl -fsSL https://git.lab > /dev/null && echo "Root CA trusted"
 ```
 
 ### 4.5 SSH Key Pairing (Laptop ↔ Cluster)

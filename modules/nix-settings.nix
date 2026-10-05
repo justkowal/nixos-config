@@ -6,7 +6,9 @@
     max-jobs = "auto";
     cores = 0;
     auto-optimise-store = false;
-    connect-timeout = 5;
+    connect-timeout = 3;
+    fallback = true;
+    system-features = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
     substituters = [
       "https://cache.nixos.org"
       "https://hyprland.cachix.org"

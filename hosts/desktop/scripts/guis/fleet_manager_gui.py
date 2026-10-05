@@ -226,11 +226,21 @@ class FleetManagerWindow(Adw.ApplicationWindow):
             btn_ssh.connect("clicked", self._on_ssh_btn_clicked)
             row.add_suffix(btn_ssh)
 
+            btn_wake = None
+            if node_key == "desktop":
+                btn_wake = Gtk.Button(label="󱐋 Wake Desktop")
+                btn_wake.add_css_class("apple-pill-btn")
+                btn_wake.set_valign(Gtk.Align.CENTER)
+                btn_wake.connect("clicked", self._on_wake_btn_clicked)
+                btn_wake.set_visible(False)
+                row.add_suffix(btn_wake)
+
             self.nodes_group.add(row)
             self.node_rows[node_key] = {
                 "row": row,
                 "badge": lbl_badge,
                 "ssh_btn": btn_ssh,
+                "wake_btn": btn_wake,
                 "active_ip": None,
                 "hostname": node_key
             }
@@ -432,6 +442,7 @@ class FleetManagerWindow(Adw.ApplicationWindow):
             row = ui["row"]
             badge = ui["badge"]
             ssh_btn = ui["ssh_btn"]
+            wake_btn = ui.get("wake_btn")
 
             row.set_title(info["title"])
             ui["hostname"] = info["name"]
@@ -440,6 +451,8 @@ class FleetManagerWindow(Adw.ApplicationWindow):
                 row.set_subtitle(f"{info['role']} · Local Host Active")
                 set_badge(badge, "󰄲 Active Local Host", "apple-status-green")
                 ssh_btn.set_visible(False)
+                if wake_btn:
+                    wake_btn.set_visible(False)
             else:
                 active_ip = info["active_ip"]
                 route = info["route_type"]
@@ -455,17 +468,28 @@ class FleetManagerWindow(Adw.ApplicationWindow):
                     row.set_subtitle(f"{info['role']} · {ip_detail}")
                     ssh_btn.set_visible(True)
                     ssh_btn.set_sensitive(True)
+                    if wake_btn:
+                        wake_btn.set_visible(False)
                 elif online:
                     set_badge(badge, f"󰄲 Online ({route})", "apple-status-green")
                     row.set_subtitle(f"{info['role']} · IP: {active_ip}")
                     ssh_btn.set_visible(True)
                     ssh_btn.set_sensitive(True)
+                    if wake_btn:
+                        wake_btn.set_visible(False)
                 else:
-                    set_badge(badge, "󰅙 Offline", "apple-status-red")
-                    last_known = active_ip or "Unresolved"
-                    row.set_subtitle(f"{info['role']} · Target: {last_known}")
-                    ssh_btn.set_visible(True)
-                    ssh_btn.set_sensitive(False)
+                    if not getattr(self, "_waking_desktop", False) or node_key != "desktop":
+                        set_badge(badge, "󰅙 Offline", "apple-status-red")
+                        last_known = active_ip or "Unresolved"
+                        row.set_subtitle(f"{info['role']} · Target: {last_known}")
+                        if wake_btn:
+                            ssh_btn.set_visible(False)
+                            wake_btn.set_visible(True)
+                            wake_btn.set_sensitive(True)
+                            wake_btn.set_label("󱐋 Wake Desktop")
+                        else:
+                            ssh_btn.set_visible(True)
+                            ssh_btn.set_sensitive(False)
 
         # Apply Services Results
         for s_id, s_info in services_status.items():
@@ -490,6 +514,225 @@ class FleetManagerWindow(Adw.ApplicationWindow):
             toast = Adw.Toast.new("Fleet and services probed dynamically")
             toast.set_timeout(2)
             self.toast_overlay.add_toast(toast)
+
+    def _on_wake_btn_clicked(self, btn):
+        dialog = Adw.MessageDialog.new(
+            self,
+            "Wake Desktop Workstation",
+            "Choose wake mode for Desktop Workstation:"
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("desktop", "󰞷 Workstation GUI (Hyprland via Pi)")
+        dialog.add_response("server", "󰒋 Scale-to-Zero (Server via Pi)")
+        dialog.add_response("pi_wol", "󱐋 Direct WoL (Local Pi Ethernet)")
+        dialog.add_response("lan", "󰌢 Laptop Direct Broadcast WoL")
+
+        dialog.set_response_appearance("desktop", Adw.ResponseAppearance.SUGGESTED)
+        dialog.connect("response", self._on_wake_dialog_response)
+        dialog.present()
+
+    def _on_wake_dialog_response(self, dialog, response):
+        if response in ["desktop", "server", "pi_wol", "lan"]:
+            self.execute_wake(response)
+
+    def execute_wake(self, mode: str):
+        self._waking_desktop = True
+        ui = self.node_rows.get("desktop")
+        if not ui:
+            return
+
+        row = ui["row"]
+        badge = ui["badge"]
+        wake_btn = ui.get("wake_btn")
+        ssh_btn = ui.get("ssh_btn")
+
+        if wake_btn:
+            wake_btn.set_sensitive(False)
+            wake_btn.set_label("󱐋 Waking...")
+        set_badge(badge, "󱐋 Sending Signal...", "apple-status-orange")
+
+        mode_titles = {
+            "desktop": "Workstation GUI (via Pi)",
+            "server": "Scale-to-Zero (via Pi)",
+            "pi_wol": "Direct WoL (via Pi)",
+            "lan": "Laptop Direct WoL"
+        }
+        mode_label = mode_titles.get(mode, mode)
+        row.set_subtitle(f"Sending wake signal ({mode_label})...")
+
+        toast = Adw.Toast.new(f"Sending wake signal for {mode_label}...")
+        toast.set_timeout(3)
+        self.toast_overlay.add_toast(toast)
+
+        threading.Thread(target=self._worker_wake, args=(mode, mode_label), daemon=True).start()
+
+    def _worker_wake(self, mode: str, mode_label: str):
+        mac = "10:ff:e0:40:7d:6e"
+
+        # 1. Send Wake Signal via Local Network through Pi or Direct
+        try:
+            if mode == "desktop":
+                self._wake_via_pi("wake-desktop")
+            elif mode == "server":
+                self._wake_via_pi("wake-worker")
+            elif mode == "pi_wol":
+                self._wake_via_pi("wake-wol")
+            elif mode == "lan":
+                self._send_wol_magic_packet(mac)
+        except Exception as e:
+            GLib.idle_add(self._on_wake_error, f"Wake error: {e}")
+            return
+
+        # 2. Polling loop with real-time status reporting
+        t0 = time.time()
+        timeout = 90
+        online = False
+
+        while time.time() - t0 < timeout:
+            elapsed = int(time.time() - t0)
+            GLib.idle_add(self._update_wake_status, elapsed, mode_label)
+
+            if self._check_desktop_online():
+                online = True
+                boot_seconds = int(time.time() - t0)
+                GLib.idle_add(self._on_wake_success, boot_seconds)
+                break
+
+            time.sleep(2)
+
+        if not online:
+            GLib.idle_add(self._on_wake_timeout)
+
+    def _wake_via_pi(self, hook_id: str):
+        # 1. HTTP webhook to Pi 4 (port 9100 on Tailnet/LAN)
+        url = f"http://nixos-rpi4.lab:9100/hooks/{hook_id}"
+        success = False
+        try:
+            req = urllib.request.Request(url, data=b"", headers={"User-Agent": "FleetManager/1.0"}, method="POST")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                if resp.status in (200, 204):
+                    success = True
+        except Exception:
+            pass
+
+        if not success:
+            # 2. Resilient SSH fallback to Pi 4 to execute local wake script
+            try:
+                res = subprocess.run(
+                    ["ssh", "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=no", "justkowal@nixos-rpi4.lab", hook_id],
+                    capture_output=True,
+                    timeout=5
+                )
+                if res.returncode == 0:
+                    success = True
+            except Exception:
+                pass
+
+        # 3. Always dispatch local layer-2 broadcast as secondary safeguard
+        self._send_wol_magic_packet("10:ff:e0:40:7d:6e")
+        return success
+
+    def _send_wol_magic_packet(self, mac_str: str):
+        # Native Python UDP broadcast magic packet
+        raw_mac = bytes.fromhex(mac_str.replace(":", "").replace("-", ""))
+        payload = b'\xff' * 6 + raw_mac * 16
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            sock.sendto(payload, ("255.255.255.255", 9))
+            # Also broadcast on standard local subnets
+            for bcast in ["192.168.1.255", "192.168.0.255", "10.0.0.255"]:
+                try:
+                    sock.sendto(payload, (bcast, 9))
+                except Exception:
+                    pass
+        # Also invoke wakeonlan CLI if available in PATH
+        try:
+            subprocess.run(["wakeonlan", mac_str], capture_output=True, timeout=2)
+        except Exception:
+            pass
+
+    def _post_webhook(self, url: str):
+        req = urllib.request.Request(url, data=b"", headers={"User-Agent": "FleetManager/1.0"}, method="POST")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status
+
+    def _check_desktop_online(self) -> bool:
+        # Check SSH port 22 or ping on DNS candidates
+        for host in ["nixos-desktop.lab", "nixos-desktop.local", "nixos-desktop"]:
+            try:
+                with socket.create_connection((host, 22), timeout=1.0):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _update_wake_status(self, elapsed: int, mode_label: str):
+        ui = self.node_rows.get("desktop")
+        if not ui:
+            return
+        row = ui["row"]
+        badge = ui["badge"]
+        set_badge(badge, f"󱍷 Booting... ({elapsed}s)", "apple-status-orange")
+        row.set_subtitle(f"Workstation · Booting Desktop ({mode_label})... {elapsed}s elapsed")
+
+    def _on_wake_success(self, boot_seconds: int):
+        self._waking_desktop = False
+        ui = self.node_rows.get("desktop")
+        if not ui:
+            return
+        row = ui["row"]
+        badge = ui["badge"]
+        wake_btn = ui.get("wake_btn")
+        ssh_btn = ui.get("ssh_btn")
+
+        set_badge(badge, f"󰄲 Online (Booted in {boot_seconds}s)", "apple-status-green")
+        row.set_subtitle(f"Workstation · Desktop is online and ready! (Booted in {boot_seconds}s)")
+        if wake_btn:
+            wake_btn.set_visible(False)
+        if ssh_btn:
+            ssh_btn.set_visible(True)
+            ssh_btn.set_sensitive(True)
+
+        toast = Adw.Toast.new("󰄲 Desktop is online! Ready for SSH and Sunshine.")
+        toast.set_timeout(4)
+        self.toast_overlay.add_toast(toast)
+        self.trigger_full_probe(show_toast=False)
+
+    def _on_wake_timeout(self):
+        self._waking_desktop = False
+        ui = self.node_rows.get("desktop")
+        if not ui:
+            return
+        row = ui["row"]
+        badge = ui["badge"]
+        wake_btn = ui.get("wake_btn")
+
+        set_badge(badge, "󰅙 Wake Timed Out", "apple-status-red")
+        row.set_subtitle("Workstation · No response after 90 seconds. Check power or cable.")
+        if wake_btn:
+            wake_btn.set_sensitive(True)
+            wake_btn.set_label("󱐋 Retry Wake")
+
+        toast = Adw.Toast.new("󰅙 Timed out waiting for Desktop to boot after 90s")
+        toast.set_timeout(4)
+        self.toast_overlay.add_toast(toast)
+
+    def _on_wake_error(self, err_msg: str):
+        self._waking_desktop = False
+        ui = self.node_rows.get("desktop")
+        if not ui:
+            return
+        badge = ui["badge"]
+        wake_btn = ui.get("wake_btn")
+
+        set_badge(badge, "󰅙 Wake Failed", "apple-status-red")
+        if wake_btn:
+            wake_btn.set_sensitive(True)
+            wake_btn.set_label("󱐋 Retry Wake")
+
+        toast = Adw.Toast.new(f"󰅙 {err_msg}")
+        toast.set_timeout(4)
+        self.toast_overlay.add_toast(toast)
 
     def on_ssh_clicked(self, hostname: str, target_ip: str):
         if not target_ip:

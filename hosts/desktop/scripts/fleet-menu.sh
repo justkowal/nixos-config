@@ -34,7 +34,8 @@ resolve_target_ip() {
 }
 
 if [ "$IS_LAPTOP" = true ]; then
-  REMOTE_PEER_LABEL="󰞷 SSH into Desktop Workstation"
+  REMOTE_PEER_LABEL="󰞷 SSH into Desktop Workstation
+󱐋 Wake Desktop Workstation"
 else
   REMOTE_PEER_LABEL="󰌢 SSH into ThinkPad Laptop"
 fi
@@ -76,6 +77,15 @@ case "$CHOICE" in
   *"SSH into Desktop"*)
     DESK_IP=$(resolve_target_ip "nixos-desktop")
     kitty --title "SSH: nixos-desktop ($DESK_IP)" -e ssh "justkowal@$DESK_IP" &
+    ;;
+  *"Wake Desktop"*)
+    if [ -x "$(command -v wake-desktop)" ]; then
+      wake-desktop desktop >/dev/null 2>&1 &
+    else
+      curl -s -X POST http://nixos-rpi4.lab:9100/hooks/wake-desktop 2>/dev/null || true
+      wakeonlan 10:ff:e0:40:7d:6e 2>/dev/null || true
+    fi
+    notify-send -u normal -i network-wireless "󱐋 Wake-on-LAN" "Dispatched wake signal to Desktop" &
     ;;
   *"System Control Center"*) control-center-gui & ;;
   *"Seamless Mouse"*) lan-mouse-gui & ;;

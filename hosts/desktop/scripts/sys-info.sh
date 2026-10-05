@@ -91,6 +91,57 @@ else
     MEM_TOTAL_GB="0"
 fi
 
+# Dynamic GPU model resolution
+GPU_NAME=""
+if command -v lspci >/dev/null 2>&1; then
+    vga_line=$(lspci -d ::0300 2>/dev/null | head -n1)
+    [ -z "$vga_line" ] && vga_line=$(lspci 2>/dev/null | grep -E "VGA|3D|Display" | head -n1)
+    if [ -n "$vga_line" ]; then
+        cleaned=$(echo "$vga_line" | sed -E "
+            s/.*controller: //;
+            s/.*controller \[[0-9a-fA-F]+\]: //;
+            s/Advanced Micro Devices, Inc\. \[[^]]*\] //g;
+            s/NVIDIA Corporation //g;
+            s/Intel Corporation //g;
+            s/\(rev [0-9a-fA-F]+\)//g;
+            s/\[[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\]//g;
+        ")
+        if echo "$cleaned" | grep -qi "6700"; then
+            GPU_NAME="Radeon RX 6700 XT"
+        elif echo "$cleaned" | grep -qi "Vega"; then
+            GPU_NAME="Radeon Vega Graphics"
+        elif echo "$cleaned" | grep -qi "Renoir"; then
+            GPU_NAME="Radeon Graphics (Renoir)"
+        else
+            GPU_NAME=$(echo "$cleaned" | sed -E "s/.*\[([^]]+)\].*/\1/" | sed "s/^[ \t]*//;s/[ \t]*$//")
+        fi
+    fi
+fi
+
+if [ -z "$GPU_NAME" ] || [ "$GPU_NAME" = "GPU" ]; then
+    for card_dev in /sys/class/drm/card*/device; do
+        if [ -f "$card_dev/device" ]; then
+            dev_id=$(cat "$card_dev/device" 2>/dev/null || true)
+            if [ "$dev_id" = "0x73df" ]; then
+                GPU_NAME="Radeon RX 6700 XT"
+                break
+            elif [ "$dev_id" = "0x1636" ] || [ "$dev_id" = "0x1638" ]; then
+                GPU_NAME="Radeon Vega Graphics"
+                break
+            fi
+        fi
+    done
+fi
+
+if [ -z "$GPU_NAME" ]; then
+    curr_host=$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || echo "")
+    if [[ "$curr_host" == *"laptop"* || "$curr_host" == *"thinkpad"* || "$curr_host" == *"t14s"* ]]; then
+        GPU_NAME="Radeon Vega Graphics"
+    else
+        GPU_NAME="Radeon RX 6700 XT"
+    fi
+fi
+
 # Storage usage for main filesystem (/nix or /)
 DISK_INFO=$(df -h /nix / 2>/dev/null | awk 'NR==2 {print $3, $2, $5}')
 DISK_USED=$(echo "$DISK_INFO" | awk '{print $1}')
@@ -105,7 +156,7 @@ TOOLTIP=$(cat <<EOF
 ── 󰍛 System Hardware Telemetry ─────────────────
 󰻠 Processor: ${CPU_UTIL}% utilized (${CPU_TEMP}°C)
   └─ Load Average: ${LOAD_AVG}
-󰾲 Graphics: RX 6700 XT · ${GPU_UTIL}% utilized (${GPU_TEMP}°C)
+󰾲 Graphics: ${GPU_NAME} · ${GPU_UTIL}% utilized (${GPU_TEMP}°C)
 󰍛 Memory: ${MEM_PCT}% utilized (${MEM_USED_GB} / ${MEM_TOTAL_GB} GiB)
 󰋊 Storage: ${DISK_PCT} utilized (${DISK_USED} / ${DISK_TOTAL})
 ─────────────────────────────────────────────────

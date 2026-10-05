@@ -24,7 +24,13 @@
     dataDir = "/home/justkowal/Sync";
     configDir = "/home/justkowal/.config/syncthing";
     openDefaultPorts = true;
+    overrideDevices = false;
+    overrideFolders = false;
   };
+
+  environment.systemPackages = with pkgs; [
+    wakeonlan
+  ];
 
   programs.mosh.enable = true;
 }

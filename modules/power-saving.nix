@@ -27,9 +27,9 @@
         echo "              POWER SAVING MODE STATUS                     "
         echo "═══════════════════════════════════════════════════════════"
         if is_ultra; then
-          echo "  Mode:                   [ ULTRA LOW POWER ACTIVE ] (🔋)"
+          echo "  Mode:                   [ ULTRA LOW POWER ACTIVE ]"
         else
-          echo "  Mode:                   [ STANDARD / BALANCED ] (⚡)"
+          echo "  Mode:                   [ STANDARD / BALANCED ]"
         fi
         echo "  Active Kernel:          $(uname -r)"
 
@@ -108,7 +108,7 @@
         fi
 
         if command -v notify-send >/dev/null 2>&1; then
-          notify-send -u normal -i battery-empty "Power Mode" "🔋 Switched to Ultra Low Power Mode\n• CPU Boost disabled & SMT parked\n• PCIe ASPM powersupersave\n• Panel ABM level 4 enabled"
+          notify-send -u normal -i battery-empty "Power Mode" "Switched to Ultra Low Power Mode\n• CPU Boost disabled & SMT parked\n• PCIe ASPM powersupersave\n• Panel ABM level 4 enabled"
         fi
         echo "Successfully activated Ultra Low Power Mode."
       }
@@ -140,7 +140,7 @@
         fi
 
         if command -v notify-send >/dev/null 2>&1; then
-          notify-send -u normal -i battery-good "Power Mode" "⚡ Restored Standard Power Mode\n• CPU Boost enabled\n• SMT enabled (all threads active)\n• Full system performance"
+          notify-send -u normal -i battery-good "Power Mode" "Restored Standard Power Mode\n• CPU Boost enabled\n• SMT enabled (all threads active)\n• Full system performance"
         fi
         echo "Successfully restored Standard Power Mode."
       }

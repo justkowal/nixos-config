@@ -59,8 +59,16 @@
       maxJobs = 16;
       speedFactor = 2;
       supportedFeatures = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
+      mandatoryFeatures = [ ];
     }
   ];
+
+  # Fast-fail SSH timeout (3s) for remote builder so offline desktop never hangs builds
+  programs.ssh.extraConfig = ''
+    Host nixos-desktop.lab desktop.lab
+      ConnectTimeout 3
+      ConnectionAttempts 1
+  '';
 
   home-manager.backupFileExtension = "backup";
   home-manager.extraSpecialArgs = {
@@ -322,9 +330,10 @@
     extraUpFlags = [ "--accept-routes" ];
   };
 
-  # Ensure Syncthing, Notes, GameSaves, and Documents directories exist with correct user ownership
+  # Ensure Syncthing, Render, Notes, GameSaves, and Documents directories exist with correct user ownership
   systemd.tmpfiles.rules = [
     "d /home/justkowal/Sync 0755 justkowal users -"
+    "d /home/justkowal/Sync/Render 0755 justkowal users -"
     "d /home/justkowal/Sync/Notes 0755 justkowal users -"
     "d /home/justkowal/Sync/GameSaves 0755 justkowal users -"
     "d /home/justkowal/Sync/Documents 0755 justkowal users -"

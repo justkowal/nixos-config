@@ -32,12 +32,19 @@
 
   fleet-menu = pkgs.writeShellApplication {
     name = "fleet-menu";
-    runtimeInputs = with pkgs; [rofi xdg-utils kitty libnotify openssh coreutils];
+    runtimeInputs = with pkgs; [rofi xdg-utils kitty libnotify openssh coreutils wakeonlan curl];
     checkPhase = "";
     text = builtins.readFile ./scripts/fleet-menu.sh;
   };
+
+  wake-desktop = pkgs.writeShellApplication {
+    name = "wake-desktop";
+    runtimeInputs = with pkgs; [wakeonlan curl openssh coreutils];
+    checkPhase = "";
+    text = builtins.readFile ./scripts/wake-desktop.sh;
+  };
 in {
-  home.packages = [sys-info pomodoro pip-toggle fleet-status fleet-menu];
+  home.packages = [sys-info pomodoro pip-toggle fleet-status fleet-menu wake-desktop];
 
   programs.waybar = {
     enable = true;

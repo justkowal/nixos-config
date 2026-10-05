@@ -9,12 +9,12 @@ This directory contains the detailed documentation for the `/etc/nixos` Flake co
 
 | Topic | Description |
 | :--- | :--- |
-| 🏗️ [**System Architecture**](SYSTEM_ARCHITECTURE.md) | Flake targets, XanMod custom kernel, ROCm setup, storage, and tuning. |
-| 🚀 [**Deployment Guide**](DEPLOYMENT.md) | Step-by-step homelab deployment (RPi4 orchestrator, Desktop worker, Laptop client). |
-| 📖 [**Usage & Operations Manual**](USAGE.md) | Accessing services from laptop, Kanidm SSO, Forgejo, Woodpecker, Flamenco, and SSH sandbox. |
-| 🎨 [**Desktop Environment**](DESKTOP_ENVIRONMENT.md) | Hyprland, Waybar, Rofi, Kitty, and full keybinding reference. |
-| 🤖 [**Ambient AI Suite**](AMBIENT_AI.md) | Local Gemma models, vector indexing, AI daemons, and shell integrations. |
-| 🌐 [**Networking & VPN**](NETWORKING_AND_VPN.md) | Tailscale, Syncthing, Firewall rules, and isolated network namespaces. |
+| [**System Architecture**](SYSTEM_ARCHITECTURE.md) | Flake targets, XanMod custom kernel, ROCm setup, storage, and tuning. |
+| [**Deployment Guide**](DEPLOYMENT.md) | Step-by-step homelab deployment (RPi4 orchestrator, Desktop worker, Laptop client). |
+| [**Usage & Operations Manual**](USAGE.md) | Accessing services from laptop, Kanidm SSO, Forgejo, Woodpecker, Flamenco, and SSH sandbox. |
+| [**Desktop Environment**](DESKTOP_ENVIRONMENT.md) | Hyprland, Waybar, Rofi, Kitty, and full keybinding reference. |
+| [**Ambient AI Suite**](AMBIENT_AI.md) | Local Gemma models, vector indexing, AI daemons, and shell integrations. |
+| [**Networking & VPN**](NETWORKING_AND_VPN.md) | Tailscale, Syncthing, Firewall rules, and isolated network namespaces. |
 
 ## Quick Command Reference
 

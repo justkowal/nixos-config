@@ -44,6 +44,19 @@
       }
 
       alias discord = vesktop
+      alias rebuild = nix-builder
+      alias nix-shell = nix-builder nix-shell
+      alias dev = nix-builder nix develop
+      alias nd = nix-builder nix develop
+
+      def --wrapped nix [...args] {
+        let sub = ($args | get -o 0)
+        if ($sub in ["develop", "shell", "build"]) {
+          ^nix-builder nix ...$args
+        } else {
+          ^nix ...$args
+        }
+      }
     '';
   };
 
