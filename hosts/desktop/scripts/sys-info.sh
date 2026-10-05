@@ -151,7 +151,11 @@ DISK_PCT=$(echo "$DISK_INFO" | awk '{print $3}')
 # System load average
 LOAD_AVG=$(awk '{print $1, $2, $3}' /proc/loadavg 2>/dev/null || echo "0.0 0.0 0.0")
 
-TEXT="󰻠 ${CPU_UTIL}% (${CPU_TEMP}°C)  󰾲 ${GPU_UTIL}% (${GPU_TEMP}°C)"
+if [[ "$curr_host" == *"laptop"* || "$curr_host" == *"thinkpad"* || "$curr_host" == *"t14s"* ]]; then
+  TEXT="󰻠 ${CPU_TEMP}°"
+else
+  TEXT="󰻠 ${CPU_TEMP}° 󰾲 ${GPU_TEMP}°"
+fi
 TOOLTIP=$(cat <<EOF
 ── 󰍛 System Hardware Telemetry ─────────────────
 󰻠 Processor: ${CPU_UTIL}% utilized (${CPU_TEMP}°C)

@@ -118,6 +118,8 @@ in {
     lan-mouse-gui
     fleet-manager-gui
     tablet-display-gui
+    pkgs.nixd
+    pkgs.alejandra
   ];
 
   programs.kitty = {
@@ -242,6 +244,8 @@ in {
       extensions = with pkgs.vscode-extensions; [
         bbenoist.nix
         kamadorueda.alejandra
+        jnoortheen.nix-ide
+        mkhl.direnv
       ];
       userSettings = {
         "workbench.colorTheme" = "Matugen";
@@ -250,6 +254,7 @@ in {
         "editor.formatOnSave" = true;
         "nix.enableLanguageServer" = true;
         "nix.serverPath" = "nixd";
+        "nix.formatterPath" = "alejandra";
         "git.enabled" = true;
         "git.path" = "${pkgs.git}/bin/git";
         "git.autofetch" = true;

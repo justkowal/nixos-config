@@ -116,11 +116,11 @@ in {
         };
 
         bluetooth = {
-          format = "󰂯 {status}";
-          format-connected = "󰂱 {device_alias}";
-          format-connected-battery = "󰂱 {device_alias} ({device_battery_percentage}%)";
-          tooltip-format = "{controller_alias}\t{controller_address}\n\n{num_connections} connected";
-          tooltip-format-connected = "{controller_alias}\t{controller_address}\n\n{num_connections} connected\n\n{device_enumerate}";
+          format = "󰂯";
+          format-connected = "󰂱";
+          format-connected-battery = "󰂱 {device_battery_percentage}%";
+          tooltip-format = "{controller_alias} · {status}\n{num_connections} connected";
+          tooltip-format-connected = "{controller_alias}\n{num_connections} connected\n\n{device_enumerate}";
           tooltip-format-enumerate-connected = "{device_alias}\t{device_address}";
           on-click = "${pkgs.blueman}/bin/blueman-manager";
         };
@@ -159,10 +159,12 @@ in {
         };
 
         "network" = {
-          format-wifi = "󰖩 {essid}";
-          format-ethernet = "󰈀 Wired";
-          format-disconnected = "󰖪 Disconnected";
-          tooltip-format = "{ifname} via {gwaddr}";
+          format-wifi = "󰖩";
+          format-ethernet = "󰈀";
+          format-disconnected = "󰖪";
+          tooltip-format-wifi = "{essid}\n{ifname} · {ipaddr}/{cidr}\nSignal: {signalStrength}% · via {gwaddr}";
+          tooltip-format-ethernet = "{ifname} · {ipaddr}/{cidr}\nvia {gwaddr}";
+          tooltip-format-disconnected = "No network connection";
           on-click = "kitty --class network_tui -e nmtui";
         };
 
@@ -365,6 +367,12 @@ in {
       }
       #custom-power:hover {
         background-color: alpha(@error_container, 0.65);
+      }
+
+      /* Trailing action cluster: transparent until hovered (menu-bar-extra style) */
+      #custom-controlcenter, #custom-thinkdot, #custom-notification, #custom-power {
+        background-color: transparent;
+        margin: 3px 1px;
       }
 
       #pulseaudio:hover, #network:hover, #custom-fleet:hover, #custom-sysinfo:hover, #clock:hover, #clock.date:hover {
