@@ -7,6 +7,18 @@ let
     checkPhase = "";
     text = builtins.readFile ../hosts/desktop/scripts/nix-builder-prompt.sh;
   };
+
+  nixCachePush = pkgs.writeShellScriptBin "nix-cache-push" ''
+    set -euo pipefail
+    TARGET="ssh://justkowal@nixos-rpi4.lab"
+    if [ "$#" -eq 0 ]; then
+      echo "Pushing current system to Pi cache (nixos-rpi4.lab)..."
+      exec nix copy --to "$TARGET" /run/current-system
+    else
+      echo "Pushing store paths to Pi cache (nixos-rpi4.lab)..."
+      exec nix copy --to "$TARGET" "$@"
+    fi
+  '';
 in
 {
   # Nushell and bash available system-wide
@@ -63,6 +75,7 @@ in
     eza
     fastfetch
     nixBuilder
+    nixCachePush
   ];
 
   environment.sessionVariables = {

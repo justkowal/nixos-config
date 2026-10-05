@@ -47,6 +47,7 @@ MENU_ITEMS="󰖟 Homelab Portal (Glance) — https://lab
 󰌆 Kanidm Identity Provider — https://idm.lab
 󰌾 Vaultwarden Password Manager — https://vault.lab
 󰃁 Shiori Bookmarks & Archives — https://bookmarks.lab
+󰒋 Binary Cache (Harmonia) — https://cache.lab
 󰒋 SSH into RPi4 Homelab Server
 ${REMOTE_PEER_LABEL}
 󰕮 System Control Center (GUI)
@@ -56,7 +57,7 @@ ${REMOTE_PEER_LABEL}
 󰚰 Review Staged NixOS System Update
 󰡏 Run Fleet Health Probe"
 
-CHOICE=$(echo -e "$MENU_ITEMS" | rofi -dmenu -i -p "Fleet & Services" -font "Outfit 12" -theme-str 'window {width: 680px;} listview {lines: 15;} element {padding: 8px 12px;}')
+CHOICE=$(echo -e "$MENU_ITEMS" | rofi -dmenu -i -p "Fleet & Services" -font "Outfit 12" -theme-str 'window {width: 680px;} listview {lines: 16;} element {padding: 8px 12px;}')
 
 case "$CHOICE" in
   *"Homelab Portal"*) xdg-open "https://lab" & ;;
@@ -66,6 +67,7 @@ case "$CHOICE" in
   *"Kanidm"*) xdg-open "https://idm.lab" & ;;
   *"Vaultwarden"*) xdg-open "https://vault.lab" & ;;
   *"Shiori"*) xdg-open "https://bookmarks.lab" & ;;
+  *"Binary Cache"*) xdg-open "https://cache.lab" & ;;
   *"SSH into RPi4"*)
     RPI_IP=$(resolve_target_ip "nixos-rpi4")
     kitty --title "SSH: nixos-rpi4 ($RPI_IP)" -e ssh "justkowal@$RPI_IP" &

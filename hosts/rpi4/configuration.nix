@@ -229,6 +229,7 @@ in {
     "vault.lab"
     "ntfy.lab"
     "status.lab"
+    "cache.lab"
   ];
   networking.hosts."100.109.222.110" = [ "nixos-desktop" "nixos-desktop.lab" ];
   networking.hosts."100.69.154.81" = [ "thinkpad-t14s-gen1-amd" "thinkpad-t14s-gen1-amd.lab" ];
@@ -423,6 +424,12 @@ in {
         extraConfig = ''
           tls internal
           reverse_proxy localhost:28981
+        '';
+      };
+      "https://cache.lab" = {
+        extraConfig = ''
+          tls internal
+          reverse_proxy localhost:5000
         '';
       };
     };
@@ -628,6 +635,7 @@ in {
     validateSopsFiles = false;
     secrets."tailscale_auth_key" = {};
     secrets."cloudflare_tunnel_credentials" = {};
+    secrets."harmonia_signing_key" = {};
   };
 
   # ── Forgejo (Git forge + OCI container registry) ───────────────────────
@@ -960,6 +968,7 @@ in {
           "vault.lab" = "100.113.193.14";
           "ntfy.lab" = "100.113.193.14";
           "status.lab" = "100.113.193.14";
+          "cache.lab" = "100.113.193.14";
           "thinkpad-t14s-gen1-amd.lab" = "100.69.154.81";
           "nixos-desktop.lab" = "100.109.222.110";
         };
@@ -975,6 +984,13 @@ in {
         };
       };
     };
+  };
+
+  # ── Harmonia: Shared Binary Cache ──────────────────────────────────────
+  services.harmonia.cache = {
+    enable = true;
+    signKeyPaths = [ config.sops.secrets."harmonia_signing_key".path ];
+    settings.bind = "127.0.0.1:5000";
   };
 
   system.stateVersion = "26.05";

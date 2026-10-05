@@ -48,6 +48,7 @@
     "bookmarks.lab"
     "render.lab"
     "portfolio.lab"
+    "cache.lab"
   ];
 
   nix.buildMachines = [
