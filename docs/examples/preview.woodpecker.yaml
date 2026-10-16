@@ -1,0 +1,29 @@
+# TEMPLATE for a web project repo on git.lab (copy to <project>/.woodpecker/preview.yaml).
+# The project flake must export nixosConfigurations.container with boot.isNspawnContainer = true,
+# a service on port 80 and networking.firewall.allowedTCPPorts = [ 80 ].
+# Result: http://<name>.dev.lab, name = first chars of the repo + "-" + PR number (max 11 chars).
+# shell vars are written $${VAR} because woodpecker substitutes plain $VAR before the shell sees it.
+labels:
+  backend: local
+  type: preview
+
+skip_clone: true
+
+when:
+  - event: [pull_request, pull_request_closed]
+
+steps:
+  - name: preview
+    image: bash
+    commands:
+      - pr="$${CI_COMMIT_PULL_REQUEST}"
+      - base="$(printf '%s' "$${CI_REPO_NAME}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | tr -d '\n')"
+      - name="$(printf '%s' "$${base}" | cut -c1-$(( 10 - $${#pr} )))-$${pr}"
+      - case "$${name}" in [a-z]*) ;; *) name="p$${name}"; name="$${name:0:11}" ;; esac
+      - action=create; [ "$${CI_PIPELINE_EVENT}" = pull_request_closed ] && action=destroy
+      - flake="git+https://git.lab/$${CI_REPO}?rev=$${CI_COMMIT_SHA}#container"
+      - spool=/var/spool/preview-envs
+      - jq -n --arg a "$${action}" --arg n "$${name}" --arg f "$${flake}" '{action:$a,name:$n,flake:$f}' > "$${spool}/.$${name}.tmp"
+      # rename so the watcher only ever sees complete files
+      - mv "$${spool}/.$${name}.tmp" "$${spool}/$${name}.json"
+      - echo "$${action} requested for http://$${name}.dev.lab (progress - journalctl -u preview-envs on the desktop)"

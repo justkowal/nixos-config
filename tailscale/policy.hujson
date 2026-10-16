@@ -1,0 +1,100 @@
+// Tailnet policy. Applied by .woodpecker/tailscale-acl.yaml on push to main,
+// validated (including the tests block) on every pull request.
+// The whole file replaces the policy in the admin console, so edit it here, not there.
+//
+// Re-tagging a node (tagging drops user ownership and disables key expiry):
+//   admin console: Machines -> node -> Edit ACL tags
+//   or on the node: sudo tailscale up --reset --advertise-tags=tag:worker <existing flags>
+//   (for NixOS hosts put --advertise-tags in services.tailscale.extraUpFlags so a rejoin keeps it)
+// Mapping: nixos-rpi4 = tag:orchestrator, nixos-desktop = tag:worker,
+//          thinkpad-t14s-gen1-amd and the phone = tag:roaming.
+// Untagged devices you are logged in on keep full access (bootstrap grant below),
+// so a bad tag can never lock you out; the admin console is not subject to this policy.
+{
+	"tagOwners": {
+		"tag:orchestrator": ["autogroup:admin"],
+		"tag:worker":       ["autogroup:admin"],
+		"tag:roaming":      ["autogroup:admin"],
+	},
+
+	"hosts": {
+		"home-lan": "192.168.1.0/24",
+	},
+
+	// rpi4 advertises the home LAN and an exit node (services.tailscale.extraUpFlags)
+	"autoApprovers": {
+		"routes":   {"192.168.1.0/24": ["tag:orchestrator"]},
+		"exitNode": ["tag:orchestrator"],
+	},
+
+	"grants": [
+		// bootstrap: your own untagged devices reach everything. Drop once every node is tagged.
+		{"src": ["autogroup:member"], "dst": ["*"], "ip": ["*"]},
+
+		// servers trust each other fully for now; tighten after the tests have been green a while
+		{"src": ["tag:orchestrator", "tag:worker"], "dst": ["tag:orchestrator", "tag:worker"], "ip": ["*"]},
+
+		// everything on the rpi4 that clients use: ssh, mosh, Blocky DNS, Caddy (*.lab incl.
+		// cache.lab harmonia, restic.lab, metrics.lab, render.lab, *.dev.lab), wake hooks, VictoriaMetrics
+		{
+			"src": ["tag:roaming"],
+			"dst": ["tag:orchestrator"],
+			"ip": [
+				"tcp:22", "udp:60000-61000",
+				"tcp:53", "udp:53",
+				"tcp:80", "tcp:443",
+				"tcp:9100",
+				"tcp:8428",
+				"tcp:22000", "udp:22000",
+			],
+		},
+
+		// laptop/phone to desktop: ssh + nix remote builds, mosh, syncthing, lan-mouse,
+		// kdeconnect, Sunshine/Moonlight
+		{
+			"src": ["tag:roaming"],
+			"dst": ["tag:worker"],
+			"ip": [
+				"tcp:22", "udp:60000-61000",
+				"tcp:22000", "udp:22000",
+				"tcp:4242", "udp:4242",
+				"tcp:1714-1764", "udp:1714-1764",
+				"tcp:47984", "tcp:47989", "tcp:47990", "tcp:48010",
+				"udp:47998-48000", "udp:48002", "udp:48010",
+			],
+		},
+
+		// inbound to roaming devices: ssh (desktop builds on the laptop), syncthing,
+		// lan-mouse and kdeconnect from the desktop, and roaming peers to each other
+		{"src": ["tag:worker", "tag:orchestrator"], "dst": ["tag:roaming"], "ip": ["tcp:22", "tcp:22000", "udp:22000"]},
+		{"src": ["tag:worker"], "dst": ["tag:roaming"], "ip": ["tcp:4242", "udp:4242", "tcp:1714-1764", "udp:1714-1764"]},
+		{"src": ["tag:roaming"], "dst": ["tag:roaming"], "ip": ["tcp:22", "tcp:22000", "udp:22000", "tcp:1714-1764", "udp:1714-1764"]},
+
+		// exit node and LAN subnet via the rpi4 (WoL, router, printer)
+		{"src": ["tag:roaming"], "dst": ["autogroup:internet", "home-lan"], "ip": ["*"]},
+	],
+
+	"tests": [
+		{
+			"src":    "tag:roaming",
+			"accept": ["tag:orchestrator:443", "tag:orchestrator:80", "tag:orchestrator:22", "tag:orchestrator:9100", "tag:orchestrator:8428", "tag:worker:22", "tag:worker:47984"],
+			"deny":   ["tag:orchestrator:9000", "tag:orchestrator:8000", "tag:worker:80", "tag:worker:8080"],
+		},
+		{
+			"src":    "tag:roaming",
+			"proto":  "udp",
+			"accept": ["tag:orchestrator:53", "tag:worker:47998", "tag:worker:4242"],
+		},
+		{
+			"src":    "tag:worker",
+			"accept": ["tag:orchestrator:9000", "tag:orchestrator:443", "tag:orchestrator:22", "tag:orchestrator:8428", "tag:roaming:22"],
+			"deny":   ["tag:roaming:443", "tag:roaming:9000", "tag:roaming:8384"],
+		},
+		{
+			// preview ingress: rpi4 caddy to the desktop caddy
+			"src":    "tag:orchestrator",
+			"accept": ["tag:worker:80", "tag:roaming:22"],
+			"deny":   ["tag:roaming:80", "tag:roaming:443", "tag:roaming:4242"],
+		},
+	],
+}

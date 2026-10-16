@@ -1,0 +1,54 @@
+# validates tailscale/policy.hujson (tests block included) on PRs, applies it on main.
+# shell vars are written $${VAR} because woodpecker substitutes plain $VAR before the shell sees it.
+labels:
+  backend: local
+
+when:
+  - event: pull_request
+    path: "tailscale/**"
+  - event: push
+    branch: main
+    path: "tailscale/**"
+
+steps:
+  - name: validate
+    image: bash
+    environment:
+      TS_API_KEY:
+        from_secret: tailscale_api_key
+    commands:
+      - curl="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#curl.bin)/bin/curl"
+      - trap 'rm -f auth.hdr' EXIT
+      - umask 077; printf 'Authorization: Bearer %s\n' "$${TS_API_KEY}" > auth.hdr
+      - >-
+        "$${curl}" -sS -o resp.json -w '%{http_code}' -H @auth.hdr
+        -H 'Content-Type: application/hujson' --data-binary @tailscale/policy.hujson
+        https://api.tailscale.com/api/v2/tailnet/-/acl/validate > code
+      - cat resp.json; echo
+      # 200 with an empty body or {} means the policy parsed and every test passed
+      - test "$(cat code)" = 200 && case "$(tr -d ' \n\r' < resp.json)" in ''|'{}') true ;; *) false ;; esac
+
+  - name: apply
+    image: bash
+    environment:
+      TS_API_KEY:
+        from_secret: tailscale_api_key
+    commands:
+      - curl="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#curl.bin)/bin/curl"
+      - trap 'rm -f auth.hdr' EXIT
+      - umask 077; printf 'Authorization: Bearer %s\n' "$${TS_API_KEY}" > auth.hdr
+      # If-Match makes the apply fail instead of clobbering an edit made in the console since this GET
+      - >-
+        "$${curl}" -fsS -D headers -o /dev/null -H @auth.hdr -H 'Accept: application/hujson'
+        https://api.tailscale.com/api/v2/tailnet/-/acl
+      # the agent PATH has no sed/grep, so parse the header in bash
+      - etag="$(while IFS= read -r l; do case "$${l,,}" in etag:*) printf '%s' "$${l#*:}" ;; esac; done < headers | tr -d ' \r')"
+      - test -n "$${etag}"
+      - >-
+        "$${curl}" -fsS -H @auth.hdr -H "If-Match: $${etag}"
+        -H 'Content-Type: application/hujson' --data-binary @tailscale/policy.hujson
+        https://api.tailscale.com/api/v2/tailnet/-/acl > /dev/null
+      - echo "policy applied"
+    when:
+      - event: push
+        branch: main
