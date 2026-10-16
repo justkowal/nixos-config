@@ -48,6 +48,7 @@
       alias nix-shell = nix-builder nix-shell
       alias dev = nix-builder nix develop
       alias nd = nix-builder nix develop
+      alias cl = claude
 
       def --wrapped nix [...args] {
         let sub = ($args | get -o 0)

@@ -1,4 +1,5 @@
 {
+  config,
   pkgs,
   lib,
   laptop ? false,
@@ -13,7 +14,7 @@
 
   brightness-osd = pkgs.writeShellApplication {
     name = "brightness-osd";
-    runtimeInputs = with pkgs; [brightnessctl ddcutil gnugrep swayosd gawk coreutils];
+    runtimeInputs = with pkgs; [brightnessctl ddcutil gnugrep swayosd gawk coreutils jq hyprland];
     text = builtins.readFile ./scripts/brightness-osd.sh;
   };
 
@@ -27,6 +28,12 @@
     name = "change-wallpaper";
     runtimeInputs = with pkgs; [findutils coreutils awww matugen libnotify];
     text = builtins.readFile ./scripts/change-wallpaper.sh;
+  };
+
+  monitor-ctl = pkgs.writeShellApplication {
+    name = "monitor-ctl";
+    runtimeInputs = with pkgs; [hyprland jq socat awww gnugrep coreutils systemd libnotify rofi procps];
+    text = builtins.readFile ./scripts/monitor-ctl.sh;
   };
 
   resize-split = pkgs.writeShellApplication {
@@ -47,6 +54,12 @@
     name = "tablet-display";
     runtimeInputs = with pkgs; [jq hyprland swayosd coreutils];
     text = builtins.readFile ./scripts/tablet-display.sh;
+  };
+
+  caffeine = pkgs.writeShellApplication {
+    name = "caffeine";
+    runtimeInputs = with pkgs; [coreutils gnugrep procps systemd libnotify swayosd];
+    text = builtins.readFile ./scripts/caffeine.sh;
   };
 
   unlock-keyring = pkgs.writers.writePython3Bin "unlock-keyring-tool" {
@@ -104,9 +117,11 @@ in {
       brightness-osd
       power-menu
       change-wallpaper
+      monitor-ctl
       resize-split
       cliphist-picker
       tablet-display
+      caffeine
       pkgs.swayosd
     ]
     ++ lib.optionals laptop [pkgs.blueman pkgs.brightnessctl unlock-keyring];
@@ -115,7 +130,19 @@ in {
     enable = true;
     configType = "hyprlang";
     extraConfig = ''
-          monitor=,preferred,auto,1
+        ${
+            if laptop
+            then ''
+              # external screens sit centered above the panel
+              monitor=eDP-1,preferred,0x0,1
+              monitor=,preferred,auto-center-up,1,vrr,2
+              # placements picked from the new-display toast (monitor-ctl), keyed by edid description
+              source = ~/.config/hypr/monitors.conf
+            ''
+            else ''
+              monitor=,preferred,auto,1
+            ''
+          }
 
           # Default fallback colors (overridden by matugen.conf if present)
           $background = rgba(1a1111ff)
@@ -237,13 +264,13 @@ in {
           exec-once = ${pkgs.bash}/bin/bash -c "sleep 1 && if [ -f /etc/keyring.cred ]; then systemctl start unlock-keyring.service; fi"
         ''}
           exec-once = systemctl --user start waybar
+          exec-once = monitor-ctl listen
           exec-once = ${pkgs.bash}/bin/bash -c "sleep 1 && ${pkgs.awww}/bin/awww img /home/justkowal/Pictures/wallpaper.png --transition-type wipe --transition-step 90 && ${pkgs.matugen}/bin/matugen image --source-color-index 0 /home/justkowal/Pictures/wallpaper.png"
         ${lib.optionalString laptop ''
         exec-once = blueman-applet
       ''}
           exec-once = [workspace special:term silent] kitty --class scratchpad
           exec-once = easyeffects --gapplication-service
-          exec-once = ${pkgs.swayosd}/bin/swayosd-server
           exec-once = kdeconnect-indicator
 
           $mod = SUPER
@@ -308,6 +335,14 @@ in {
           bind = $mod SHIFT, mouse:275, movetoworkspace, r-1
           bind = $mod SHIFT, mouse:276, movetoworkspace, r+1
 
+          # Multi-monitor
+          bind = $mod, comma, focusmonitor, -1
+          bind = $mod, period, focusmonitor, +1
+          bind = $mod SHIFT, comma, movewindow, mon:-1
+          bind = $mod SHIFT, period, movewindow, mon:+1
+          bind = $mod CTRL, comma, movecurrentworkspacetomonitor, -1
+          bind = $mod CTRL, period, movecurrentworkspacetomonitor, +1
+
           # Clipboard & AI
           bind = $mod, V, exec, cliphist-picker
       ${lib.optionalString (!laptop) ''
@@ -315,7 +350,8 @@ in {
           bind = $mod SHIFT, S, exec, bash ~/.config/hypr/scripts/ai_ocr_screenshot.sh
       ''}
           bind = , Print, exec, ${pkgs.grim}/bin/grim -g "$(${pkgs.slurp}/bin/slurp)" - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.swayosd}/bin/swayosd-client --custom-icon camera-photo --custom-message "Region copied to clipboard" 2>/dev/null || true
-          bind = SHIFT, Print, exec, ${pkgs.grim}/bin/grim - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.swayosd}/bin/swayosd-client --custom-icon camera-photo --custom-message "Fullscreen copied to clipboard" 2>/dev/null || true
+          bind = SHIFT, Print, exec, ${pkgs.grim}/bin/grim -o "$(${pkgs.hyprland}/bin/hyprctl monitors -j | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name')" - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.swayosd}/bin/swayosd-client --custom-icon camera-photo --custom-message "Screen copied to clipboard" 2>/dev/null || true
+          bind = CTRL SHIFT, Print, exec, ${pkgs.grim}/bin/grim - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.swayosd}/bin/swayosd-client --custom-icon camera-photo --custom-message "All screens copied to clipboard" 2>/dev/null || true
           bind = CTRL, Print, exec, ${pkgs.grim}/bin/grim -g "$(${pkgs.hyprland}/bin/hyprctl activewindow -j | ${pkgs.jq}/bin/jq -r '([.at[0],.at[1]]|join(",")) + " " + ([.size[0],.size[1]]|join("x"))')" - | ${pkgs.wl-clipboard}/bin/wl-copy && ${pkgs.libcanberra-gtk3}/bin/canberra-gtk-play -i camera-shutter 2>/dev/null && ${pkgs.swayosd}/bin/swayosd-client --custom-icon camera-photo --custom-message "Focused window copied to clipboard" 2>/dev/null || true
 
           bind = $mod SHIFT, W, exec, change-wallpaper
@@ -336,7 +372,7 @@ in {
           bindle = $mod ALT, Page_Down, exec, brightness-osd down
 
           # ThinkPad Hardware Hotkeys
-          bindl = , XF86Display, exec, bash -c "if ${pkgs.hyprland}/bin/hyprctl monitors | grep -q 'DP-'; then ${pkgs.hyprland}/bin/hyprctl dispatch dpms toggle; else ${pkgs.libnotify}/bin/notify-send -i video-display 'Display' 'Single display active'; fi"
+          bindl = , XF86Display, exec, monitor-ctl mode
           bindl = , XF86WLAN, exec, bash -c "if ${pkgs.networkmanager}/bin/nmcli radio wifi | grep -q 'enabled'; then ${pkgs.networkmanager}/bin/nmcli radio wifi off && ${pkgs.libnotify}/bin/notify-send -i network-wireless-offline 'WiFi' 'Disabled (Airplane Mode)'; else ${pkgs.networkmanager}/bin/nmcli radio wifi on && ${pkgs.libnotify}/bin/notify-send -i network-wireless-signal-excellent 'WiFi' 'Enabled'; fi"
           bind = , XF86Tools, exec, swaync-client -t -sw
           bind = , XF86NotificationCenter, exec, swaync-client -t -sw
@@ -408,8 +444,12 @@ in {
           windowrule = center 1, match:class ^(update_review|update_stage)$
 
           windowrule = float 1, match:class ^(scratchpad)$
-          windowrule = size 2176 1008, match:class ^(scratchpad)$
+          windowrule = size ${if laptop then "(monitor_w*0.95) (monitor_h*0.9)" else "(monitor_w*0.85) (monitor_h*0.7)"}, match:class ^(scratchpad)$
           windowrule = center 1, match:class ^(scratchpad)$
+        ${lib.optionalString laptop ''
+          # chat and music live on the panel when docked; ignored once eDP-1 is off
+          windowrule = monitor eDP-1, match:class ^(vesktop|Spotify|spotify)$
+        ''}
 
           windowrule = no_anim 1, match:class ^(steam_app_.*)$
           windowrule = no_shadow 1, match:class ^(steam_app_.*)$
@@ -429,6 +469,18 @@ in {
           windowrule = size ${if laptop then "560 600" else "600 640"}, match:class ^(io\.github\.justkowal\.FleetManager)$
           windowrule = center 1, match:class ^(io\.github\.justkowal\.FleetManager)$
 
+          # Caffeine mode toggle & AccuBattery Studio
+          bind = $mod ALT, C, exec, caffeine toggle
+          bind = $mod ALT, B, exec, accubattery-gui
+
+          # Lid switch: docked -> drop the panel, undocked -> lock and blank
+          bindl = , switch:on:Lid Switch, exec, monitor-ctl lid-close
+          bindl = , switch:off:Lid Switch, exec, monitor-ctl lid-open
+
+          windowrule = float 1, match:class ^(io\.github\.justkowal\.AccuBattery)$
+          windowrule = size ${if laptop then "740 780" else "740 780"}, match:class ^(io\.github\.justkowal\.AccuBattery)$
+          windowrule = center 1, match:class ^(io\.github\.justkowal\.AccuBattery)$
+
           windowrule = float 1, match:class ^(io\.github\.justkowal\.TabletDisplayStudio)$
           windowrule = size ${if laptop then "540 580" else "560 620"}, match:class ^(io\.github\.justkowal\.TabletDisplayStudio)$
           windowrule = center 1, match:class ^(io\.github\.justkowal\.TabletDisplayStudio)$
@@ -437,12 +489,25 @@ in {
 
   programs.hyprlock = {
     enable = true;
+    # monitor-ctl writes $lock_monitor so the prompt lands on the screen in use; desktop shows it everywhere
+    importantPrefixes = ["source" "$"];
     settings = {
+      source = lib.mkIf laptop ["${config.xdg.configHome}/hypr/primary.conf"];
       general = {
         disable_loading_bar = true;
         grace = 15;
         hide_cursor = true;
       };
+      label = [
+        {
+          text = "$TIME";
+          font_size = 64;
+          color = "rgba(205, 214, 244, 1.0)";
+          position = "0, 160";
+          halign = "center";
+          valign = "center";
+        }
+      ];
       auth = lib.mkIf laptop {
         "fingerprint:enabled" = true;
         "fingerprint:ready_message" = "(Scan fingerprint)";
@@ -456,7 +521,8 @@ in {
         }
       ];
       input-field = [
-        {
+        (lib.optionalAttrs laptop {monitor = "$lock_monitor";}
+        // {
           size = "250, 60";
           outline_thickness = 2;
           dots_size = 0.2;
@@ -469,7 +535,7 @@ in {
             if laptop
             then "<i>Scan face, fingerprint or password...</i>"
             else "<i>Password...</i>";
-        }
+        })
       ];
     };
   };
@@ -518,4 +584,11 @@ in {
     };
     Install.WantedBy = ["graphical-session.target"];
   };
+
+  # mutable files monitor-ctl rewrites at runtime; hyprland/hyprlock error out if a sourced file is missing
+  home.activation.monitorState = lib.mkIf laptop (lib.hm.dag.entryAfter ["writeBoundary"] ''
+    run mkdir -p "${config.xdg.configHome}/hypr"
+    [ -e "${config.xdg.configHome}/hypr/monitors.conf" ] || run touch "${config.xdg.configHome}/hypr/monitors.conf"
+    [ -e "${config.xdg.configHome}/hypr/primary.conf" ] || run sh -c 'echo "\$lock_monitor = eDP-1" > "${config.xdg.configHome}/hypr/primary.conf"'
+  '');
 }

@@ -16,7 +16,16 @@
     ];
     text = ''
       is_ultra() {
+        if [ -f /run/ultra-power-mode.active ]; then
+          return 0
+        fi
         if systemctl is-active --quiet ultra-power-save-runtime.service 2>/dev/null; then
+          return 0
+        fi
+        if [ -f /sys/devices/system/cpu/cpufreq/boost ] && [ "$(cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null)" = "0" ]; then
+          return 0
+        fi
+        if [ -f /sys/firmware/acpi/platform_profile ] && [ "$(cat /sys/firmware/acpi/platform_profile 2>/dev/null)" = "low-power" ]; then
           return 0
         fi
         return 1
@@ -82,23 +91,26 @@
       }
 
       enable_ultra() {
-        if is_ultra; then
-          echo "Ultra Low Power Mode is already active."
-          if command -v notify-send >/dev/null 2>&1; then
-            notify-send -u low -i battery "Power Mode" "Ultra Low Power Mode is already active."
-          fi
-          exit 0
+        echo "Switching to Ultra Low Power Mode..."
+        touch /run/ultra-power-mode.active 2>/dev/null || true
+
+        if [ -x /run/current-system/specialisation/ultra-low-power/bin/switch-to-configuration ]; then
+          sudo /run/current-system/specialisation/ultra-low-power/bin/switch-to-configuration switch 2>/dev/null || true
+        elif [ -x /run/booted-system/specialisation/ultra-low-power/bin/switch-to-configuration ]; then
+          sudo /run/booted-system/specialisation/ultra-low-power/bin/switch-to-configuration switch 2>/dev/null || true
         fi
 
-        echo "Switching to Ultra Low Power Specialization..."
-        if [ -x /run/current-system/specialisation/ultra-low-power/bin/switch-to-configuration ]; then
-          sudo /run/current-system/specialisation/ultra-low-power/bin/switch-to-configuration switch
-        elif [ -x /run/booted-system/specialisation/ultra-low-power/bin/switch-to-configuration ]; then
-          sudo /run/booted-system/specialisation/ultra-low-power/bin/switch-to-configuration switch
-        else
-          echo "Error: ultra-low-power specialization not found in /run/current-system or /run/booted-system."
-          exit 1
-        fi
+        # Hardware throttling overrides
+        [ -f /sys/devices/system/cpu/cpufreq/boost ] && echo 0 > /sys/devices/system/cpu/cpufreq/boost 2>/dev/null || true
+        [ -f /sys/devices/system/cpu/smt/control ] && echo off > /sys/devices/system/cpu/smt/control 2>/dev/null || true
+        [ -f /sys/firmware/acpi/platform_profile ] && echo low-power > /sys/firmware/acpi/platform_profile 2>/dev/null || true
+        [ -f /sys/module/pcie_aspm/parameters/policy ] && echo powersupersave > /sys/module/pcie_aspm/parameters/policy 2>/dev/null || true
+        for p in /sys/class/drm/card*-eDP-*/amdgpu/panel_power_savings; do
+          [ -f "$p" ] && echo 4 > "$p" 2>/dev/null || true
+        done
+        for d in /sys/class/drm/card*/device/power_dpm_force_performance_level; do
+          [ -f "$d" ] && echo low > "$d" 2>/dev/null || true
+        done
 
         # Throttle Hyprland rendering overhead (disable animations, shadows & blur)
         if pgrep -x Hyprland >/dev/null 2>&1 && command -v hyprctl >/dev/null 2>&1; then
@@ -107,40 +119,71 @@
           hyprctl keyword decoration:shadow:enabled 0 2>/dev/null || true
         fi
 
-        if command -v notify-send >/dev/null 2>&1; then
-          notify-send -u normal -i battery-empty "Power Mode" "Switched to Ultra Low Power Mode\n• CPU Boost disabled & SMT parked\n• PCIe ASPM powersupersave\n• Panel ABM level 4 enabled"
+        if command -v swayosd-client >/dev/null 2>&1; then
+          swayosd-client --custom-icon battery-empty --custom-message "Power Mode: Ultra Low Power" 2>/dev/null || true
         fi
         echo "Successfully activated Ultra Low Power Mode."
       }
 
       disable_ultra() {
-        if ! is_ultra; then
-          echo "Standard power mode is already active."
-          if command -v notify-send >/dev/null 2>&1; then
-            notify-send -u low -i battery-full "Power Mode" "Standard Power Mode is already active."
-          fi
-          exit 0
-        fi
+        echo "Restoring Standard / Full Performance Power Mode..."
+        rm -f /run/ultra-power-mode.active 2>/dev/null || true
 
-        echo "Switching back to Standard Configuration..."
+        # 1. Switch configuration back to standard booted profile
         if [ -x /run/booted-system/bin/switch-to-configuration ]; then
-          sudo /run/booted-system/bin/switch-to-configuration switch
+          sudo /run/booted-system/bin/switch-to-configuration switch 2>/dev/null || true
         elif [ -x /nix/var/nix/profiles/system/bin/switch-to-configuration ]; then
-          sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch
-        else
-          echo "Error: Standard system switch-to-configuration not found."
-          exit 1
+          sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch 2>/dev/null || true
         fi
 
-        # Restore Hyprland animations, shadows & blur
+        # 2. Re-enable CPU Core Boost (Ryzen turbo up to 4.0 GHz)
+        if [ -f /sys/devices/system/cpu/cpufreq/boost ]; then
+          echo 1 > /sys/devices/system/cpu/cpufreq/boost 2>/dev/null || sudo sh -c 'echo 1 > /sys/devices/system/cpu/cpufreq/boost 2>/dev/null' || true
+        fi
+
+        # 3. Re-enable SMT (hyperthreading for all 12 threads)
+        if [ -f /sys/devices/system/cpu/smt/control ]; then
+          echo on > /sys/devices/system/cpu/smt/control 2>/dev/null || sudo sh -c 'echo on > /sys/devices/system/cpu/smt/control 2>/dev/null' || true
+        fi
+
+        # 4. ThinkPad Platform Profile: balanced
+        if [ -f /sys/firmware/acpi/platform_profile ]; then
+          echo balanced > /sys/firmware/acpi/platform_profile 2>/dev/null || sudo sh -c 'echo balanced > /sys/firmware/acpi/platform_profile 2>/dev/null' || true
+        fi
+
+        # 5. Energy Performance Preference (EPP)
+        for e in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do
+          if [ -f "$e" ]; then
+            echo balance_performance > "$e" 2>/dev/null || true
+          fi
+        done
+
+        # 6. PCIe ASPM policy: default
+        if [ -f /sys/module/pcie_aspm/parameters/policy ]; then
+          echo default > /sys/module/pcie_aspm/parameters/policy 2>/dev/null || sudo sh -c 'echo default > /sys/module/pcie_aspm/parameters/policy 2>/dev/null' || true
+        fi
+
+        # 7. AMD GPU DPM: auto
+        for d in /sys/class/drm/card*/device/power_dpm_force_performance_level; do
+          if [ -f "$d" ]; then
+            echo auto > "$d" 2>/dev/null || sudo sh -c "echo auto > '$d' 2>/dev/null" || true
+          fi
+        done
+
+        # 8. Reload TLP standard profile
+        if command -v tlp >/dev/null 2>&1; then
+          sudo tlp start 2>/dev/null || true
+        fi
+
+        # 9. Restore Hyprland animations, shadows & blur
         if pgrep -x Hyprland >/dev/null 2>&1 && command -v hyprctl >/dev/null 2>&1; then
           hyprctl keyword animations:enabled 1 2>/dev/null || true
           hyprctl keyword decoration:blur:enabled 1 2>/dev/null || true
           hyprctl keyword decoration:shadow:enabled 1 2>/dev/null || true
         fi
 
-        if command -v notify-send >/dev/null 2>&1; then
-          notify-send -u normal -i battery-good "Power Mode" "Restored Standard Power Mode\n• CPU Boost enabled\n• SMT enabled (all threads active)\n• Full system performance"
+        if command -v swayosd-client >/dev/null 2>&1; then
+          swayosd-client --custom-icon battery-good --custom-message "Power Mode: Standard Balanced" 2>/dev/null || true
         fi
         echo "Successfully restored Standard Power Mode."
       }
@@ -170,6 +213,17 @@ in {
     pkgs.powertop
     powerModeScript
   ];
+
+  # Allow unprivileged write access to panel power savings (ABM) for dynamic contrast/battery toggling
+  systemd.tmpfiles.rules = [
+    "z /sys/class/drm/card*-eDP-*/amdgpu/panel_power_savings 0666 root root -"
+    # monitor-ctl bumps to balanced while docked on ac
+    "z /sys/firmware/acpi/platform_profile 0666 root root -"
+  ];
+
+  services.udev.extraRules = ''
+    ACTION=="add|change", SUBSYSTEM=="drm", KERNEL=="card*", RUN+="${pkgs.runtimeShell} -c 'chmod a+rw /sys/class/drm/%k-*/amdgpu/panel_power_savings 2>/dev/null || true'"
+  '';
 
   # Passwordless privilege escalation for power mode switching via sudo
   security.sudo.extraRules = [
@@ -226,7 +280,7 @@ in {
       "pcie_aspm=force"
       "pcie_aspm.policy=powersupersave"
 
-      # AMD GPU aggressive power management & panel ABM savings
+      # AMD GPU aggressive power management & panel ABM savings (ABM 4 saves panel battery power)
       "amdgpu.aspm=1"
       "amdgpu.dpm=1"
       "amdgpu.runpm=1"
@@ -321,12 +375,12 @@ in {
         SOUND_POWER_SAVE_ON_BAT = 5;
         SOUND_POWER_SAVE_CONTROLLER = "Y";
 
-        # AMD Radeon GPU & Adaptive Backlight Modulation (ABM)
+        # AMD Radeon GPU & Adaptive Backlight Modulation (ABM 4 on battery saves ~0.5W-1.5W)
         RADEON_DPM_PERFLVL_ON_AC = "low";
         RADEON_DPM_PERFLVL_ON_BAT = "low";
         RADEON_POWER_PROFILE_ON_AC = "low";
         RADEON_POWER_PROFILE_ON_BAT = "low";
-        AMDGPU_ABM_LEVEL_ON_AC = 4;
+        AMDGPU_ABM_LEVEL_ON_AC = 0;
         AMDGPU_ABM_LEVEL_ON_BAT = 4;
 
         # ThinkPad Battery Health Thresholds
@@ -361,7 +415,7 @@ in {
           # 4. PCIe ASPM powersupersave
           [ -f /sys/module/pcie_aspm/parameters/policy ] && echo powersupersave > /sys/module/pcie_aspm/parameters/policy
 
-          # 5. AMD Panel Power Savings (ABM Level 4)
+          # 5. AMD Panel Power Savings (ABM Level 4: active backlight reduction & pixel compensation)
           for p in /sys/class/drm/card*-eDP-*/amdgpu/panel_power_savings; do
             [ -f "$p" ] && echo 4 > "$p" 2>/dev/null
           done

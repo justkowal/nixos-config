@@ -143,8 +143,6 @@ class ControlCenterWindow(Adw.ApplicationWindow):
 
         self.hostname = socket.gethostname()
         self.is_laptop = "laptop" in self.hostname or "thinkpad" in self.hostname or "t14s" in self.hostname
-        self._brightness_timer = None
-        self._target_brightness = 100
 
         self.toast_overlay = Adw.ToastOverlay()
         self.set_content(self.toast_overlay)
@@ -234,30 +232,10 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         audio_group.add(self.row_mic)
 
         # ── Group 2: Display & Backlight ──
-        display_group = Adw.PreferencesGroup(title="Display and Screen Brightness")
-        pref_page.add(display_group)
-
-        self.row_bright = Adw.ActionRow(
-            title="Display Brightness",
-            subtitle="Detecting active display output..."
-        )
-        self.row_bright.add_prefix(make_icon_prefix("󰃠"))
-        bright_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        bright_box.set_valign(Gtk.Align.CENTER)
-
-        self.lbl_bright = Gtk.Label(label="100%")
-        self.lbl_bright.set_size_request(40, -1)
-        self.lbl_bright.set_valign(Gtk.Align.CENTER)
-        bright_box.append(self.lbl_bright)
-
-        self.scale_bright = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 5, 100, 1)
-        self.scale_bright.set_size_request(140, -1)
-        self.scale_bright.set_valign(Gtk.Align.CENTER)
-        self.scale_bright.connect("value-changed", self.on_brightness_changed)
-        bright_box.append(self.scale_bright)
-
-        self.row_bright.add_suffix(bright_box)
-        display_group.add(self.row_bright)
+        # one row per monitor, rebuilt in update_brightness_ui when screens come and go
+        self.display_group = Adw.PreferencesGroup(title="Display and Screen Brightness")
+        pref_page.add(self.display_group)
+        self.bright_rows = {}
 
         # ── Group 3: Hardware Health & Performance ──
         power_group = Adw.PreferencesGroup(title="System Resources and Power")
@@ -271,6 +249,14 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         self.lbl_battery = Gtk.Label(label="Checking...")
         set_badge(self.lbl_battery, "Checking...", "apple-status-green")
         self.row_battery.add_suffix(self.lbl_battery)
+
+        self.btn_bat_inspect = Gtk.Button(label="Inspect")
+        self.btn_bat_inspect.add_css_class("apple-pill-btn")
+        self.btn_bat_inspect.set_valign(Gtk.Align.CENTER)
+        self.btn_bat_inspect.connect("clicked", self.on_open_battery_inspector)
+        self.row_battery.add_suffix(self.btn_bat_inspect)
+        self.row_battery.set_activatable(True)
+        self.row_battery.connect("activated", self.on_open_battery_inspector)
         power_group.add(self.row_battery)
 
         self.row_perf = Adw.ActionRow(
@@ -298,6 +284,23 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         btn_toggle_power.connect("clicked", self.on_toggle_power_mode)
         self.row_power_mode.add_suffix(btn_toggle_power)
         power_group.add(self.row_power_mode)
+
+        # Caffeine Mode (Inhibits sleep & lid-close suspend while preserving locking)
+        self.row_caffeine = Adw.ActionRow(
+            title="Caffeine Mode (Keep Awake)",
+            subtitle="Inhibits sleep and lid-close suspend (locks on lid close)"
+        )
+        self.row_caffeine.add_prefix(make_icon_prefix("󰅶"))
+        self.lbl_caffeine = Gtk.Label(label="Checking...")
+        set_badge(self.lbl_caffeine, "Checking...", "apple-status-accent")
+        self.row_caffeine.add_suffix(self.lbl_caffeine)
+
+        btn_toggle_caffeine = Gtk.Button(label="Toggle")
+        btn_toggle_caffeine.add_css_class("apple-pill-btn")
+        btn_toggle_caffeine.set_valign(Gtk.Align.CENTER)
+        btn_toggle_caffeine.connect("clicked", self.on_toggle_caffeine)
+        self.row_caffeine.add_suffix(btn_toggle_caffeine)
+        power_group.add(self.row_caffeine)
 
         # ── Group 4: Network & Tailscale Mesh ──
         net_group = Adw.PreferencesGroup(title="Network Connectivity and Mesh")
@@ -487,101 +490,94 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         self.show_toast("Microphone mute toggled")
 
     def update_brightness_ui(self):
-        # 1. Backlight slider - check laptop sysfs first
-        backlight_dir = "/sys/class/backlight"
-        if os.path.exists(backlight_dir) and os.listdir(backlight_dir) and shutil.which("brightnessctl"):
-            try:
-                cur = int(subprocess.run(["brightnessctl", "g"], capture_output=True, text=True).stdout.strip())
-                mx = int(subprocess.run(["brightnessctl", "m"], capture_output=True, text=True).stdout.strip())
-                pct = int((cur / max(mx, 1)) * 100)
-                self.lbl_bright.set_text(f"{pct}%")
-                self.scale_bright.handler_block_by_func(self.on_brightness_changed)
-                self.scale_bright.set_value(pct)
-                self.scale_bright.handler_unblock_by_func(self.on_brightness_changed)
-            except Exception:
-                pass
-        elif shutil.which("ddcutil"):
-            # Desktop DDC/CI monitor
-            def _read_ddc():
+        try:
+            proc = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True, timeout=2)
+            monitors = [m for m in json.loads(proc.stdout) if not m.get("name", "").startswith("HEADLESS")]
+        except Exception:
+            monitors = []
+
+        names = [m["name"] for m in monitors]
+        if names != list(self.bright_rows):
+            for entry in self.bright_rows.values():
+                self.display_group.remove(entry["row"])
+            self.bright_rows = {}
+            for m in monitors:
+                self._add_brightness_row(m)
+
+        for m in monitors:
+            entry = self.bright_rows[m["name"]]
+            detail = f"{m['name']} · {m.get('width')}×{m.get('height')} @ {m.get('refreshRate', 60):.0f}Hz"
+            if m.get("model"):
+                detail += f" ({m['model']})"
+            if m.get("focused") and len(monitors) > 1:
+                detail += " · focused"
+            entry["row"].set_subtitle(detail)
+
+        # ddc reads take ~100ms per screen, keep them off the main loop
+        def _read(names):
+            for name in names:
                 try:
-                    p = subprocess.run(["ddcutil", "getvcp", "10", "--brief"], capture_output=True, text=True, timeout=2)
-                    # Output format: VCP 10 C 100 100 or standard output
-                    for line in p.stdout.splitlines():
-                        if "VCP 10" in line:
-                            parts = line.split()
-                            if len(parts) >= 4:
-                                cur_val = int(parts[3])
-                                GLib.idle_add(self._apply_brightness_value, cur_val)
-                                return
-                        elif "current value" in line:
-                            import re
-                            m = re.search(r'current value =\s*(\d+)', line)
-                            if m:
-                                cur_val = int(m.group(1))
-                                GLib.idle_add(self._apply_brightness_value, cur_val)
-                                return
+                    p = subprocess.run(["brightness-osd", "get", name], capture_output=True, text=True, timeout=4)
+                    GLib.idle_add(self._apply_brightness_value, name, int(p.stdout.strip()))
                 except Exception:
                     pass
-            threading.Thread(target=_read_ddc, daemon=True).start()
+        idle = [n for n, e in self.bright_rows.items() if e["timer"] is None]
+        threading.Thread(target=_read, args=(idle,), daemon=True).start()
 
-        # 2. Active Monitor Details from Hyprland
-        try:
-            proc = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True)
-            monitors = json.loads(proc.stdout)
-            if monitors:
-                m = monitors[0]
-                m_name = m.get("name", "Screen")
-                w = m.get("width")
-                h = m.get("height")
-                hz = m.get("refreshRate", 60)
-                model = m.get("model", "")
-                detail = f"{m_name} · {w}×{h} @ {hz:.0f}Hz"
-                if model:
-                    detail += f" ({model})"
-                self.row_bright.set_subtitle(detail)
-            else:
-                self.row_bright.set_subtitle("Primary Display")
-        except Exception:
-            self.row_bright.set_subtitle("Primary Display")
+    def _add_brightness_row(self, m):
+        name = m["name"]
+        row = Adw.ActionRow(title="Panel Brightness" if name.startswith("eDP") else "External Display")
+        row.add_prefix(make_icon_prefix("󰃠" if name.startswith("eDP") else "󰍹"))
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.set_valign(Gtk.Align.CENTER)
 
-    def _apply_brightness_value(self, pct: int):
-        self.lbl_bright.set_text(f"{pct}%")
-        self.scale_bright.handler_block_by_func(self.on_brightness_changed)
-        self.scale_bright.set_value(pct)
-        self.scale_bright.handler_unblock_by_func(self.on_brightness_changed)
+        lbl = Gtk.Label(label="--")
+        lbl.set_size_request(40, -1)
+        lbl.set_valign(Gtk.Align.CENTER)
+        box.append(lbl)
 
-    def on_brightness_changed(self, scale):
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 5, 100, 1)
+        scale.set_size_request(140, -1)
+        scale.set_valign(Gtk.Align.CENTER)
+        scale.connect("value-changed", self.on_brightness_changed, name)
+        box.append(scale)
+
+        row.add_suffix(box)
+        self.display_group.add(row)
+        self.bright_rows[name] = {"row": row, "lbl": lbl, "scale": scale, "timer": None, "target": 100}
+
+    def _apply_brightness_value(self, name: str, pct: int):
+        entry = self.bright_rows.get(name)
+        if not entry or entry["timer"] is not None:
+            return False
+        entry["lbl"].set_text(f"{pct}%")
+        entry["scale"].handler_block_by_func(self.on_brightness_changed)
+        entry["scale"].set_value(pct)
+        entry["scale"].handler_unblock_by_func(self.on_brightness_changed)
+        return False
+
+    def on_brightness_changed(self, scale, name):
+        entry = self.bright_rows[name]
         pct = int(scale.get_value())
-        self.lbl_bright.set_text(f"{pct}%")
-        self._target_brightness = pct
+        entry["lbl"].set_text(f"{pct}%")
+        entry["target"] = pct
 
-        # Debounce the hardware write so sliding is 100% fluid
-        if self._brightness_timer:
-            GLib.source_remove(self._brightness_timer)
-        self._brightness_timer = GLib.timeout_add(150, self._apply_hardware_brightness)
+        # debounce: ddc/ci chokes on a write per slider tick
+        if entry["timer"]:
+            GLib.source_remove(entry["timer"])
+        entry["timer"] = GLib.timeout_add(150, self._apply_hardware_brightness, name)
 
-    def _apply_hardware_brightness(self):
-        self._brightness_timer = None
-        pct = self._target_brightness
-
-        def _worker(val):
-            backlight_dir = "/sys/class/backlight"
-            if os.path.exists(backlight_dir) and os.listdir(backlight_dir) and shutil.which("brightnessctl"):
-                subprocess.run(["brightnessctl", "set", f"{val}%", "-q"])
-            elif shutil.which("ddcutil"):
-                subprocess.run(["ddcutil", "setvcp", "10", str(val), "--noverify"], capture_output=True)
-
-            # Integrate with SwayOSD popup if available
-            if shutil.which("swayosd-client"):
-                prog = f"{val / 100.0:.2f}"
-                subprocess.run([
-                    "swayosd-client",
-                    "--custom-progress", prog,
-                    "--custom-icon", "display-brightness",
-                    "--custom-message", f"Brightness {val}%"
-                ], capture_output=True)
-
-        threading.Thread(target=_worker, args=(pct,), daemon=True).start()
+    def _apply_hardware_brightness(self, name):
+        entry = self.bright_rows.get(name)
+        if not entry:
+            return False
+        entry["timer"] = None
+        threading.Thread(
+            target=subprocess.run,
+            args=(["brightness-osd", "set", str(entry["target"]), name],),
+            kwargs={"capture_output": True},
+            daemon=True,
+        ).start()
         return False
 
     def update_power_ui(self):
@@ -621,14 +617,18 @@ class ControlCenterWindow(Adw.ApplicationWindow):
                         thresh_str = f" [Limit: {thresh}%]"
 
                 set_badge(self.lbl_battery, f"{icon} {cap}% ({status}{wattage_str}){thresh_str}", "apple-status-green")
-                self.row_battery.set_subtitle("ThinkPad Internal Battery (TLP Active)")
+                self.row_battery.set_subtitle("ThinkPad Internal Battery (Click to Inspect)")
                 self.row_battery.set_visible(True)
+                self.btn_bat_inspect.set_visible(True)
+                self.row_battery.set_activatable(True)
             except Exception:
                 self.row_battery.set_visible(False)
         else:
             set_badge(self.lbl_battery, "󰚥 AC Mains", "apple-status-green")
             self.row_battery.set_subtitle("Desktop Workstation (Continuous AC Power)")
             self.row_battery.set_visible(True)
+            self.btn_bat_inspect.set_visible(False)
+            self.row_battery.set_activatable(False)
 
         # 2. CPU Load & RAM usage from /proc
         try:
@@ -653,22 +653,41 @@ class ControlCenterWindow(Adw.ApplicationWindow):
 
         # 3. Power Profile
         try:
-            res = subprocess.run(["systemctl", "is-active", "--quiet", "ultra-power-save-runtime.service"])
-            is_ultra = (res.returncode == 0)
-            if is_ultra:
+            res = subprocess.run(["power-mode", "status"], capture_output=True, text=True)
+            if "ULTRA LOW POWER ACTIVE" in res.stdout:
                 set_badge(self.lbl_power_mode, "󰌪 Ultra Low Power Active", "apple-status-green")
             else:
                 set_badge(self.lbl_power_mode, "󰓅 Standard / Performance", "apple-status-accent")
         except Exception:
             set_badge(self.lbl_power_mode, "Standard", "apple-status-accent")
 
+        # 4. Caffeine Mode
+        self.update_caffeine_ui()
+
+    def update_caffeine_ui(self):
+        try:
+            res = subprocess.run(["caffeine", "status"], capture_output=True, text=True)
+            active = (res.stdout.strip() == "active")
+            if active:
+                set_badge(self.lbl_caffeine, "󰅶 Active (Inhibiting Sleep)", "apple-status-green")
+            else:
+                set_badge(self.lbl_caffeine, "󰒲 Inactive (Normal Sleep)", "apple-status-accent")
+        except Exception:
+            set_badge(self.lbl_caffeine, "Inactive", "apple-status-accent")
+
+    def on_toggle_caffeine(self, btn):
+        try:
+            subprocess.run(["caffeine", "toggle"], capture_output=True)
+            self.update_caffeine_ui()
+        except Exception:
+            pass
+
     def on_toggle_power_mode(self, btn):
         try:
             subprocess.run(["power-mode", "toggle"])
-            self.show_toast("Power mode toggled")
             self.update_power_ui()
         except Exception:
-            self.show_toast("Failed to toggle power mode")
+            pass
 
     def update_network_ui(self):
         # 1. Tailscale Mesh
@@ -717,6 +736,10 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         except Exception:
             pass
 
+    def on_open_battery_inspector(self, *args):
+        win = BatteryInspectorWindow(transient_for=self)
+        win.present()
+
     def on_suspend(self, btn):
         subprocess.Popen(["loginctl", "lock-session"])
         subprocess.Popen(["systemctl", "suspend"])
@@ -726,6 +749,260 @@ class ControlCenterWindow(Adw.ApplicationWindow):
         toast.set_timeout(3)
         self.toast_overlay.add_toast(toast)
 
+class BatteryInspectorWindow(Adw.Window):
+    """
+    Apple HIG Battery Health and Power Diagnostics Inspector.
+    Displays maximum capacity %, cycle count, live charging wattage,
+    charging limit profiles, and hardware architecture tips.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.set_title("Battery Health and Power")
+        self.set_default_size(520, 660)
+        self.set_modal(True)
+
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.set_content(main_box)
+
+        header = Adw.HeaderBar()
+        title_widget = Adw.WindowTitle(
+            title="Battery Health and Power",
+            subtitle="ThinkPad Internal Battery Diagnostics"
+        )
+        header.set_title_widget(title_widget)
+
+        btn_refresh = Gtk.Button(icon_name="view-refresh-symbolic")
+        btn_refresh.set_tooltip_text("Refresh Battery Telemetry")
+        btn_refresh.add_css_class("apple-pill-btn")
+        btn_refresh.set_valign(Gtk.Align.CENTER)
+        btn_refresh.connect("clicked", lambda b: self.refresh_data())
+        header.pack_end(btn_refresh)
+        main_box.append(header)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        main_box.append(scrolled)
+
+        self.pref_page = Adw.PreferencesPage()
+        scrolled.set_child(self.pref_page)
+
+        # ── Group 1: Battery Health & Maximum Capacity ──
+        grp_health = Adw.PreferencesGroup(title="Battery Health")
+        self.pref_page.add(grp_health)
+
+        self.row_health = Adw.ActionRow(
+            title="Maximum Capacity",
+            subtitle="A measure of battery capacity relative to when it was new."
+        )
+        self.row_health.add_prefix(make_icon_prefix("󰁹"))
+        self.lbl_health_badge = Gtk.Label(label="Checking...")
+        set_badge(self.lbl_health_badge, "Checking...", "apple-status-green")
+        self.row_health.add_suffix(self.lbl_health_badge)
+        grp_health.add(self.row_health)
+
+        self.row_energy = Adw.ActionRow(
+            title="Full Charge Capacity",
+            subtitle="Current energy retention vs factory design capacity"
+        )
+        self.row_energy.add_prefix(make_icon_prefix("󰂄"))
+        self.lbl_energy_badge = Gtk.Label(label="...")
+        set_badge(self.lbl_energy_badge, "...", "apple-status-accent")
+        self.row_energy.add_suffix(self.lbl_energy_badge)
+        grp_health.add(self.row_energy)
+
+        self.row_cycles = Adw.ActionRow(
+            title="Cycle Count",
+            subtitle="Total lifetime discharge cycles completed"
+        )
+        self.row_cycles.add_prefix(make_icon_prefix("󰑐"))
+        self.lbl_cycles_badge = Gtk.Label(label="...")
+        set_badge(self.lbl_cycles_badge, "...", "apple-status-accent")
+        self.row_cycles.add_suffix(self.lbl_cycles_badge)
+        grp_health.add(self.row_cycles)
+
+        # ── Group 2: Live Power Flow & Speed ──
+        grp_flow = Adw.PreferencesGroup(title="Real-Time Power Telemetry")
+        self.pref_page.add(grp_flow)
+
+        self.row_flow_level = Adw.ActionRow(
+            title="Current Charge Level",
+            subtitle="Real-time stored battery charge percentage"
+        )
+        self.row_flow_level.add_prefix(make_icon_prefix("󰚥"))
+        self.lbl_flow_level = Gtk.Label(label="...")
+        set_badge(self.lbl_flow_level, "...", "apple-status-green")
+        self.row_flow_level.add_suffix(self.lbl_flow_level)
+        grp_flow.add(self.row_flow_level)
+
+        self.row_flow_speed = Adw.ActionRow(
+            title="Power Flow / Charging Speed",
+            subtitle="Instantaneous rate of electrical energy transfer"
+        )
+        self.row_flow_speed.add_prefix(make_icon_prefix("󱐋"))
+        self.lbl_flow_speed = Gtk.Label(label="...")
+        set_badge(self.lbl_flow_speed, "...", "apple-status-accent")
+        self.row_flow_speed.add_suffix(self.lbl_flow_speed)
+        grp_flow.add(self.row_flow_speed)
+
+        self.row_flow_time = Adw.ActionRow(
+            title="Estimated Time Remaining",
+            subtitle="Duration to complete full target charge or discharge"
+        )
+        self.row_flow_time.add_prefix(make_icon_prefix("󰥔"))
+        self.lbl_flow_time = Gtk.Label(label="...")
+        set_badge(self.lbl_flow_time, "...", "apple-status-accent")
+        self.row_flow_time.add_suffix(self.lbl_flow_time)
+        grp_flow.add(self.row_flow_time)
+
+        # ── Group 3: Charging Limit Profiles & Visuals ──
+        grp_limits = Adw.PreferencesGroup(title="Charging Limit Profiles and Visuals")
+        self.pref_page.add(grp_limits)
+
+        row_conserve = Adw.ActionRow(
+            title="Conservation Mode (85% – 90%)",
+            subtitle="Preserves battery cell health when predominantly on AC power"
+        )
+        row_conserve.add_prefix(make_icon_prefix("󰌪"))
+        btn_conserve = Gtk.Button(label="Apply Limit")
+        btn_conserve.add_css_class("apple-pill-btn")
+        btn_conserve.set_valign(Gtk.Align.CENTER)
+        btn_conserve.connect("clicked", lambda b: self.set_profile(85, 90))
+        row_conserve.add_suffix(btn_conserve)
+        grp_limits.add(row_conserve)
+
+        row_boost = Adw.ActionRow(
+            title="Fast Charge Boost (100% Trip Mode)",
+            subtitle="Allows 100% full charge for travel and extended battery work"
+        )
+        row_boost.add_prefix(make_icon_prefix("󰂄"))
+        btn_boost = Gtk.Button(label="Charge to 100%")
+        btn_boost.add_css_class("apple-pill-btn")
+        btn_boost.set_valign(Gtk.Align.CENTER)
+        btn_boost.connect("clicked", lambda b: self.set_profile(95, 100))
+        row_boost.add_suffix(btn_boost)
+        grp_limits.add(row_boost)
+
+        row_gauge = Adw.ActionRow(
+            title="ThinkPad Lid Dot Percentage Gauge",
+            subtitle="Flash the physical lid red LED dot with current battery percentage"
+        )
+        row_gauge.add_prefix(make_icon_prefix("󰛄"))
+        btn_gauge = Gtk.Button(label="Flash Lid Dot")
+        btn_gauge.add_css_class("apple-pill-btn")
+        btn_gauge.set_valign(Gtk.Align.CENTER)
+        btn_gauge.connect("clicked", lambda b: subprocess.Popen(["thinkdot", "gauge"]))
+        row_gauge.add_suffix(btn_gauge)
+        grp_limits.add(row_gauge)
+
+        row_accu = Adw.ActionRow(
+            title="AccuBattery Diagnostics & Live Graphs",
+            subtitle="Deep degradation tracking, charging curves, and per-app usage"
+        )
+        row_accu.add_prefix(make_icon_prefix("󰁹"))
+        btn_accu = Gtk.Button(label="Open AccuBattery")
+        btn_accu.add_css_class("apple-pill-btn")
+        btn_accu.set_valign(Gtk.Align.CENTER)
+        btn_accu.connect("clicked", lambda b: subprocess.Popen(["accubattery-gui"]))
+        row_accu.add_suffix(btn_accu)
+        grp_limits.add(row_accu)
+
+        # ── Group 4: Architecture & Speed Optimization Guide ──
+        grp_notes = Adw.PreferencesGroup(title="Speeding Up Charging Architecture")
+        self.pref_page.add(grp_notes)
+
+        row_n1 = Adw.ActionRow(
+            title="USB-C PD Power Headroom",
+            subtitle="Using a 65W or 100W PD charger guarantees maximum 45W charging speed concurrently with full CPU boost."
+        )
+        row_n1.add_prefix(make_icon_prefix("󰚥"))
+        grp_notes.add(row_n1)
+
+        row_n2 = Adw.ActionRow(
+            title="Battery Chemistry (CC vs CV Curve)",
+            subtitle="Fastest charging occurs from 0% to 80%. Above 80%, lithium chemistry naturally tapers current to protect cell chemistry."
+        )
+        row_n2.add_prefix(make_icon_prefix("󱐋"))
+        grp_notes.add(row_n2)
+
+        row_n3 = Adw.ActionRow(
+            title="Chassis Cooling & Thermals",
+            subtitle="Active cooling on AC power prevents the embedded controller from thermally throttling battery charge speed."
+        )
+        row_n3.add_prefix(make_icon_prefix("󰻠"))
+        grp_notes.add(row_n3)
+
+        self.refresh_data()
+
+    def set_profile(self, start: int, stop: int):
+        bat_dir = "/sys/class/power_supply/BAT0"
+        for f in [f"{bat_dir}/charge_start_threshold", f"{bat_dir}/charge_control_start_threshold"]:
+            if os.path.exists(f) and os.access(f, os.W_OK):
+                try:
+                    open(f, "w").write(str(start))
+                except Exception:
+                    pass
+        for f in [f"{bat_dir}/charge_stop_threshold", f"{bat_dir}/charge_control_end_threshold"]:
+            if os.path.exists(f) and os.access(f, os.W_OK):
+                try:
+                    open(f, "w").write(str(stop))
+                except Exception:
+                    pass
+        if shutil.which("batmon"):
+            opt = "--trip" if stop >= 100 else "--conserve"
+            subprocess.run(["batmon", opt], capture_output=True)
+        self.refresh_data()
+
+    def refresh_data(self):
+        bat_dir = "/sys/class/power_supply/BAT0"
+        if not os.path.exists(bat_dir):
+            bat_dir = "/sys/class/power_supply/BAT1"
+        if not os.path.exists(bat_dir):
+            return
+
+        try:
+            cap = int(open(f"{bat_dir}/capacity").read().strip())
+            status = open(f"{bat_dir}/status").read().strip()
+            cycles = open(f"{bat_dir}/cycle_count").read().strip() if os.path.exists(f"{bat_dir}/cycle_count") else "N/A"
+
+            efull = int(open(f"{bat_dir}/energy_full").read().strip()) if os.path.exists(f"{bat_dir}/energy_full") else 0
+            edesign = int(open(f"{bat_dir}/energy_full_design").read().strip()) if os.path.exists(f"{bat_dir}/energy_full_design") else 1
+            enow = int(open(f"{bat_dir}/energy_now").read().strip()) if os.path.exists(f"{bat_dir}/energy_now") else 0
+            pnow = int(open(f"{bat_dir}/power_now").read().strip()) if os.path.exists(f"{bat_dir}/power_now") else 0
+            vnow = int(open(f"{bat_dir}/voltage_now").read().strip()) if os.path.exists(f"{bat_dir}/voltage_now") else 0
+
+            health_pct = (efull * 100.0) / edesign if edesign > 0 else 100.0
+            wh_full = efull / 1_000_000
+            wh_design = edesign / 1_000_000
+            watts = pnow / 1_000_000
+            volts = vnow / 1_000_000
+
+            cond = "Normal" if health_pct >= 80.0 else "Service Recommended"
+            cond_class = "apple-status-green" if health_pct >= 80.0 else "apple-status-orange"
+            set_badge(self.lbl_health_badge, f"{health_pct:.1f}% · {cond}", cond_class)
+            set_badge(self.lbl_energy_badge, f"{wh_full:.1f} / {wh_design:.1f} Wh", "apple-status-accent")
+            set_badge(self.lbl_cycles_badge, f"{cycles} cycles", "apple-status-accent")
+
+            stat_class = "apple-status-green" if status == "Charging" else ("apple-status-orange" if status == "Discharging" else "apple-status-accent")
+            set_badge(self.lbl_flow_level, f"{cap}% [{status}]", stat_class)
+
+            pwr_sign = "+" if status == "Charging" else ("-" if status == "Discharging" else "")
+            set_badge(self.lbl_flow_speed, f"{pwr_sign}{watts:.1f} W ({volts:.1f} V)", stat_class)
+
+            time_est = "N/A"
+            if shutil.which("upower"):
+                up_res = subprocess.run(["upower", "-i", "/org/freedesktop/UPower/devices/battery_BAT0"], capture_output=True, text=True)
+                for line in up_res.stdout.splitlines():
+                    if "time to full" in line or "time to empty" in line:
+                        parts = line.split(":")
+                        if len(parts) >= 2:
+                            time_est = parts[1].strip()
+                            break
+            set_badge(self.lbl_flow_time, time_est, "apple-status-accent")
+        except Exception:
+            pass
+
 if __name__ == "__main__":
     app = ControlCenterApp()
     sys.exit(app.run(sys.argv))
+

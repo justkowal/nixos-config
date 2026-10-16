@@ -112,8 +112,43 @@ let
       exec python3 "${guisDir}/control_center_gui.py" "$@"
     '';
   };
+  accubattery-gui = pkgs.writeShellApplication {
+    name = "accubattery-gui";
+    runtimeInputs = with pkgs; [
+      (python3.withPackages (ps: [ps.pygobject3 ps.pycairo ps.psutil]))
+      gtk4
+      libadwaita
+      graphene
+      pango
+      gdk-pixbuf
+      gobject-introspection
+      coreutils
+      procps
+      systemd
+      swayosd
+    ];
+    checkPhase = "";
+    text = ''
+      export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
+      devGui="/etc/nixos/hosts/desktop/scripts/guis/accubattery_gui.py"
+      if [ -f "$devGui" ]; then
+        exec python3 "$devGui" "$@"
+      fi
+      exec python3 "${guisDir}/accubattery_gui.py" "$@"
+    '';
+  };
+
+  batmon = pkgs.writeShellApplication {
+    name = "batmon";
+    runtimeInputs = with pkgs; [coreutils gnugrep gawk upower];
+    checkPhase = "";
+    text = builtins.readFile ./scripts/batmon.sh;
+  };
 in {
   home.packages = [
+    batmon
+    accubattery-gui
     control-center-gui
     lan-mouse-gui
     fleet-manager-gui
@@ -247,20 +282,38 @@ in {
         jnoortheen.nix-ide
         mkhl.direnv
       ];
-      userSettings = {
-        "workbench.colorTheme" = "Matugen";
-        "editor.fontSize" = 13;
-        "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace'";
-        "editor.formatOnSave" = true;
-        "nix.enableLanguageServer" = true;
-        "nix.serverPath" = "nixd";
-        "nix.formatterPath" = "alejandra";
-        "git.enabled" = true;
-        "git.path" = "${pkgs.git}/bin/git";
-        "git.autofetch" = true;
-      };
     };
   };
+
+  # userSettings would symlink settings.json into the read-only store, so vs code can't save it.
+  # merge instead: nix-declared keys win on every switch, everything set from the ui survives.
+  home.activation.vscodeSettings = let
+    managed = pkgs.writeText "vscode-managed-settings.json" (builtins.toJSON {
+      "workbench.colorTheme" = "Matugen";
+      "editor.fontSize" = 13;
+      "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace'";
+      "editor.formatOnSave" = true;
+      "nix.enableLanguageServer" = true;
+      "nix.serverPath" = "nixd";
+      "nix.formatterPath" = "alejandra";
+      "git.enabled" = true;
+      "git.path" = "${pkgs.git}/bin/git";
+      "git.autofetch" = true;
+      "git.confirmSync" = false;
+    });
+  in
+    lib.hm.dag.entryAfter ["writeBoundary"] ''
+      f="${config.xdg.configHome}/Code/User/settings.json"
+      run mkdir -p "$(dirname "$f")"
+      [ -L "$f" ] && run rm "$f"
+      [ -s "$f" ] || echo '{}' > "$f"
+      # vs code allows jsonc; if comments break jq, leave the file alone rather than clobber it
+      if merged=$(${pkgs.jq}/bin/jq -s '.[0] * .[1]' "$f" ${managed} 2>/dev/null); then
+        [ -n "''${DRY_RUN:-}" ] || printf '%s\n' "$merged" > "$f"
+      else
+        warnEcho "vscode settings.json is not plain json, skipped merging managed keys"
+      fi
+    '';
 
   programs.btop = {
     enable = true;
@@ -412,6 +465,34 @@ in {
     settings = {
       Keywords = "fleet;nixos;homelab;rpi4;thinkpad;services;glance;kuma;git";
     };
+  };
+
+  xdg.desktopEntries.accubattery-gui = {
+    name = "AccuBattery Studio";
+    genericName = "Battery Diagnostics & Health Studio";
+    comment = "Advanced Li-ion battery health, real-time graphs, and per-app power consumption";
+    exec = "accubattery-gui";
+    icon = "battery";
+    terminal = false;
+    type = "Application";
+    categories = [ "Settings" "HardwareSettings" "System" ];
+    settings = {
+      Keywords = "battery;accubattery;health;charge;power;discharge;wear;caffeine;energy;thinkpad";
+    };
+  };
+
+  systemd.user.services.accubattery-daemon = {
+    Unit = {
+      Description = "AccuBattery Background Telemetry Logger & Charge Alarm";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStart = "${accubattery-gui}/bin/accubattery-gui --daemon";
+      Restart = "on-failure";
+      RestartSec = 10;
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
   };
 
   xdg.mimeApps = {

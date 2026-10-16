@@ -391,7 +391,7 @@ class LanMouseWindow(Adw.ApplicationWindow):
             p = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True)
             monitors = json.loads(p.stdout)
             if monitors:
-                m = monitors[0]
+                m = next((x for x in monitors if x.get("focused")), monitors[0])
                 return f"{m.get('width')}×{m.get('height')} @ {m.get('refreshRate', 60):.0f}Hz"
         except Exception:
             pass
@@ -400,6 +400,17 @@ class LanMouseWindow(Adw.ApplicationWindow):
     def set_orientation(self, orient):
         self.current_orientation = orient
         self.update_orientation_buttons()
+        if orient == "top" and self.has_monitor_above():
+            self.show_toast("A screen sits above the panel: the peer is reached from the top edge of that screen")
+
+    def has_monitor_above(self):
+        try:
+            p = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True, timeout=2)
+            monitors = [m for m in json.loads(p.stdout) if not m.get("name", "").startswith("HEADLESS")]
+        except Exception:
+            return False
+        # lan-mouse leaves from the outer edge of the whole layout, not from each screen
+        return len({m.get("y", 0) for m in monitors}) > 1
 
     def update_orientation_buttons(self):
         self.btn_top.set_active(self.current_orientation == "top")

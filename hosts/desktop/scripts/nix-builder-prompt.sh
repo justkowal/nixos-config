@@ -100,6 +100,8 @@ if [ "$USE_REMOTE" = false ]; then
     exec "${BUILD_ARGS[@]}" --builders ""
   elif [[ "${BUILD_ARGS[0]}" == *"nixos-rebuild"* ]]; then
     exec "${BUILD_ARGS[@]}" --option builders ""
+  elif [[ "${BUILD_ARGS[0]}" == *"nix"* ]]; then
+    exec "${BUILD_ARGS[0]}" --option builders "" "${BUILD_ARGS[@]:1}"
   else
     exec "${BUILD_ARGS[@]}" --option builders ""
   fi

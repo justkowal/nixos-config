@@ -52,6 +52,31 @@
         done
       }
 
+      do_gauge() {
+        local cap=100
+        if [ -f /sys/class/power_supply/BAT0/capacity ]; then
+          cap=$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo 100)
+        fi
+        # Number of flashes = tens digit of charge (e.g. 85% -> 8 flashes; 100% -> 10 flashes)
+        local pulses=$(( cap / 10 ))
+        [ "$pulses" -lt 1 ] && pulses=1
+        [ "$pulses" -gt 10 ] && pulses=10
+
+        set_trigger "none"
+        set_led 0
+        sleep 0.2
+        for _ in $(seq 1 "$pulses"); do
+          set_led 255
+          sleep 0.16
+          set_led 0
+          sleep 0.14
+        done
+        # Steady 1.0s confirmation glow
+        set_led 255
+        sleep 1.0
+        set_led 0
+      }
+
       get_state() {
         # 0. Stealth mode override
         if [ -f "$STEALTH_FILE" ]; then
@@ -186,6 +211,7 @@
                 count="''${count:-3}"
                 do_burst "$count"
                 ;;
+              GAUGE) do_gauge ;;
               STEALTH_ON) touch "$STEALTH_FILE" ;;
               STEALTH_OFF) rm -f "$STEALTH_FILE" ;;
               STEALTH_TOGGLE)
@@ -268,6 +294,7 @@
                 count="''${count:-3}"
                 do_burst "$count"
                 ;;
+              GAUGE) do_gauge ;;
               STEALTH_ON) touch "$STEALTH_FILE" ;;
               STEALTH_OFF) rm -f "$STEALTH_FILE" ;;
               STEALTH_TOGGLE)
@@ -289,6 +316,16 @@
           else
             do_burst "$count"
           fi
+          ;;
+        gauge|battery|batt)
+          if [ -p "$PIPE" ]; then
+            echo "GAUGE" > "$PIPE" 2>/dev/null || do_gauge
+          else
+            do_gauge
+          fi
+          cap="?"
+          [ -f /sys/class/power_supply/BAT0/capacity ] && cap=$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null)
+          echo "ThinkPad Dot: Battery gauge flashed on lid LED ($cap%)"
           ;;
         stealth)
           action="''${2:-toggle}"
@@ -365,10 +402,30 @@
                 printf '{"text":"󰛄","tooltip":"ThinkPad Dot: Unread Notifications\\nLeft-click: Toggle Stealth","class":"notify","alt":"notify"}\n'
                 ;;
               CHARGING)
-                printf '{"text":"󰛄","tooltip":"ThinkPad Dot: Battery Charging\\nLeft-click: Toggle Stealth","class":"charging","alt":"charging"}\n'
+                b_cap=""
+                [ -f /sys/class/power_supply/BAT0/capacity ] && b_cap="$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null)"
+                b_watts=""
+                if [ -f /sys/class/power_supply/BAT0/power_now ]; then
+                  p_uw=$(cat /sys/class/power_supply/BAT0/power_now 2>/dev/null || echo 0)
+                  b_watts="$(awk "BEGIN {printf \"%.1fW\", $p_uw / 1000000}")"
+                fi
+                tt_info="ThinkPad Dot: Battery Charging"
+                [ -n "$b_cap" ] && tt_info="$tt_info ($b_cap%)"
+                [ -n "$b_watts" ] && tt_info="$tt_info · +$b_watts"
+                tt_info="$tt_info\\nLeft-click: Toggle Stealth\\nMiddle-click: Flash Lid Gauge\\nRight-click: Control Center"
+                if [ -n "$b_cap" ]; then
+                  printf '{"text":"󰛄 %s%%","tooltip":"%s","class":"charging","alt":"charging"}\n' "$b_cap" "$tt_info"
+                else
+                  printf '{"text":"󰛄","tooltip":"%s","class":"charging","alt":"charging"}\n' "$tt_info"
+                fi
                 ;;
               *)
-                printf '{"text":"󰛄","tooltip":"ThinkPad Dot: Idle\\nLeft-click: Toggle Stealth","class":"idle","alt":"idle"}\n'
+                idle_cap=""
+                [ -f /sys/class/power_supply/BAT0/capacity ] && idle_cap="$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null)"
+                idle_tt="ThinkPad Dot: Ambient Idle"
+                [ -n "$idle_cap" ] && idle_tt="$idle_tt (Battery: $idle_cap%)"
+                idle_tt="$idle_tt\\nLeft-click: Toggle Stealth\\nMiddle-click: Flash Lid Gauge\\nRight-click: Control Center"
+                printf '{"text":"󰛄","tooltip":"%s","class":"idle","alt":"idle"}\n' "$idle_tt"
                 ;;
             esac
           fi
@@ -390,13 +447,24 @@
           echo "  - Mic Stream:           $(pw-dump 2>/dev/null | jq -e '.[] | select(.info.props["media.class"] == "Stream/Input/Audio") | .id' >/dev/null 2>&1 && echo "RECORDING" || echo "idle")"
           echo "  - Hyprlock:             $(pgrep -x hyprlock >/dev/null 2>&1 && echo "LOCKED" || echo "unlocked")"
           echo "  - Unread Notifs:        $(swaync-client -c 2>/dev/null || echo "N/A")"
-          echo "  - Battery:              $(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo "?")% ($(cat /sys/class/power_supply/BAT0/status 2>/dev/null || echo "?"))"
+          echo "  - Battery Level:        $(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo "?")% ($(cat /sys/class/power_supply/BAT0/status 2>/dev/null || echo "?"))"
+          if [ -f /sys/class/power_supply/BAT0/energy_full ] && [ -f /sys/class/power_supply/BAT0/energy_full_design ]; then
+            efull=$(cat /sys/class/power_supply/BAT0/energy_full 2>/dev/null || echo 0)
+            edesign=$(cat /sys/class/power_supply/BAT0/energy_full_design 2>/dev/null || echo 1)
+            b_health=$(awk "BEGIN {printf \"%.1f%%\", ($efull * 100.0) / $edesign}")
+            b_cycles=$(cat /sys/class/power_supply/BAT0/cycle_count 2>/dev/null || echo "N/A")
+            echo "  - Battery Health:       $b_health (Cycle count: $b_cycles)"
+          fi
+          if [ -f /sys/class/power_supply/BAT0/power_now ]; then
+            p_uw=$(cat /sys/class/power_supply/BAT0/power_now 2>/dev/null || echo 0)
+            echo "  - Battery Power Flow:   $(awk "BEGIN {printf \"%.2f W\", $p_uw / 1000000}")"
+          fi
           echo "  - AC Power:             $([ "$(cat /sys/class/power_supply/AC/online 2>/dev/null)" = "1" ] && echo "Plugged in" || echo "On Battery")"
           echo "  - Lid:                  $(cat /proc/acpi/button/lid/*/state 2>/dev/null | tr -d '\n' || echo "N/A")"
           echo "==========================================="
           ;;
         *)
-          echo "Usage: thinkdot {status|waybar|burst [N]|stealth [toggle|on|off|status]|on|off}"
+          echo "Usage: thinkdot {status|waybar|gauge|burst [N]|stealth [toggle|on|off|status]|on|off}"
           exit 1
           ;;
       esac

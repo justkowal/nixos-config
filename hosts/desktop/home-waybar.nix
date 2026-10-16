@@ -76,12 +76,12 @@ in {
         modules-center = ["clock" "custom/pomodoro" "clock#date"];
         modules-right =
           if laptop
-          then ["mpris" "custom/fleet" "custom/sysinfo" "battery" "backlight" "network" "bluetooth" "pulseaudio" "custom/controlcenter" "custom/thinkdot" "custom/notification" "custom/power" "tray"]
-          else ["mpris" "custom/fleet" "custom/sysinfo" "network" "pulseaudio" "custom/controlcenter" "custom/notification" "custom/power" "tray"];
+          then ["mpris" "custom/fleet" "custom/sysinfo" "battery" "backlight" "network" "bluetooth" "pulseaudio" "custom/caffeine" "custom/controlcenter" "custom/thinkdot" "custom/notification" "custom/power" "tray"]
+          else ["mpris" "custom/fleet" "custom/sysinfo" "network" "pulseaudio" "custom/caffeine" "custom/controlcenter" "custom/notification" "custom/power" "tray"];
 
         "hyprland/workspaces" = {
           disable-scroll = true;
-          all-outputs = true;
+          all-outputs = false;
           format = "{name}";
         };
 
@@ -103,7 +103,9 @@ in {
           format-plugged = "󰚥 {capacity}%";
           format-full = "󰁹 {capacity}%";
           format-icons = ["󰁺" "󰁻" "󰁼" "󰁽" "󰁾" "󰁿" "󰂀" "󰂁" "󰂂" "󰁹"];
-          tooltip-format = "{timeTo} ({power:0.1f}W)\nHealth: {health}%";
+          tooltip-format = "{timeTo} ({power:0.1f}W)\nHealth: {health}%\nLeft-click: AccuBattery Studio\nRight-click: Control Center";
+          on-click = "accubattery-gui";
+          on-click-right = "control-center-gui";
         };
 
         backlight = {
@@ -225,6 +227,8 @@ in {
           exec = "thinkdot waybar";
           interval = 2;
           on-click = "thinkdot stealth toggle";
+          on-click-middle = "thinkdot gauge";
+          on-click-right = "control-center-gui";
           tooltip = true;
         };
 
@@ -275,6 +279,15 @@ in {
           on-click = "pomodoro toggle";
           on-click-middle = "pomodoro reset";
           on-click-right = "pomodoro skip";
+        };
+
+        "custom/caffeine" = {
+          format = "{}";
+          return-type = "json";
+          exec = "caffeine waybar";
+          interval = 2;
+          on-click = "caffeine toggle";
+          tooltip = true;
         };
       }
     ];
@@ -397,6 +410,8 @@ in {
       #backlight { color: @tertiary; }
       #bluetooth { color: @primary; }
       #custom-sysinfo { color: @primary; }
+      #custom-caffeine { color: @on_surface_variant; }
+      #custom-caffeine.active { color: #34C759; }
 
       #clock {
         color: @on_background;
@@ -438,6 +453,32 @@ in {
       }
     '';
   };
+
+  # docked: full bar on the external screens, workspaces + clock on the panel.
+  # monitor-ctl flips active.json between this and the plain config.
+  xdg.configFile."waybar/docked.json" = lib.mkIf laptop {
+    text = let
+      main = builtins.head config.programs.waybar.settings;
+    in
+      builtins.toJSON [
+        (main // {output = ["!eDP-1" "*"];})
+        (main
+          // {
+            output = ["eDP-1"];
+            modules-left = ["hyprland/workspaces"];
+            modules-center = ["clock"];
+            modules-right = [];
+          })
+      ];
+  };
+
+  systemd.user.services.waybar.Service.ExecStart = lib.mkIf laptop (
+    lib.mkForce "${config.programs.waybar.package}/bin/waybar -c ${config.xdg.configHome}/waybar/active.json"
+  );
+
+  home.activation.waybarActiveConfig = lib.mkIf laptop (lib.hm.dag.entryAfter ["writeBoundary"] ''
+    [ -e "${config.xdg.configHome}/waybar/active.json" ] || run ln -sfn config "${config.xdg.configHome}/waybar/active.json"
+  '');
 
   services.swaync = {
     enable = true;

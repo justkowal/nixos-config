@@ -4,7 +4,13 @@
   lib,
   inputs,
   ...
-}: {
+}: let
+  batmonScript = pkgs.writeShellApplication {
+    name = "batmon";
+    runtimeInputs = with pkgs; [coreutils gnugrep gawk upower];
+    text = builtins.readFile ../desktop/scripts/batmon.sh;
+  };
+in {
   imports = [
     ./hardware-configuration.nix
     ../../modules/overlays.nix
@@ -306,6 +312,9 @@
     e2fsprogs
     sops
     ssh-to-age
+    acpi
+    upower
+    batmonScript
   ];
 
   # ── Declarative Secrets Management (sops-nix) ──────────────────────────
@@ -331,8 +340,13 @@
     extraUpFlags = [ "--accept-routes" ];
   };
 
-  # Ensure Syncthing, Render, Notes, GameSaves, and Documents directories exist with correct user ownership
+  # Ensure Syncthing, Render, Notes, GameSaves, and Documents directories exist with correct user ownership,
+  # and grant unprivileged write access to battery charge thresholds for Trip Mode / Conservation Mode switching
   systemd.tmpfiles.rules = [
+    "z /sys/class/power_supply/BAT0/charge_start_threshold 0666 root root -"
+    "z /sys/class/power_supply/BAT0/charge_stop_threshold 0666 root root -"
+    "z /sys/class/power_supply/BAT0/charge_control_start_threshold 0666 root root -"
+    "z /sys/class/power_supply/BAT0/charge_control_end_threshold 0666 root root -"
     "d /home/justkowal/Sync 0755 justkowal users -"
     "d /home/justkowal/Sync/Render 0755 justkowal users -"
     "d /home/justkowal/Sync/Notes 0755 justkowal users -"
@@ -340,6 +354,10 @@
     "d /home/justkowal/Sync/Documents 0755 justkowal users -"
     "d /home/justkowal/Sync/Documents/consume 0755 justkowal users -"
   ];
+
+  services.udev.extraRules = ''
+    ACTION=="add|change", SUBSYSTEM=="power_supply", KERNEL=="BAT0", RUN+="${pkgs.runtimeShell} -c 'chmod a+rw /sys/class/power_supply/%k/charge_*_threshold 2>/dev/null || true'"
+  '';
 
   # Hostname
   networking.hostName = "thinkpad-t14s-gen1-amd";
