@@ -14,7 +14,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     home-manager = {
-      url = "github:nix-community/home-manager";
+      # track the release branch matching nixpkgs; master drifts ahead and warns on mismatch
+      url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     lanzaboote = {
@@ -46,7 +47,7 @@
       home-manager.extraSpecialArgs = {
         laptop = isLaptop;
       };
-      home-manager.users.${user} = import ./hosts/desktop/home.nix;
+      home-manager.users.${user} = import ./home;
     };
   in {
     nixosConfigurations = {
@@ -108,5 +109,18 @@
     # Hostname aliases
     nixosConfigurations.nixos-desktop = self.nixosConfigurations.desktop;
     nixosConfigurations.thinkpad-t14s-gen1-amd = self.nixosConfigurations.laptop;
+
+    formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.alejandra;
+
+    # `nix flake check` already evaluates every host; this adds the script linters
+    checks.x86_64-linux.scripts = let
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+    in
+      pkgs.runCommand "lint-scripts" {nativeBuildInputs = [pkgs.shellcheck pkgs.ruff];} ''
+        cd ${self}
+        find . -name '*.sh' -print0 | xargs -0 shellcheck -S warning
+        ruff check --no-cache --select F,E9 .
+        touch $out
+      '';
   };
 }

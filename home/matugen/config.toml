@@ -1,0 +1,111 @@
+[config]
+source_color_index = 0
+
+[templates.theme-material-blue]
+input_path = "~/.config/matugen/templates/theme-material-blue.css"
+output_path = "~/.mozilla/firefox/1arj8uom.default/chrome/theme-material-blue.css"
+
+[templates.waybar-colors]
+input_path = "~/.config/matugen/templates/waybar-colors.css"
+output_path = "~/.config/waybar/colors.css"
+post_hook = "pkill -SIGUSR2 waybar"
+
+[templates.hyprland-colors]
+input_path = "~/.config/matugen/templates/hyprland-colors.conf"
+output_path = "~/.config/hypr/matugen.conf"
+post_hook = "hyprctl reload"
+
+[templates.vscode-theme]
+input_path = "~/.config/matugen/templates/vscode-theme.json"
+output_path = "~/.vscode/extensions/matugen-theme/themes/matugen-theme.json"
+
+[templates.kitty-colors]
+input_path = "~/.config/matugen/templates/kitty-colors.conf"
+output_path = "~/.config/kitty/colors.conf"
+post_hook = "pkill -USR1 kitty"
+
+[templates.rofi-colors]
+input_path = "~/.config/matugen/templates/rofi-colors.rasi"
+output_path = "~/.config/rofi/colors.rasi"
+
+[templates.swaync-colors]
+input_path = "~/.config/matugen/templates/swaync-colors.css"
+output_path = "~/.config/swaync/colors.css"
+post_hook = "swaync-client -R; swaync-client -rs"
+
+[templates.vscode-raw]
+input_path = "~/.config/matugen/templates/vscode-colors"
+output_path = "~/.cache/matugen/vscode-colors"
+
+[templates.vscode-json]
+input_path = "~/.config/matugen/templates/vscode-colors.json"
+output_path = "~/.cache/matugen/vscode-colors.json"
+
+[templates.gtk3]
+input_path = "~/.config/matugen/templates/gtk3.css"
+output_path = "~/.config/gtk-3.0/gtk.css"
+
+[templates.gtk4]
+input_path = "~/.config/matugen/templates/gtk4.css"
+output_path = "~/.config/gtk-4.0/gtk.css"
+
+[templates.starship]
+input_path = "~/.config/matugen/templates/starship.toml"
+output_path = "~/.config/starship.toml"
+
+[templates.btop]
+input_path = "~/.config/matugen/templates/btop.theme"
+output_path = "~/.config/btop/themes/matugen.theme"
+
+[templates.steam]
+input_path = "~/.config/matugen/templates/steam.css"
+output_path = "~/.local/share/Steam/steamui/skins/Material-Theme/css/main/colors/matugen.css"
+
+[templates.kde-colors]
+input_path = "~/.config/matugen/templates/kde-colors.colors"
+output_path = "~/.local/share/color-schemes/Matugen.colors"
+post_hook = "sh -c 'plasma-apply-colorscheme Matugen 2>/dev/null || true'"
+
+[templates.kdeglobals]
+input_path = "~/.config/matugen/templates/kde-colors.colors"
+output_path = "~/.config/kdeglobals"
+
+[templates.anki]
+input_path = "~/.config/matugen/templates/anki.css"
+output_path = "~/.local/share/Anki2/user_files/anki-matugen.css"
+
+[templates.discord]
+input_path = "~/.config/matugen/templates/discord.css"
+output_path = "~/.config/Vencord/settings/quickCss.css"
+
+[templates.vesktop]
+input_path = "~/.config/matugen/templates/discord.css"
+output_path = "~/.config/vesktop/settings/quickCss.css"
+
+[templates.vencord-theme]
+input_path = "~/.config/matugen/templates/discord.css"
+output_path = "~/.config/Vencord/themes/matugen.theme.css"
+
+[templates.vesktop-theme]
+input_path = "~/.config/matugen/templates/discord.css"
+output_path = "~/.config/vesktop/themes/matugen.theme.css"
+
+[templates.heroic]
+input_path = "~/.config/matugen/templates/heroic.css"
+output_path = "~/.config/heroic/themes/matugen.css"
+
+[templates.prismlauncher]
+input_path = "~/.config/matugen/templates/prismlauncher.json"
+output_path = "~/.local/share/PrismLauncher/themes/Matugen/theme.json"
+
+[templates.zathura]
+input_path = "~/.config/matugen/templates/zathura-colors"
+output_path = "~/.config/zathura/zathurarc"
+
+[templates.spotify]
+input_path = "~/.config/matugen/templates/spicetify.ini"
+output_path = "~/.config/spicetify/Themes/Sleek/color.ini"
+
+[templates.gtk-colors]
+input_path = "~/.config/matugen/templates/gtk-colors.css"
+output_path = "~/.config/gtk-3.0/colors.css"

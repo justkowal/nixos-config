@@ -16,6 +16,7 @@ import json
 import socket
 import shutil
 import subprocess
+import threading
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -25,7 +26,7 @@ from gi.repository import Gtk, Adw, GLib, Gdk
 def get_script_cmd():
     if shutil.which("tablet-display"):
         return ["tablet-display"]
-    alt_script = "/etc/nixos/hosts/desktop/scripts/tablet-display.sh"
+    alt_script = "/etc/nixos/home/scripts/tablet-display.sh"
     if os.path.exists(alt_script):
         return ["bash", alt_script]
     return ["tablet-display"]
@@ -299,12 +300,13 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
         moonlight_row.add_suffix(btn_moonlight)
         stream_group.add(moonlight_row)
 
+        self._polling = False
         self.update_display_status()
         GLib.timeout_add_seconds(3, self.update_display_status)
 
     def get_active_headless_info(self):
         try:
-            p = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True)
+            p = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True, timeout=2)
             monitors = json.loads(p.stdout)
             for m in monitors:
                 name = m.get("name", "")
@@ -322,13 +324,13 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
 
     def check_sunshine_service(self):
         try:
-            res = subprocess.run(["systemctl", "--user", "is-active", "--quiet", "sunshine"])
+            res = subprocess.run(["systemctl", "--user", "is-active", "--quiet", "sunshine"], timeout=2)
             if res.returncode == 0:
                 return True
         except Exception:
             pass
         try:
-            res_pgrep = subprocess.run(["pgrep", "-f", "sunshine"], capture_output=True)
+            res_pgrep = subprocess.run(["pgrep", "-f", "sunshine"], capture_output=True, timeout=2)
             if res_pgrep.returncode == 0:
                 return True
         except Exception:
@@ -344,9 +346,40 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             pass
         return False
 
+    def get_endpoints(self):
+        try:
+            lan_ip = "127.0.0.1"
+            p_route = subprocess.run(["ip", "-j", "route", "get", "1.1.1.1"], capture_output=True, text=True, timeout=2)
+            routes = json.loads(p_route.stdout)
+            if routes:
+                lan_ip = routes[0].get("prefsrc", "")
+
+            ts_ip = ""
+            # tailscale can hang for seconds when the daemon is wedged
+            p_ts = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=2)
+            if p_ts.returncode == 0:
+                ts_ip = p_ts.stdout.strip()
+
+            ep_str = f"LAN: {lan_ip}:47990"
+            if ts_ip:
+                ep_str += f" · Tailscale Mesh: {ts_ip}:47990"
+            return ep_str
+        except Exception:
+            return "Local: https://localhost:47990"
+
     def update_display_status(self):
-        # 1. Headless display state
-        headless_detail = self.get_active_headless_info()
+        # probes shell out, so they run off the gtk loop; the timer just kicks a poll
+        if not self._polling:
+            self._polling = True
+            threading.Thread(target=self._poll_worker, daemon=True).start()
+        return True
+
+    def _poll_worker(self):
+        state = (self.get_active_headless_info(), self.check_sunshine_service(), self.get_endpoints())
+        GLib.idle_add(self._apply_status, *state)
+
+    def _apply_status(self, headless_detail, sunshine_running, endpoints):
+        self._polling = False
         if headless_detail:
             set_badge(self.lbl_display_status, "󰄲 Active", "apple-status-green")
             self.row_display_status.set_subtitle(f"Output: {headless_detail}")
@@ -360,8 +393,6 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             self.switch_display.set_active(False)
             self.switch_display.handler_unblock_by_func(self.on_switch_display_toggled)
 
-        # 2. Sunshine streaming server state
-        sunshine_running = self.check_sunshine_service()
         if sunshine_running:
             set_badge(self.lbl_sunshine, "󰄲 Running", "apple-status-green")
             self.row_sunshine.set_subtitle("Sunshine server listening on 0.0.0.0:47984-47990 · Ready for Moonlight")
@@ -369,49 +400,34 @@ class TabletDisplayWindow(Adw.ApplicationWindow):
             set_badge(self.lbl_sunshine, "󰅙 Inactive", "apple-status-orange")
             self.row_sunshine.set_subtitle("Sunshine server not currently running on this machine")
 
-        # 3. Connection Endpoints (LAN & Tailscale)
-        try:
-            lan_ip = "127.0.0.1"
-            p_route = subprocess.run(["ip", "-j", "route", "get", "1.1.1.1"], capture_output=True, text=True)
-            routes = json.loads(p_route.stdout)
-            if routes:
-                lan_ip = routes[0].get("prefsrc", "")
+        self.row_endpoints.set_subtitle(endpoints)
+        return False
 
-            ts_ip = ""
-            p_ts = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True)
-            if p_ts.returncode == 0:
-                ts_ip = p_ts.stdout.strip()
+    def run_script(self, steps, toast):
+        # tablet-display reconfigures hyprland outputs and can take a while
+        def worker():
+            for args in steps:
+                subprocess.run(get_script_cmd() + args)
+            GLib.idle_add(self._after_script, toast)
+        threading.Thread(target=worker, daemon=True).start()
 
-            ep_str = f"LAN: {lan_ip}:47990"
-            if ts_ip:
-                ep_str += f" · Tailscale Mesh: {ts_ip}:47990"
-            self.row_endpoints.set_subtitle(ep_str)
-        except Exception:
-            self.row_endpoints.set_subtitle("Local: https://localhost:47990")
-
-        return True
+    def _after_script(self, toast):
+        self.show_toast(toast)
+        self.update_display_status()
+        return False
 
     def on_switch_display_toggled(self, widget, param):
-        target_state = self.switch_display.get_active()
-        cmd_base = get_script_cmd()
-        if target_state:
+        if self.switch_display.get_active():
             res = self.resolutions[self.combo_res.get_selected()][0]
             scale = self.scales[self.combo_scale.get_selected()]
-            subprocess.run(cmd_base + ["on", res, scale])
-            self.show_toast(f"Virtual display activated ({res}, scale {scale}×)")
+            self.run_script([["on", res, scale]], f"Virtual display activated ({res}, scale {scale}×)")
         else:
-            subprocess.run(cmd_base + ["off"])
-            self.show_toast("Virtual display disconnected")
-        self.update_display_status()
+            self.run_script([["off"]], "Virtual display disconnected")
 
     def on_apply_geometry(self, btn):
         res = self.resolutions[self.combo_res.get_selected()][0]
         scale = self.scales[self.combo_scale.get_selected()]
-        cmd_base = get_script_cmd()
-        subprocess.run(cmd_base + ["off"])
-        subprocess.run(cmd_base + ["on", res, scale])
-        self.show_toast(f"Display geometry updated: {res} at {scale}× scale")
-        self.update_display_status()
+        self.run_script([["off"], ["on", res, scale]], f"Display geometry updated: {res} at {scale}× scale")
 
     def on_open_sunshine(self, btn):
         subprocess.Popen(["xdg-open", "https://localhost:47990"])

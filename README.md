@@ -8,6 +8,7 @@ A modular, multi-host NixOS configuration with a unified Home Manager userland (
 graph TD
     A[flake.nix] --> B(hosts/)
     A --> C(modules/)
+    A --> I(home/)
 
     B --> D[desktop/]
     B --> E[vm/]
@@ -19,14 +20,14 @@ graph TD
     F -.->|Imports| C
 
     D --> H[configuration.nix]
-    D --> I[home.nix]
 
-    I --> J[home-hyprland.nix]
-    I --> K[home-waybar.nix]
-    I --> L[home-shell.nix]
-    I --> M[home-apps.nix]
-    I --> N[home-ai.nix]
-    I --> O[home-theming.nix]
+    I --> J[hyprland.nix]
+    I --> K[waybar.nix]
+    I --> L[shell.nix]
+    I --> M[apps.nix]
+    I --> N[ai.nix]
+    I --> O[theming.nix]
+    I --> P[scripts/]
 ```
 
 ## Modules

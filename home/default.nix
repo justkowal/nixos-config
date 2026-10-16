@@ -10,14 +10,14 @@
 in {
   imports =
     [
-      ./home-hyprland.nix
-      ./home-waybar.nix
-      ./home-shell.nix
-      ./home-apps.nix
-      ./home-theming.nix
+      ./hyprland.nix
+      ./waybar.nix
+      ./shell.nix
+      ./apps.nix
+      ./theming.nix
     ]
     ++ lib.optionals (!laptop) [
-      ./home-ai.nix
+      ./ai.nix
     ];
 
   home.username = user;

@@ -544,7 +544,6 @@ class FleetManagerWindow(Adw.ApplicationWindow):
         row = ui["row"]
         badge = ui["badge"]
         wake_btn = ui.get("wake_btn")
-        ssh_btn = ui.get("ssh_btn")
 
         if wake_btn:
             wake_btn.set_sensitive(False)

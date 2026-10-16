@@ -5,22 +5,8 @@
   inputs,
   ...
 }: let
-  # ── Flamenco Worker — not in nixpkgs ───────────────────────────────────
-  # ponytail: first build will fail with hash mismatch — copy the correct hash from the error
-  flamenco-worker = pkgs.stdenv.mkDerivation {
-    pname = "flamenco-worker";
-    version = "3.6";
-    src = pkgs.fetchzip {
-      url = "https://flamenco.blender.org/downloads/flamenco-3.6-linux-amd64.tar.gz";
-      hash = "sha256-aZ5hqxssAyeOj/SMGqU0p8aL02I2tidndFAcvjpgMCk=";
-    };
-    dontBuild = true;
-    dontFixup = true;
-    installPhase = ''
-      mkdir -p $out/bin
-      install -m755 flamenco-worker $out/bin/
-    '';
-  };
+  # same version as the manager on the rpi4
+  flamenco-worker = (pkgs.callPackage ../../pkgs/flamenco { }).worker;
 
   flamencoWorkerConfig = pkgs.writeText "flamenco-worker.yaml" ''
     _meta:
@@ -41,6 +27,7 @@ in {
   imports = [
     ./hardware-configuration.nix
     ../../modules/overlays.nix
+    ../../modules/lab-hosts.nix
     ../../modules/boot.nix
     ../../modules/locale.nix
     ../../modules/user.nix
@@ -76,22 +63,6 @@ in {
   # Allows the Laptop (ThinkPad T14s) to assist with parallel x86_64 compilation
   # when available over Tailscale/LAN. Capped at 2 jobs and x86_64 only so it
   # never starves the Desktop or takes slow QEMU ARM64 emulation tasks.
-  networking.hosts."100.69.154.81" = [ "thinkpad-t14s-gen1-amd" "thinkpad-t14s-gen1-amd.lab" ];
-  networking.hosts."100.113.193.14" = [
-    "nixos-rpi4"
-    "nixos-rpi4.lab"
-    "lab"
-    "home.lab"
-    "status.lab"
-    "idm.lab"
-    "git.lab"
-    "ci.lab"
-    "vault.lab"
-    "bookmarks.lab"
-    "render.lab"
-    "portfolio.lab"
-    "cache.lab"
-  ];
 
   nix.buildMachines = [
     {
@@ -392,7 +363,7 @@ in {
     secrets."tailscale_auth_key" = {};
     secrets."woodpecker_agent_secret" = {};
     templates."woodpecker-agent.env".content = ''
-      WOODPECKER_AGENT_SECRET=''${config.sops.placeholder.woodpecker_agent_secret}
+      WOODPECKER_AGENT_SECRET=${config.sops.placeholder.woodpecker_agent_secret}
     '';
   };
 

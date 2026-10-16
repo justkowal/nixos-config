@@ -66,4 +66,4 @@ To launch applications inside the VPN namespace with full GUI support (X11/Wayla
 qbittorrent-vpn
 ```
 
-This is facilitated by a targeted `sudo` rule allowing passwordless execution of `ip netns exec vpnns`.
+A `sudo` rule allows passwordless execution of one fixed wrapper that enters the namespace and immediately drops back to your user with `setpriv`. Running arbitrary commands in `vpnns` needs your sudo password.

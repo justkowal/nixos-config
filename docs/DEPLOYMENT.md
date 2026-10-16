@@ -198,18 +198,14 @@ Cloudflare Tunnel maintains persistent outbound connections from the Pi to Cloud
    > The wildcard record `*.23012006.xyz` means **any** subdomain requested by a container will immediately resolve to your tunnel without ever touching the Cloudflare dashboard again.
 
 #### B. Woodpecker CI Server Secrets
-Create `/etc/woodpecker/server.env` (permissions `0600`, owned by `root:root`):
+The server env file is rendered by sops-nix (`sops.templates."woodpecker-server.env"` in `hosts/rpi4/configuration.nix`) from three keys in `hosts/rpi4/secrets/secrets.yaml`. The desktop agent reads the same `woodpecker_agent_secret`.
 
 ```bash
-sudo mkdir -p /etc/woodpecker
-sudo tee /etc/woodpecker/server.env <<EOF
-WOODPECKER_AGENT_SECRET=$(openssl rand -hex 32)
-WOODPECKER_GITEA_CLIENT=
-WOODPECKER_GITEA_SECRET=
-EOF
-sudo chmod 0600 /etc/woodpecker/server.env
+sops hosts/rpi4/secrets/secrets.yaml
+# woodpecker_agent_secret: <openssl rand -hex 32>
+# woodpecker_gitea_client: <filled in step 2.7>
+# woodpecker_gitea_secret: <filled in step 2.7>
 ```
-*(The Gitea/Forgejo client and secret will be filled in step 2.7 after creating the OAuth2 application in Forgejo).*
 
 #### C. Homelab Internal Root CA & Caddy PKI Setup
 The Homelab Root CA certificate ([`modules/certs/homelab-ca.crt`](file:///etc/nixos/modules/certs/homelab-ca.crt)) is declaratively imported into the system trust store on all machines via `modules/security.nix`.
@@ -339,11 +335,7 @@ SSH authentication is declaratively synchronized across all nodes via `modules/s
 4. Open **Site Administration → Applications → Create OAuth2 Application**:
    - **Application Name**: `Woodpecker CI`
    - **Redirect URI**: `https://ci.lab/authorize`
-5. Copy the generated **Client ID** and **Client Secret**, paste them into `/etc/woodpecker/server.env`:
-   ```bash
-   WOODPECKER_GITEA_CLIENT=<client-id>
-   WOODPECKER_GITEA_SECRET=<client-secret>
-   ```
+5. Copy the generated **Client ID** and **Client Secret** into `woodpecker_gitea_client` / `woodpecker_gitea_secret` with `sops hosts/rpi4/secrets/secrets.yaml`, then redeploy the Pi.
 6. Restart Woodpecker:
    ```bash
    sudo systemctl restart woodpecker-server

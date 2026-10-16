@@ -39,6 +39,10 @@
     flake = "/etc/nixos";
   };
 
+  # scripts and docs assume /etc/nixos; on hosts where the checkout lives in ~ point it there.
+  # plain `L` never replaces an existing /etc/nixos, so a real checkout there is left alone.
+  systemd.tmpfiles.rules = [ "L /etc/nixos - - - - /home/justkowal/nixos-config" ];
+
   # nh handles GC dynamically
   nix.gc.automatic = false;
 

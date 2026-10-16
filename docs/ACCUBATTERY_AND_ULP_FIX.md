@@ -165,11 +165,11 @@ The port brings all core features of the Android **AccuBattery** application to 
 | Path | Purpose |
 | :--- | :--- |
 | `modules/power-saving.nix` | Replaces `amdgpu.abm_level=4` with `0`, updates TLP `AMDGPU_ABM_LEVEL=0`, updates `apply-ultra-power` runtime script, adds sysfs permissions for `panel_power_savings`. |
-| `hosts/desktop/scripts/guis/accubattery_gui.py` | Standalone GTK4 + Libadwaita + Cairo application implementing all AccuBattery tabs, graphs, per-app battery estimations, and ULP filter controls. |
-| `hosts/desktop/home-apps.nix` | Adds `accubattery-gui` package with `pycairo` and `psutil` runtime inputs, adds `.desktop` launcher, and registers systemd background service. |
-| `hosts/desktop/scripts/guis/control_center_gui.py` | Adds direct launch action for AccuBattery Studio and adds the AMD ABM color filter status & 1-click fix to Control Center. |
-| `hosts/desktop/home-hyprland.nix` | Adds window rules (`size 680 740`, `center`, `float`) and `$mod ALT, B` keybinding for instant launch. |
-| `hosts/desktop/scripts/batmon.sh` | Adds `--gui` flag to open `accubattery-gui`. |
+| `home/scripts/guis/accubattery_gui.py` | Standalone GTK4 + Libadwaita + Cairo application implementing all AccuBattery tabs, graphs, per-app battery estimations, and ULP filter controls. |
+| `home/apps.nix` | Adds `accubattery-gui` package with `pycairo` and `psutil` runtime inputs, adds `.desktop` launcher, and registers systemd background service. |
+| `home/scripts/guis/control_center_gui.py` | Adds direct launch action for AccuBattery Studio and adds the AMD ABM color filter status & 1-click fix to Control Center. |
+| `home/hyprland.nix` | Adds window rules (`size 680 740`, `center`, `float`) and `$mod ALT, B` keybinding for instant launch. |
+| `home/scripts/batmon.sh` | Adds `--gui` flag to open `accubattery-gui`. |
 
 ---
 

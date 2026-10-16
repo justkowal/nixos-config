@@ -27,6 +27,7 @@ import sqlite3
 import shutil
 import traceback
 import subprocess
+import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -1695,6 +1696,8 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
         main_box.append(self.view_stack)
         self.view_stack.set_vexpand(True)
         self.power_mgr = ChargingPowerManager()
+        self._power_info: Dict[str, Any] = {"mode": "standard"}
+        self._power_busy = False
 
         self.page_charging = self.build_charging_tab()
         self.page_discharging = self.build_discharging_tab()
@@ -2220,7 +2223,10 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
             self.last_status = status
 
             # ── 7. Charging Power Management (Caffeine while charging, auto-sleep/midnight-poweroff) ──
-            power_info = self.power_mgr.update(is_charging, status, cap, watts)
+            if not self._power_busy:
+                self._power_busy = True
+                threading.Thread(target=self._power_worker, args=(is_charging, status, cap, watts), daemon=True).start()
+            power_info = self._power_info
             mode = power_info.get("mode", "standard")
             if mode == "charging_awake":
                 set_badge(self.lbl_auto_power, "Caffeine Awake", "apple-status-green")
@@ -2246,8 +2252,18 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
                 set_badge(self.lbl_current_limit, limit_info["badge"], limit_info["badge_class"])
                 self.row_current_limit.set_subtitle(limit_info["subtitle"])
 
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
+
+    def _power_worker(self, *args):
+        # ChargingPowerManager shells out to hyprctl/loginctl every tick; keep it off the gtk loop.
+        # the ui shows the previous tick's result, which is fine at a 2 s cadence
+        try:
+            self._power_info = self.power_mgr.update(*args)
+        except Exception:
+            traceback.print_exc()
+        finally:
+            self._power_busy = False
 
     # ── Cumulative Per-App Drain Tracking ──
     def _update_cycle_app_drain(self, system_watts: float):
@@ -2369,7 +2385,6 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
             return
 
         for c in cycles:
-            cid = c.get("id", 0)
             stype = c.get("session_type", "charge")
             start_pct = c.get("start_pct", 0)
             end_pct = c.get("end_pct", 0)
@@ -2445,15 +2460,16 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
                 pass
 
     def set_abm_level(self, level: int):
-        for pattern in ["/sys/class/drm/card*-eDP-*/amdgpu/panel_power_savings"]:
-            for f in glob.glob(pattern):
-                if os.path.exists(f):
-                    try:
-                        with open(f, "w") as fp:
-                            fp.write(str(level))
-                    except Exception:
-                        subprocess.run(["pkexec", "sh", "-c", f"echo {level} > {f}"], capture_output=True)
-        self.refresh_abm_status()
+        # pkexec blocks until the polkit prompt is answered, so the writes run on a worker
+        def worker():
+            for f in glob.glob("/sys/class/drm/card*-eDP-*/amdgpu/panel_power_savings"):
+                try:
+                    with open(f, "w") as fp:
+                        fp.write(str(level))
+                except Exception:
+                    subprocess.run(["pkexec", "sh", "-c", f"echo {level} > {f}"], capture_output=True)
+            GLib.idle_add(self.refresh_abm_status)
+        threading.Thread(target=worker, daemon=True).start()
 
     # ── Hardware Threshold Controls ──
     def get_hardware_charge_limit(self) -> Dict[str, Any]:
@@ -2511,8 +2527,12 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
                 except Exception: pass
         if shutil.which("batmon"):
             opt = "--trip" if stop >= 100 else "--conserve"
-            subprocess.run(["batmon", opt], capture_output=True)
-        self.refresh_all()
+            def worker():
+                subprocess.run(["batmon", opt], capture_output=True)
+                GLib.idle_add(self.refresh_all)
+            threading.Thread(target=worker, daemon=True).start()
+        else:
+            self.refresh_all()
 
     # ── Alarm Events ──
     def on_alarm_toggled(self, switch, state):

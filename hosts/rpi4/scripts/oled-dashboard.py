@@ -16,7 +16,7 @@ ENV overrides:
 
 from __future__ import annotations
 
-import os, sys, time, signal, socket, subprocess
+import os, time, signal, socket, subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Optional

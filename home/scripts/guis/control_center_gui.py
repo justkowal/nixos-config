@@ -967,7 +967,6 @@ class BatteryInspectorWindow(Adw.Window):
 
             efull = int(open(f"{bat_dir}/energy_full").read().strip()) if os.path.exists(f"{bat_dir}/energy_full") else 0
             edesign = int(open(f"{bat_dir}/energy_full_design").read().strip()) if os.path.exists(f"{bat_dir}/energy_full_design") else 1
-            enow = int(open(f"{bat_dir}/energy_now").read().strip()) if os.path.exists(f"{bat_dir}/energy_now") else 0
             pnow = int(open(f"{bat_dir}/power_now").read().strip()) if os.path.exists(f"{bat_dir}/power_now") else 0
             vnow = int(open(f"{bat_dir}/voltage_now").read().strip()) if os.path.exists(f"{bat_dir}/voltage_now") else 0
 

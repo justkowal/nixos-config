@@ -89,11 +89,6 @@ def query_tailscale_peers() -> Dict[str, Dict[str, Any]]:
         if proc.returncode == 0:
             ts_data = json.loads(proc.stdout)
             
-            # Map Self node
-            self_node = ts_data.get("Self", {})
-            self_h = self_node.get("HostName", "").lower()
-            self_ips = self_node.get("TailscaleIPs", [])
-            self_ip = self_ips[0] if self_ips else None
 
             # Map Peer nodes
             peer_dict = ts_data.get("Peer", {})

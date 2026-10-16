@@ -19,3 +19,6 @@ __pycache__/
 *.pyc
 
 
+
+# locally cloned agent skills, not part of the config
+.agents/

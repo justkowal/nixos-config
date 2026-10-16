@@ -5,7 +5,7 @@ let
     name = "nix-builder";
     runtimeInputs = with pkgs; [ coreutils gnused gawk netcat curl openssh wakeonlan iputils nh ];
     checkPhase = "";
-    text = builtins.readFile ../hosts/desktop/scripts/nix-builder-prompt.sh;
+    text = builtins.readFile ../home/scripts/nix-builder-prompt.sh;
   };
 
   nixCachePush = pkgs.writeShellScriptBin "nix-cache-push" ''

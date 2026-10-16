@@ -8,7 +8,8 @@
     enable = true;
     startWhenNeeded = true;
     settings = {
-      PasswordAuthentication = true;
+      # keys only; authorized keys live in security.nix
+      PasswordAuthentication = lib.mkDefault false;
       PermitRootLogin = "no";
     };
   };

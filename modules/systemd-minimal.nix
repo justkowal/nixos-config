@@ -11,7 +11,8 @@
   systemd.oomd.enable = false;
 
   services.journald.extraConfig = ''
-    Storage=volatile
+    # persistent so crashes from the previous boot are still readable (journalctl -b -1)
+    Storage=persistent
     SystemMaxUse=50M
     RuntimeMaxUse=50M
     SyncIntervalSec=5m

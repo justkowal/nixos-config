@@ -84,7 +84,6 @@
     GDK_BACKEND = "wayland,x11";
     SDL_VIDEODRIVER = "wayland";
     CLUTTER_BACKEND = "wayland";
-    NH_FLAKE = "/etc/nixos";
 
     AMD_VULKAN_ICD = "RADV";
     RADV_PERFTEST = "gpa_bo,sam,nggc,csworkgroups";

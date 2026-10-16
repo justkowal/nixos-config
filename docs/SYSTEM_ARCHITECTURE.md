@@ -16,7 +16,7 @@ graph LR
 
     B --> F[configuration.nix]
     B --> G[hardware-configuration.nix]
-    B --> H[home.nix]
+    A --> H[home/ shared Home Manager userland]
 ```
 
 ### Host Targets Matrix

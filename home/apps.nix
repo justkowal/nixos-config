@@ -131,7 +131,7 @@ let
     text = ''
       export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
       export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
-      devGui="/etc/nixos/hosts/desktop/scripts/guis/accubattery_gui.py"
+      devGui="/etc/nixos/home/scripts/guis/accubattery_gui.py"
       if [ -f "$devGui" ]; then
         exec python3 "$devGui" "$@"
       fi
@@ -312,6 +312,48 @@ in {
         [ -n "''${DRY_RUN:-}" ] || printf '%s\n' "$merged" > "$f"
       else
         warnEcho "vscode settings.json is not plain json, skipped merging managed keys"
+      fi
+    '';
+
+  # claude desktop rewrites its whole config from memory, so hand edits made while it runs are lost.
+  # set mcpServers here instead; the app picks it up on its next start. other keys stay the app's.
+  home.activation.claudeMcpServers = let
+    servers = pkgs.writeText "claude-mcp-servers.json" (builtins.toJSON {
+      playwright = {
+        command = "npx";
+        args = ["-y" "@playwright/mcp@0.0.83" "--browser" "chromium" "--executable-path" "${pkgs.chromium}/bin/chromium"];
+      };
+      fetch = {
+        command = "uvx";
+        args = ["mcp-server-fetch"];
+      };
+      duckduckgo-search = {
+        command = "uvx";
+        args = ["duckduckgo-mcp-server"];
+      };
+      github = {
+        command = "npx";
+        args = ["-y" "@modelcontextprotocol/server-github"];
+      };
+      code-review-graph = {
+        command = "uvx";
+        args = ["code-review-graph" "serve"];
+      };
+      # only connects while freecad runs its rpc addon; mcp 2.x dropped the fastmcp module it imports
+      freecad = {
+        command = "uvx";
+        args = ["--from" "freecad-robust-mcp" "--with" "mcp<2" "freecad-mcp" "--mode" "xmlrpc"];
+      };
+    });
+  in
+    lib.hm.dag.entryAfter ["writeBoundary"] ''
+      f="${config.xdg.configHome}/Claude/claude_desktop_config.json"
+      run mkdir -p "$(dirname "$f")"
+      [ -s "$f" ] || echo '{}' > "$f"
+      if merged=$(${pkgs.jq}/bin/jq --slurpfile s ${servers} '.mcpServers = $s[0]' "$f" 2>/dev/null); then
+        [ -n "''${DRY_RUN:-}" ] || { printf '%s\n' "$merged" > "$f" && chmod 600 "$f"; }
+      else
+        warnEcho "claude_desktop_config.json is not valid json, skipped setting mcpServers"
       fi
     '';
 

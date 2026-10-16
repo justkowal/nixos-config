@@ -1,0 +1,7 @@
+* {
+    bg-col: {{ colors.background.default.hex }};
+    border-col: {{ colors.outline.default.hex }};
+    selected-col: {{ colors.surface_variant.default.hex }};
+    text-col: {{ colors.on_background.default.hex }};
+    accent-col: {{ colors.primary.default.hex }};
+}

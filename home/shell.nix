@@ -71,10 +71,7 @@
     enableNushellIntegration = true;
   };
 
-  programs.fzf = {
-    enable = true;
-    enableNushellIntegration = false;
-  };
+  programs.fzf.enable = true;
 
   programs.direnv = {
     enable = true;

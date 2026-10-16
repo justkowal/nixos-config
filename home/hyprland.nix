@@ -252,6 +252,8 @@ in {
 
           misc {
               focus_on_activate = true
+              # lets `hyprctl --instance 0 dispatch exec hyprlock` from a tty recover a dead lockscreen
+              allow_session_lock_restore = true
           }
 
 

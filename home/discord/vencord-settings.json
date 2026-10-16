@@ -1,0 +1,9 @@
+{
+  "useQuickCss": true,
+  "themeLinks": [],
+  "enabledThemes": ["matugen.theme.css"],
+  "enableReactDevtools": false,
+  "plugins": {
+    "WebKeybinds": { "enabled": true }
+  }
+}

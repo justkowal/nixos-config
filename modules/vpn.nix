@@ -1,11 +1,22 @@
 { config, pkgs, ... }:
 
+let
+  # the only thing sudo may run: enter the netns, then drop straight back to the user.
+  # a blanket `ip netns exec vpnns *` rule was a passwordless root shell.
+  vpnnsQbittorrent = pkgs.writeShellScript "vpnns-qbittorrent" ''
+    display="$1" wayland="$2"; shift 2
+    exec ${pkgs.iproute2}/bin/ip netns exec vpnns \
+      ${pkgs.util-linux}/bin/setpriv --reuid=justkowal --regid=users --init-groups --reset-env \
+      ${pkgs.coreutils}/bin/env DISPLAY="$display" WAYLAND_DISPLAY="$wayland" XDG_RUNTIME_DIR="/run/user/$(${pkgs.coreutils}/bin/id -u justkowal)" \
+      ${pkgs.qbittorrent}/bin/qbittorrent "$@"
+  '';
+in
 {
   environment.systemPackages = with pkgs; [
     openvpn
     qbittorrent
     (writeShellScriptBin "qbittorrent-vpn" ''
-      exec sudo ${pkgs.iproute2}/bin/ip netns exec vpnns sudo -u justkowal env DISPLAY="$DISPLAY" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" ${pkgs.qbittorrent}/bin/qbittorrent "$@"
+      exec sudo ${vpnnsQbittorrent} "$DISPLAY" "$WAYLAND_DISPLAY" "$@"
     '')
   ];
 
@@ -105,6 +116,6 @@
 
   security.sudo.extraRules = [{
     users = [ "justkowal" ];
-    commands = [{ command = "${pkgs.iproute2}/bin/ip netns exec vpnns *"; options = [ "NOPASSWD" ]; }];
+    commands = [{ command = "${vpnnsQbittorrent}"; options = [ "NOPASSWD" ]; }];
   }];
 }

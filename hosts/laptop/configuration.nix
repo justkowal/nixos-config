@@ -8,12 +8,13 @@
   batmonScript = pkgs.writeShellApplication {
     name = "batmon";
     runtimeInputs = with pkgs; [coreutils gnugrep gawk upower];
-    text = builtins.readFile ../desktop/scripts/batmon.sh;
+    text = builtins.readFile ../../home/scripts/batmon.sh;
   };
 in {
   imports = [
     ./hardware-configuration.nix
     ../../modules/overlays.nix
+    ../../modules/lab-hosts.nix
     ../../modules/boot.nix
     ../../modules/locale.nix
     ../../modules/user.nix
@@ -40,22 +41,6 @@ in {
   # ── Distributed Builds (Offload to Desktop) ────────────────────────────
   # Dispatches heavy compilation and ARM64 SD image builds to the Desktop's
   # 16-thread Ryzen 7 7800X3D over Tailscale/LAN with automatic fallback.
-  networking.hosts."100.109.222.110" = [ "nixos-desktop" "nixos-desktop.lab" ];
-  networking.hosts."100.113.193.14" = [
-    "nixos-rpi4"
-    "nixos-rpi4.lab"
-    "lab"
-    "home.lab"
-    "status.lab"
-    "idm.lab"
-    "git.lab"
-    "ci.lab"
-    "vault.lab"
-    "bookmarks.lab"
-    "render.lab"
-    "portfolio.lab"
-    "cache.lab"
-  ];
 
   nix.buildMachines = [
     {

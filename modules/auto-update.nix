@@ -11,6 +11,8 @@ let
       STAGING_DIR="/var/tmp/nixos-pending-update"
       STATE_FILE="/var/tmp/nixos-pending-update.ready"
       DIFF_FILE="/var/tmp/nixos-pending-update.diff"
+      # runs as root: write the new lock beside the staged build, never into the checkout
+      LOCK_FILE="/var/tmp/nixos-pending-update.lock"
 
       cleanup_on_exit() {
         local exit_code=$?
@@ -34,11 +36,12 @@ let
       fi
 
       echo "[nixos-update-stage] Updating flake inputs in $FLAKE_DIR..."
-      nix flake update --flake "$FLAKE_DIR"
+      rm -f "$LOCK_FILE"
+      nix flake update --flake "$FLAKE_DIR" --output-lock-file "$LOCK_FILE"
 
       echo "[nixos-update-stage] Pre-building top-level system derivation..."
       rm -rf "$STAGING_DIR"
-      nix build "$FLAKE_DIR#nixosConfigurations.desktop.config.system.build.toplevel" --out-link "$STAGING_DIR"
+      nix build "$FLAKE_DIR#nixosConfigurations.desktop.config.system.build.toplevel" --reference-lock-file "$LOCK_FILE" --out-link "$STAGING_DIR"
 
       echo "[nixos-update-stage] Generating package diff with nvd..."
       nvd diff /run/current-system "$STAGING_DIR" > "$DIFF_FILE" 2>&1 || true
@@ -72,6 +75,8 @@ let
       STAGING_DIR="/var/tmp/nixos-pending-update"
       STATE_FILE="/var/tmp/nixos-pending-update.ready"
       DIFF_FILE="/var/tmp/nixos-pending-update.diff"
+      LOCK_FILE="/var/tmp/nixos-pending-update.lock"
+      FLAKE_DIR="/etc/nixos"
 
       if [ ! -d "$STAGING_DIR" ]; then
         echo "No valid staged update found in $STAGING_DIR (stale or removed)."
@@ -104,7 +109,9 @@ let
           echo "Switching system profile..."
           sudo nix-env -p /nix/var/nix/profiles/system --set "$STAGING_DIR"
           sudo "$STAGING_DIR/bin/switch-to-configuration" switch
-          rm -f "$STATE_FILE" "$DIFF_FILE" "$STAGING_DIR"
+          # keep the checkout in step with what is now running
+          if [ -f "$LOCK_FILE" ]; then cp "$LOCK_FILE" "$FLAKE_DIR/flake.lock"; fi
+          rm -f "$STATE_FILE" "$DIFF_FILE" "$STAGING_DIR" "$LOCK_FILE"
           pkill -RTMIN+8 waybar || true
           notify-send "󰄬 NixOS Update Applied" "Successfully switched to the new system build!"
           echo ""
