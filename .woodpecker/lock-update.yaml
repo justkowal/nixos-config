@@ -1,0 +1,66 @@
+# weekly flake.lock bump: build every host, open a Forgejo PR with nvd diffs vs main.
+labels:
+  backend: local
+
+when:
+  - event: cron
+    cron: lock-update
+
+steps:
+  - name: update-and-pr
+    image: bash
+    environment:
+      FORGEJO_BOT_TOKEN:
+        from_secret: forgejo_bot_token
+    commands:
+      - |
+        set -eu
+        tools=$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#jq.bin nixpkgs#curl.bin nixpkgs#nvd | sed 's|$|/bin|' | paste -sd:)
+        export PATH="$${tools}:$${PATH}"
+        hosts="desktop laptop vm iso rpi4"
+        targets() { for h in $${hosts}; do echo ".#nixosConfigurations.$${h}.config.system.build.toplevel"; done; }
+
+        # main was built green by build.yaml, so these are cache hits
+        old_desktop=$(nix build --no-link --print-out-paths .#nixosConfigurations.desktop.config.system.build.toplevel)
+        old_laptop=$(nix build --no-link --print-out-paths .#nixosConfigurations.laptop.config.system.build.toplevel)
+
+        nix flake update
+        if git diff --quiet -- flake.lock; then
+          echo "inputs unchanged"
+          exit 0
+        fi
+
+        # shellcheck disable=SC2046
+        nix build --no-link -L $(targets)
+        new_desktop=$(nix build --no-link --print-out-paths .#nixosConfigurations.desktop.config.system.build.toplevel)
+        new_laptop=$(nix build --no-link --print-out-paths .#nixosConfigurations.laptop.config.system.build.toplevel)
+
+        {
+          echo "Automated \`nix flake update\`. All host toplevels built."
+          echo
+          echo "### desktop"
+          echo '```'
+          nvd --color never diff "$${old_desktop}" "$${new_desktop}"
+          echo '```'
+          echo
+          echo "### laptop"
+          echo '```'
+          nvd --color never diff "$${old_laptop}" "$${new_laptop}"
+          echo '```'
+        } > body.md
+
+        branch="bot/lock-update-$(date +%F)"
+        auth=$(printf 'ci:%s' "$${FORGEJO_BOT_TOKEN}" | base64 -w0)
+        git switch -c "$${branch}"
+        git -c user.name="lock-update bot" -c user.email="ci@git.lab" \
+          commit -m "chore(flake): update flake.lock" -- flake.lock
+        git -c http.extraHeader="Authorization: Basic $${auth}" push \
+          https://git.lab/justkowal/nixos-configs.git "HEAD:refs/heads/$${branch}"
+
+        jq -n --arg head "$${branch}" --rawfile body body.md \
+          '{title: "chore(flake): update flake.lock", head: $$head, base: "main", body: $$body}' > pr.json
+        curl -fsS -X POST \
+          -H "Authorization: token $${FORGEJO_BOT_TOKEN}" \
+          -H "Content-Type: application/json" \
+          --data @pr.json \
+          https://git.lab/api/v1/repos/justkowal/nixos-configs/pulls

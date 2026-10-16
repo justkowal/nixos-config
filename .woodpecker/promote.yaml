@@ -1,0 +1,25 @@
+# moves deploy/canary to the commit build.yaml just built and pushed to cache.lab.
+# non-force push: an older pipeline finishing late cannot move canary backwards.
+labels:
+  backend: local
+
+when:
+  - event: [push, manual]
+    branch: main
+
+depends_on:
+  - build
+
+steps:
+  - name: push-canary
+    image: bash
+    environment:
+      FORGEJO_DEPLOY_TOKEN:
+        from_secret: forgejo_deploy_token
+    commands:
+      - |
+        set -eu
+        auth=$(printf 'ci:%s' "$${FORGEJO_DEPLOY_TOKEN}" | base64 -w0)
+        git -c http.extraHeader="Authorization: Basic $${auth}" push \
+          https://git.lab/justkowal/nixos-configs.git \
+          "$${CI_COMMIT_SHA}:refs/heads/deploy/canary"

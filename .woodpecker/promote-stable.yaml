@@ -1,0 +1,51 @@
+# promotes deploy/canary to deploy/stable once every canary host reported ok for that
+# commit and nobody reported a failure in the last 24h (fleet-health posts to ntfy).
+# separate from promote.yaml because its depends_on build would drop it on cron events.
+labels:
+  backend: local
+
+when:
+  - event: cron
+    cron: promote-stable
+
+steps:
+  - name: promote
+    image: bash
+    environment:
+      FORGEJO_DEPLOY_TOKEN:
+        from_secret: forgejo_deploy_token
+      # flake hostnames as fleet-health reports them; all must be green before promotion
+      CANARY_HOSTS: nixos-desktop thinkpad-t14s-gen1-amd
+    commands:
+      - |
+        set -eu
+        tools=$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#jq.bin nixpkgs#curl.bin | sed 's|$|/bin|' | paste -sd:)
+        export PATH="$${tools}:$${PATH}"
+        repo=https://git.lab/justkowal/nixos-configs.git
+        auth=$(printf 'ci:%s' "$${FORGEJO_DEPLOY_TOKEN}" | base64 -w0)
+        hdr="Authorization: Basic $${auth}"
+
+        canary=$(git -c http.extraHeader="$${hdr}" ls-remote "$${repo}" refs/heads/deploy/canary | cut -f1)
+        stable=$(git -c http.extraHeader="$${hdr}" ls-remote "$${repo}" refs/heads/deploy/stable | cut -f1)
+        if [ -z "$${canary}" ] || [ "$${canary}" = "$${stable}" ]; then
+          echo "nothing to promote (canary=$${canary:-none})"
+          exit 0
+        fi
+
+        curl -fsS 'https://ntfy.lab/fleet-health/json?poll=1&since=24h' > reports
+        msgs=$(jq -r 'select(.event == "message") | .message' reports)
+
+        if printf '%s\n' "$${msgs}" | grep -F "commit=$${canary} status=fail"; then
+          echo "canary $${canary} reported failures, not promoting"
+          exit 1
+        fi
+        for h in $${CANARY_HOSTS}; do
+          if ! printf '%s\n' "$${msgs}" | grep -qF "host=$${h} commit=$${canary} status=ok"; then
+            echo "no ok report from $${h} for $${canary} yet, waiting"
+            exit 0
+          fi
+        done
+
+        git -c http.extraHeader="$${hdr}" fetch --depth=1 "$${repo}" refs/heads/deploy/canary
+        git -c http.extraHeader="$${hdr}" push "$${repo}" "$${canary}:refs/heads/deploy/stable"
+        echo "promoted $${canary} to deploy/stable"
