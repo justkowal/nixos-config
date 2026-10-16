@@ -1,0 +1,31 @@
+# rpi4 SD image for disaster recovery (docs/RPI4_RECOVERY.md). runs on the desktop's local agent,
+# which needs modules/rpi4-images.nix (lab.rpi4Images.enable) for write access to the image dir.
+labels:
+  backend: local
+
+when:
+  - event: push
+    branch: main
+    path:
+      include: ['hosts/rpi4/**', 'flake.lock']
+  - event: manual
+
+steps:
+  - name: sd-image
+    image: bash
+    commands:
+      - nix build --no-link --print-out-paths -L .#nixosConfigurations.rpi4.config.system.build.sdImage > out-path
+      - |
+        set -eu
+        dir=/var/lib/rpi4-images
+        src=""
+        for f in "$(cat out-path)"/sd-image/*.img*; do src="$${f}"; done
+        [ -e "$${src}" ] || { echo "no image in $(cat out-path)/sd-image" >&2; exit 1; }
+        case "$${src}" in *.zst) ext=img.zst ;; *) ext=img ;; esac
+        name="nixos-rpi4-$(date +%Y%m%d-%H%M)-$${CI_COMMIT_SHA:0:8}.$${ext}"
+        install -m 0644 "$${src}" "$${dir}/.$${name}.part"
+        mv "$${dir}/.$${name}.part" "$${dir}/$${name}"
+        ln -sfn "$${name}" "$${dir}/latest.$${ext}"
+        # keep the newest 3
+        ls -1t "$${dir}"/nixos-rpi4-*.img* | tail -n +4 | while read -r old; do rm -f -- "$${old}"; done
+        ls -l "$${dir}"
