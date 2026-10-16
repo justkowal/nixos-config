@@ -7,7 +7,7 @@
   #   - SSH public key distribution via kanidm-unixd
   #   - NSS user/group resolution (passwd, group databases)
   #
-  # Credentials are cached locally in cache_db so the laptop works offline.
+  # Credentials are cached locally in cache_db_path so the laptop works offline.
   # Local emergency accounts (wheel group, justkowal) are unaffected —
   # NSS resolves local /etc/passwd first (mkOrder 400) before Kanidm (mkOrder 490).
 
@@ -26,7 +26,7 @@
           pam_allowed_login_groups = [ "linux_users" ];
         };
         # Offline credential cache — survives network outages and laptop travel
-        cache_db = "/var/cache/kanidm-unixd/cache.db";
+        cache_db_path = "/var/cache/kanidm-unixd/cache.db";
         home_mount_prefix = "/home/";
         home_attr = "uuid";
         home_alias = "spn";
