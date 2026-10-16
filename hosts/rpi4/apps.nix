@@ -131,6 +131,8 @@
     settings = {
       base-url = "https://ntfy.lab";
       listen-http = "127.0.0.1:2586";
+      # promote-stable reads 24h of fleet-health reports; the default cache is 12h
+      cache-duration = "48h";
     };
   };
 
@@ -293,4 +295,17 @@
     signKeyPaths = [ config.sops.secrets."harmonia_signing_key".path ];
     settings.bind = "127.0.0.1:5000";
   };
+
+  # CI (.woodpecker.yaml) pushes closures here. harmonia signs on serve, so pushed paths arrive
+  # unsigned and the pusher has to be trusted; the key can only speak the daemon protocol.
+  users.users.nix-push = {
+    isSystemUser = true;
+    group = "nix-push";
+    useDefaultShell = true;
+    openssh.authorizedKeys.keys = [
+      ''restrict,command="${config.nix.package}/bin/nix-daemon --stdio" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFB8sko/gnZMJAC9ac+pfbXL6L2Sl47r/Cl3jkgHiIHq woodpecker-cache-push''
+    ];
+  };
+  users.groups.nix-push = {};
+  nix.settings.trusted-users = [ "nix-push" ];
 }

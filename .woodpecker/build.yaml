@@ -1,0 +1,42 @@
+# runs on the desktop worker's local-backend agent: host nix daemon, its store, binfmt for aarch64.
+# shell vars are written $${VAR} because woodpecker substitutes plain $VAR before the shell sees it.
+labels:
+  backend: local
+
+when:
+  - event: [push, manual]
+    branch: main
+  - event: pull_request
+
+steps:
+  - name: check
+    image: bash
+    commands:
+      - nix flake check -L
+
+  - name: build
+    image: bash
+    commands:
+      - >-
+        nix build --no-link --print-out-paths -L
+        .#nixosConfigurations.desktop.config.system.build.toplevel
+        .#nixosConfigurations.laptop.config.system.build.toplevel
+        .#nixosConfigurations.vm.config.system.build.toplevel
+        .#nixosConfigurations.iso.config.system.build.toplevel
+        .#nixosConfigurations.rpi4.config.system.build.toplevel
+        > out-paths
+
+  - name: push-cache
+    image: bash
+    environment:
+      CACHE_PUSH_KEY:
+        from_secret: cache_push_key
+    commands:
+      - install -m 600 /dev/null push_key
+      - printf '%s\n' "$${CACHE_PUSH_KEY}" > push_key
+      # harmonia serves the rpi4's own store, so pushing there is publishing to cache.lab
+      - NIX_SSHOPTS="-i push_key -o IdentitiesOnly=yes" nix copy --to ssh-ng://nix-push@nixos-rpi4.lab $(cat out-paths)
+      - rm -f push_key
+    when:
+      - event: [push, manual]
+        branch: main

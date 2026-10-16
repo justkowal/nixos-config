@@ -19,6 +19,10 @@ let
       "ntfy.lab"
       "status.lab"
       "cache.lab"
+      "restic.lab"
+      "metrics.lab"
+      "play.lab"
+      "dev.lab"
     ];
     "100.109.222.110" = [ "nixos-desktop" "nixos-desktop.lab" ];
     "100.69.154.81" = [ "thinkpad-t14s-gen1-amd" "thinkpad-t14s-gen1-amd.lab" ];

@@ -30,7 +30,7 @@
     echo "Boot state reset to desktop"
   '';
 
-  webhookConfig = pkgs.writeText "hooks.json" (builtins.toJSON [
+  webhookConfig = pkgs.writeText "hooks.json" (builtins.toJSON ([
     {
       id = "wake-worker";
       execute-command = toString wakeWorkerScript;
@@ -51,7 +51,7 @@
       execute-command = toString resetWorkerScript;
       command-working-directory = "/var/www/boot-state";
     }
-  ]);
+  ] ++ config.lab.webhookHooks));
 
   initBootState = pkgs.writeShellScript "init-boot-state" ''
     if [ ! -f /var/www/boot-state/boot-state.cfg ]; then
@@ -121,6 +121,7 @@
   '';
 in {
   imports = [
+    ./webhooks.nix
     ../../modules/locale.nix
     ../../modules/nix-settings.nix
     ../../modules/security.nix
@@ -130,7 +131,22 @@ in {
     ./ingress.nix
     ./containers.nix
     ./apps.nix
+    ../../modules/monitoring.nix
+    ../../modules/fleet-health.nix
+    ./monitoring.nix
+    ./energy.nix
+    ./sensors.nix
+    ./backup-server.nix
+    ./preview-ingress.nix
+    ./stream-wake.nix
+    ./offpeak.nix
+    ./focus.nix
   ];
+
+  # roadmap features (docs/ROADMAP.md); the rest stay off until their secrets/hardware exist
+  lab.monitoring.client.enable = true;
+  lab.monitoring.server.enable = true;
+  lab.focus.enable = true;
 
   # ── Hardware: Raspberry Pi 4 (4GB) ────────────────────────────────────
   # SD image builder module imported via flake.nix — build with:
@@ -347,9 +363,9 @@ in {
         fi
 
         # 2. Hot-backup Woodpecker DB if running
-        if [ -f /var/lib/woodpecker/woodpecker.sqlite ]; then
+        if [ -f /var/lib/woodpecker-server/woodpecker.sqlite ]; then
           mkdir -p "$TMP_DIR/woodpecker"
-          sqlite3 /var/lib/woodpecker/woodpecker.sqlite ".backup $TMP_DIR/woodpecker/woodpecker.sqlite"
+          sqlite3 /var/lib/woodpecker-server/woodpecker.sqlite ".backup $TMP_DIR/woodpecker/woodpecker.sqlite"
         fi
 
         # 3. Backup Caddy PKI / CA keys if present

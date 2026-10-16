@@ -29,7 +29,20 @@ in {
     ../../modules/laptop.nix
     ../../modules/networking.nix
     ../../modules/power-saving.nix
+    ../../modules/tariff.nix
+    ../../modules/monitoring.nix
+    ../../modules/backup.nix
+    ../../modules/fleet-health.nix
+    ../../modules/dns-fallback.nix
+    ../../modules/offpeak-client.nix
+    ../../modules/battery-schedule.nix
+    ../../modules/impermanence.nix
+    ../../modules/snapshots.nix
   ];
+
+  # roadmap features (docs/ROADMAP.md); the rest stay off until their secrets/hardware/migration exist
+  lab.monitoring.client.enable = true;
+  lab.batterySchedule.enable = true;
 
   # Bootloader: Lanzaboote configured below (systemd-boot disabled for Lanzaboote)
   boot.loader.timeout = 0;

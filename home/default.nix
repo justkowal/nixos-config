@@ -15,10 +15,17 @@ in {
       ./shell.nix
       ./apps.nix
       ./theming.nix
+      ./rooms.nix
+      ./handoff.nix
+      ./focus.nix
+      ./timemachine.nix
     ]
     ++ lib.optionals (!laptop) [
       ./ai.nix
     ];
+
+  lab.rooms.enable = true;
+  lab.focus.enable = true;
 
   home.username = user;
   home.homeDirectory = homeDir;

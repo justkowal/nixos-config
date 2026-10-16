@@ -47,7 +47,24 @@ in {
     ../../modules/security.nix
     ../../modules/kanidm-client.nix
     ../../modules/auto-update.nix
+    ../../modules/tariff.nix
+    ../../modules/monitoring.nix
+    ../../modules/energy-cost.nix
+    ../../modules/backup.nix
+    ../../modules/fleet-health.nix
+    ../../modules/preview-envs.nix
+    ../../modules/rpi4-images.nix
+    ../../modules/dns-fallback.nix
+    ../../modules/stream-host.nix
+    ../../modules/offpeak-client.nix
+    ../../modules/impermanence.nix
+    ../../modules/snapshots.nix
   ];
+
+  # roadmap features (docs/ROADMAP.md); the rest stay off until their secrets/hardware/migration exist
+  lab.monitoring.client.enable = true;
+  lab.energyCost.enable = true;
+  lab.rpi4Images.enable = true;
 
   home-manager.backupFileExtension = "backup";
 
@@ -279,6 +296,24 @@ in {
         environmentFile = [ config.sops.templates."woodpecker-agent.env".path ];
       };
 
+      # runs steps straight on the host, so it is pinned to the config repo only (see .woodpecker.yaml)
+      services.woodpecker-agents.agents.nix = {
+        enable = true;
+        environment = {
+          WOODPECKER_SERVER = "nixos-rpi4.lab:9000";
+          WOODPECKER_BACKEND = "local";
+          WOODPECKER_MAX_WORKFLOWS = "1";
+          WOODPECKER_AGENT_LABELS = "repo=justkowal/nixos-configs";
+        };
+        path = with pkgs; [ bash coreutils git git-lfs woodpecker-plugin-git nix openssh ];
+        environmentFile = [ config.sops.templates."woodpecker-agent.env".path ];
+      };
+      systemd.services.woodpecker-agent-nix.serviceConfig.BindPaths = [ "/nix/var/nix/daemon-socket" ];
+
+      # cache push target in .woodpecker.yaml; the agent has no home, so pin it system-wide
+      programs.ssh.knownHosts."nixos-rpi4.lab".publicKey =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHWCkSV+NMqIJdpMWFT77N+UXGz/BYGRXB+opugiA+aM";
+
       # ── Blender + Flamenco Render Worker ─────────────────────────────
       environment.systemPackages = [ pkgs.blender ];
 
@@ -330,8 +365,14 @@ in {
             containers=$(docker ps -q 2>/dev/null | wc -l)
             ssh_sessions=$(who 2>/dev/null | grep -c "sandbox" || true)
             renders=$(pgrep -c "blender" 2>/dev/null || true)
+            # local-backend CI steps, offpeak jobs and Sunshine streams don't show up as containers or ssh
+            builds=$(pgrep -c -f '(^|/)nix (build|flake|copy|shell) ' 2>/dev/null || true)
+            jobs=$(pgrep -c -u offpeak 2>/dev/null || true); jobs=''${jobs:-0}
+            stream=0
+            if [ -x /run/current-system/sw/bin/stream-host-active ] && /run/current-system/sw/bin/stream-host-active; then stream=1; fi
 
-            if [ "$containers" -eq 0 ] && [ "$ssh_sessions" -eq 0 ] && [ "$renders" -eq 0 ]; then
+            if [ "$containers" -eq 0 ] && [ "$ssh_sessions" -eq 0 ] && [ "$renders" -eq 0 ] \
+              && [ "$builds" -eq 0 ] && [ "$jobs" -eq 0 ] && [ "$stream" -eq 0 ]; then
               IDLE_COUNT=$((IDLE_COUNT + 1))
               echo "Idle $IDLE_COUNT/$IDLE_THRESHOLD (containers=$containers ssh=$ssh_sessions renders=$renders)"
             else
