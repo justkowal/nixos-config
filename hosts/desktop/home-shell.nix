@@ -30,8 +30,8 @@
             $env.THINKDOT_CMD_START = (date now)
           }]
           pre_prompt: [{ ||
-            if ($env.THINKDOT_CMD_START? != null) {
-              let elapsed = ((date now) - $env.THINKDOT_CMD_START)
+            if ($env.THINKDOT_CMD_START? | is-not-empty) {
+              let elapsed = ((date now) - ($env.THINKDOT_CMD_START | into datetime))
               $env.THINKDOT_CMD_START = null
               if ($elapsed >= 15sec) {
                 if (which thinkdot | is-not-empty) {
