@@ -51,8 +51,14 @@ in {
   config = lib.mkIf cfg.enable {
     home.packages = [focus];
 
-    wayland.windowManager.hyprland.extraConfig = ''
-      bind = $mod ALT, P, exec, focus toggle
-    '';
+    lab.keymap.entries = [
+      {
+        mods = "$mod ALT";
+        key = "P";
+        exec = "focus toggle";
+        group = "Focus";
+        label = "Toggle focus";
+      }
+    ];
   };
 }

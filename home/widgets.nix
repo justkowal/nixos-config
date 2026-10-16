@@ -54,6 +54,7 @@
     mkdir -p $out
     cp ${./scripts/guis/widgets_gui.py} $out/widgets_gui.py
     cp ${./scripts/guis/widgets_providers.py} $out/widgets_providers.py
+    cp ${./scripts/guis/lab_bus.py} $out/lab_bus.py
   '';
 
   deskwidgets = pkgs.writeShellApplication {
@@ -136,9 +137,18 @@ in {
       };
     };
 
+    lab.keymap.entries = [
+      {
+        mods = "SUPER";
+        key = "W";
+        exec = toggle;
+        group = "Shell";
+        label = "Toggle dashboard";
+      }
+    ];
+
     wayland.windowManager.hyprland.extraConfig = ''
       exec-once = systemctl --user start deskwidgets
-      bind = SUPER, W, exec, ${toggle}
       layerrule = blur 1, match:namespace ^(deskwidgets-dashboard)$
       layerrule = ignore_alpha 0.3, match:namespace ^(deskwidgets-dashboard)$
       layerrule = no_anim 1, match:namespace ^(deskwidgets)$

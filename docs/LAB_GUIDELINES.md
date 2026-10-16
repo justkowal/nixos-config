@@ -57,7 +57,7 @@ Lab is not: a second bar, a new broker, a theme engine that replaces Matugen, or
 - **Providers run on worker threads.** The GTK main loop never blocks on I/O, subprocesses or network. Reason: a frozen shell is the most visible failure a desk can have. The existing pattern is `home/scripts/guis/widgets_providers.py`.
 - **`app_id` is declared on every layer-shell and GTK window.** Use the `lab.justkowal.<Name>` pattern already used by `lab.justkowal.Widgets`. Window rules in Hyprland match on it.
 - **No new daemon unless the bus cannot do the job.** The bus is the daemon. A second long-running process needs a written reason in its module comment.
-- **Hyprland binds are generated** from `home/lab/keymap.nix` once it exists. Until then, add binds next to the feature's module and list them in `docs/DESKTOP_ENVIRONMENT.md`.
+- **Lab binds go through `lab.keymap.entries`** (`home/lab/keymap.nix`: `mods`, `key`, `exec`, `group`, `label`). It renders the Hyprland `bind` line and `~/.config/lab/keymap.json` (`lab keys` prints it), and fails evaluation on a duplicate mods+key. Do not write raw `bind =` lines for Lab features. Older binds in `home/hyprland.nix` migrate over time.
 - **Secrets** go through `sops-nix` (`hosts/rpi4/secrets/secrets.yaml` is the existing pattern). Never commit tokens or `.env` files.
 
 ## 5. Add-a-feature checklist
@@ -122,6 +122,8 @@ Visual changes need a screenshot check: trigger the state, capture with `grim`, 
 
 ## 9. Current state
 
+- **Foundations are in.** Tokens: `home/lab/design.nix` (`config.lab.design.tokens` in Nix, `~/.config/lab/tokens.json` at runtime). Token lint: `ci/lint-tokens.sh`, a flake check; files that predate it are in `ci/token-baseline.txt`, which may only shrink (remove a file from it when you clean it up). Bus: `home/scripts/guis/lab_bus.py`, served by `deskwidgets` on `$XDG_RUNTIME_DIR/lab.sock`; new store items appear as `event.<name>`. CLI: `lab publish|status|watch|keys|doctor` (`home/scripts/lab.py`). Publishing is best effort and exits 0 when the shell is down unless `--strict`.
+- Nothing renders bus events yet. The island is the next step.
 - The shell process is `deskwidgets` (`home/widgets.nix`, `home/scripts/guis/widgets_gui.py`). It is the seed for `labd`.
 - Waybar, SwayNC and Rofi are still the main bar, notification centre and palette. They stay as working fallbacks until the owner has verified the replacements on real hardware. Do not remove or break them, and do not delete their Nix modules, even after the replacements ship.
 - The phone PWA is in scope. It is served through the rpi4 ingress (`hosts/rpi4/ingress.nix`) and reads the same state bus events and tokens as the desktop.

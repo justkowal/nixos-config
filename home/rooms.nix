@@ -17,8 +17,14 @@ in {
   config = lib.mkIf cfg.enable {
     home.packages = [room];
 
-    wayland.windowManager.hyprland.extraConfig = ''
-      bind = $mod ALT, R, exec, room pick
-    '';
+    lab.keymap.entries = [
+      {
+        mods = "$mod ALT";
+        key = "R";
+        exec = "room pick";
+        group = "Rooms";
+        label = "Pick room";
+      }
+    ];
   };
 }

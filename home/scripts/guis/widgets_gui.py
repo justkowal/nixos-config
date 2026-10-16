@@ -24,6 +24,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 from gi.repository import Gtk4LayerShell as LS  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import lab_bus  # noqa: E402
 import widgets_providers as P  # noqa: E402
 
 APP_ID = "lab.justkowal.Widgets"
@@ -750,6 +751,12 @@ class App(Adw.Application):
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
         self.store = Store()
         self.sched = Scheduler(self.store, self.cfg)
+        self.bus = lab_bus.Bus(lambda ev: GLib.idle_add(self.store.publish, f"event.{ev['name']}", ev, None, False))
+        try:
+            self.bus.start()
+        except OSError as e:
+            # the shell still works without the bus, it just cannot be driven by events
+            print(f"lab bus not started: {e}", file=sys.stderr)
         self.dash = Dashboard(self, self.store, self.sched, self.cfg)
         # exposed so the hyprland bind can use gdbus instead of paying python startup per keypress
         for name in ("toggle", "show", "hide"):

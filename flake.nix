@@ -117,6 +117,11 @@
 
     formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.alejandra;
 
+    checks.x86_64-linux.tokens = nixpkgs.legacyPackages.x86_64-linux.runCommand "lint-tokens" {} ''
+      bash ${self}/ci/lint-tokens.sh ${self}
+      touch $out
+    '';
+
     # `nix flake check` already evaluates every host; this adds the script linters
     checks.x86_64-linux.scripts = let
       pkgs = nixpkgs.legacyPackages.x86_64-linux;

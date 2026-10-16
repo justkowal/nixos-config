@@ -10,6 +10,7 @@
 in {
   imports =
     [
+      ./lab
       ./hyprland.nix
       ./waybar.nix
       ./shell.nix
