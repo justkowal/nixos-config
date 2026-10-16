@@ -73,6 +73,21 @@
     inputs.antigravity-nix.packages.${pkgs.stdenv.hostPlatform.system}.default
     inputs.antigravity-nix.packages.${pkgs.stdenv.hostPlatform.system}.google-antigravity-ide
     inputs.antigravity-nix.packages.${pkgs.stdenv.hostPlatform.system}.google-antigravity-cli
+
+    # Claude Desktop & Claude Code
+    claude-code
+    inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
+
+    # Development runtimes for Claude Desktop MCP servers
+    nodejs_22
+    uv
+    gh
+    github-desktop
+
+    # Token & context optimization solutions
+    repomix
+    tree-sitter
+    ast-grep
   ];
 
   programs.obs-studio = {

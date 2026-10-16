@@ -111,6 +111,100 @@ EOF
     })
   ];
 
+  home.file.".claudeignore".text = ''
+    # VCS & System
+    .git/
+    .hg/
+    .svn/
+    .DS_Store
+    Thumbs.db
+
+    # Lockfiles (huge token sinks, rarely need direct LLM edits)
+    package-lock.json
+    pnpm-lock.yaml
+    yarn.lock
+    Cargo.lock
+    flake.lock
+    composer.lock
+    poetry.lock
+    Pipfile.lock
+    bun.lockb
+
+    # Build outputs & dependencies
+    node_modules/
+    dist/
+    build/
+    out/
+    target/
+    result
+    result-*
+    .next/
+    .nuxt/
+    .svelte-kit/
+    .parcel-cache/
+    .turbo/
+    .cache/
+    __pycache__/
+    *.pyc
+    .venv/
+    venv/
+    env/
+    .direnv/
+    .devenv/
+
+    # Binary, archive, media files (high token waste)
+    *.png
+    *.jpg
+    *.jpeg
+    *.gif
+    *.ico
+    *.webp
+    *.svg
+    *.mp3
+    *.wav
+    *.ogg
+    *.flac
+    *.mp4
+    *.mkv
+    *.avi
+    *.mov
+    *.webm
+    *.zip
+    *.tar
+    *.tar.gz
+    *.tar.xz
+    *.tar.bz2
+    *.tar.zst
+    *.7z
+    *.rar
+    *.iso
+    *.bin
+    *.exe
+    *.dll
+    *.so
+    *.dylib
+    *.pdf
+    *.epub
+    *.woff
+    *.woff2
+    *.ttf
+    *.eot
+
+    # Minified files and maps
+    *.min.js
+    *.min.css
+    *.map
+    *.bundle.js
+
+    # Logs and coverage
+    *.log
+    npm-debug.log*
+    yarn-debug.log*
+    yarn-error.log*
+    coverage/
+    .nyc_output/
+  '';
+
   programs.home-manager.enable = true;
 
   home.stateVersion = "26.05";
