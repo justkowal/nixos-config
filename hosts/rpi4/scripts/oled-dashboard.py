@@ -16,7 +16,7 @@ ENV overrides:
 
 from __future__ import annotations
 
-import os, time, signal, socket, subprocess
+import json, os, time, signal, socket, subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -246,6 +246,47 @@ def service_counts() -> tuple[int, int]:
         return 0, 0
 
 
+SENSORS_FILE = "/run/sensors/latest.json"
+FOCUS_FILE   = "/var/lib/focus/state.json"
+SENSORS_MAX_AGE_S = 300
+
+
+def _read_json(path: str) -> Optional[dict]:
+    try:
+        data = json.loads(Path(path).read_text())
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def sensors_line() -> Optional[str]:
+    s = _read_json(SENSORS_FILE)
+    if not s or time.time() - s.get("ts", 0) > SENSORS_MAX_AGE_S:
+        return None
+    parts = []
+    if isinstance(s.get("co2_ppm"), (int, float)):
+        parts.append(f"CO2 {s['co2_ppm']:.0f}")
+    if isinstance(s.get("temperature_c"), (int, float)):
+        parts.append(f"{s['temperature_c']:.1f}C")
+    if isinstance(s.get("humidity_pct"), (int, float)):
+        parts.append(f"{s['humidity_pct']:.0f}%")
+    return " ".join(parts) or None
+
+
+def focus_line() -> Optional[str]:
+    f = _read_json(FOCUS_FILE)
+    if not f or f.get("active") is not True:
+        return None
+    until = f.get("until")
+    if not isinstance(until, (int, float)):
+        return "FOCUS on"
+    left = int(until - time.time())
+    if left <= 0:
+        return None
+    h, r = divmod(left, 3600)
+    return f"FOCUS {h}h{r // 60:02d}m left" if h else f"FOCUS {r // 60:02d}:{r % 60:02d} left"
+
+
 class NetRates:
     def __init__(self):
         c = psutil.net_io_counters()
@@ -302,6 +343,8 @@ TICK_CHARS = ["●", "◑", "○", "◐"]
 # ─── Shared mutable state (set by main, read by renderer) ────────────────────
 _cached_ip:   str         = "..."
 _cached_svcs: tuple[int,int] = (0, 0)
+_cached_env:   Optional[str] = None
+_cached_focus: Optional[str] = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -382,12 +425,15 @@ def render(tick: int) -> Image.Image:
     # Net row — full width, arrows
     def _kbps(v):
         return f"{v/1024:.1f}M" if v >= 1024 else f"{v:.0f}K"
-    d.text((1, y), f"RX {_kbps(rx)}", font=FONT_DATA, fill=1)
-    d.text((COL_B, y), f"TX {_kbps(tx)}", font=FONT_DATA, fill=1)
+    # optional rows take over net/ip only while their state files say so
+    if _cached_focus:
+        d.text((1, y), _cached_focus, font=FONT_DATA, fill=1)
+    else:
+        d.text((1, y), f"RX {_kbps(rx)}", font=FONT_DATA, fill=1)
+        d.text((COL_B, y), f"TX {_kbps(tx)}", font=FONT_DATA, fill=1)
     y += ROW_H
 
-    # IP row — full width
-    d.text((1, y), f"IP {_cached_ip}", font=FONT_DATA, fill=1)
+    d.text((1, y), _cached_env or f"IP {_cached_ip}", font=FONT_DATA, fill=1)
 
     return img
 
@@ -401,6 +447,7 @@ OLED_DRIVER    = os.environ.get("OLED_DRIVER", "auto")
 REFRESH_S      = 1.0
 IP_TTL_S       = 30.0
 SVC_TTL_S      = 15.0
+STATE_TTL_S    = 5.0
 RETRY_S        = 5.0
 
 _alive = True
@@ -423,7 +470,7 @@ def _make_driver() -> OLEDBase:
 
 
 def main() -> None:
-    global _cached_ip, _cached_svcs, _alive
+    global _cached_ip, _cached_svcs, _cached_env, _cached_focus, _alive
 
     # Warm caches
     _cached_ip   = local_ip()
@@ -431,6 +478,7 @@ def main() -> None:
 
     t_ip  = time.monotonic()
     t_svc = time.monotonic()
+    t_state = 0.0
 
     oled: Optional[OLEDBase] = None
     tick = 0
@@ -460,6 +508,10 @@ def main() -> None:
         if now - t_svc >= SVC_TTL_S:
             _cached_svcs = service_counts()
             t_svc = now
+        if now - t_state >= STATE_TTL_S:
+            _cached_env   = sensors_line()
+            _cached_focus = focus_line()
+            t_state = now
 
         # ── Render + push ────────────────────────────────────────────────────
         try:
