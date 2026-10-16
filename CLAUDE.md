@@ -14,7 +14,7 @@ Multi-host NixOS flake (desktop, laptop, rpi4 hub, vm, iso) with a Home Manager 
 2. **The island presents state.** CLIs publish events to the bus. They do not call `notify-send` for state or start their own OSD.
 3. **Every feature gets a palette entry, a keymap entry and a scene hook** before it is done.
 4. **Namespace.** Features are `home/<feature>.nix` with `options.lab.<feature>`. Behaviour is declared in Nix; scripts are embedded with `builtins.readFile`.
-5. **Providers never block the GTK main loop.** Subprocess and network work runs on worker threads.
+5. **Providers never block the GTK main loop.** Subprocess and network work runs on worker threads. The bus and the island are Rust (`pkgs/labd`); providers and CLIs are Python or shell.
 6. **Every layer-shell or GTK window declares an `app_id`** in the `lab.justkowal.<Name>` pattern.
 7. **Nix flakes ignore untracked files.** Run `git add` on new files before `nix flake check`.
 8. **Waybar and SwayNC stay as fallbacks** until the owner verifies their replacements. Never remove them.

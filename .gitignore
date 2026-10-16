@@ -22,3 +22,6 @@ __pycache__/
 
 # locally cloned agent skills, not part of the config
 .agents/
+
+# Rust build output
+pkgs/labd/target/

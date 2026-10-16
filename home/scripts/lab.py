@@ -88,9 +88,10 @@ def chk_bus():
 
 
 def chk_shell():
-    out = subprocess.run(["systemctl", "--user", "is-active", "deskwidgets"], capture_output=True, text=True).stdout.strip()
-    if out != "active":
-        raise RuntimeError(f"deskwidgets is {out or 'unknown'}")
+    for unit in ("labd", "deskwidgets"):
+        out = subprocess.run(["systemctl", "--user", "is-active", unit], capture_output=True, text=True).stdout.strip()
+        if out != "active":
+            raise RuntimeError(f"{unit} is {out or 'unknown'}")
 
 
 def chk_tokens():
@@ -123,7 +124,7 @@ def chk_sound():
 
 def cmd_doctor(_a):
     results = [check(label, fn) for label, fn in (
-        ("bus", chk_bus), ("shell service", chk_shell), ("tokens", chk_tokens),
+        ("bus", chk_bus), ("shell services", chk_shell), ("tokens", chk_tokens),
         ("keymap", chk_keymap), ("waybar and swaync fallbacks", chk_fallbacks), ("sound", chk_sound))]
     return 0 if all(results) else 1
 

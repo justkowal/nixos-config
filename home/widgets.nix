@@ -53,9 +53,7 @@
   guis = pkgs.runCommand "deskwidgets-src" {} ''
     mkdir -p $out
     cp ${./scripts/guis/widgets_gui.py} $out/widgets_gui.py
-    cp ${./scripts/guis/widgets_providers.py} $out/widgets_providers.py
-    cp ${./scripts/guis/lab_bus.py} $out/lab_bus.py
-  '';
+    cp ${./scripts/guis/widgets_providers.py} $out/widgets_providers.py  '';
 
   deskwidgets = pkgs.writeShellApplication {
     name = "deskwidgets";

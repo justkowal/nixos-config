@@ -54,6 +54,7 @@ Lab is not: a second bar, a new broker, a theme engine that replaces Matugen, or
   - `priority`: `low`, `normal` or `high`. `high` may interrupt the island queue.
   - `ttl`: seconds after which the event is stale and must not be shown.
 - **Subscribers do not poll what the bus publishes.** If the data exists as an event, subscribe. Polling is for providers that have no event source (weather, CI, GitHub).
+- **Language split.** Rust for long-running, latency-sensitive Lab processes: the bus and everything that draws on the compositor (`pkgs/labd`, gtk4-rs + libadwaita + gtk4-layer-shell). Python and shell for providers, CLIs and glue. Reason: no GIL stalls under animation, low idle memory, a typed event contract where it matters. The wire formats (bus JSON, `tokens.json`, `keymap.json`) stay language-neutral, so either side can be replaced alone.
 - **Providers run on worker threads.** The GTK main loop never blocks on I/O, subprocesses or network. Reason: a frozen shell is the most visible failure a desk can have. The existing pattern is `home/scripts/guis/widgets_providers.py`.
 - **`app_id` is declared on every layer-shell and GTK window.** Use the `lab.justkowal.<Name>` pattern already used by `lab.justkowal.Widgets`. Window rules in Hyprland match on it.
 - **No new daemon unless the bus cannot do the job.** The bus is the daemon. A second long-running process needs a written reason in its module comment.
@@ -108,6 +109,10 @@ nix flake check
 # Build one host without switching
 nh os build .
 
+# Rust (labd): needs gtk4, libadwaita, gtk4-layer-shell, pkg-config
+nix-shell -p cargo rustc rustfmt clippy pkg-config gcc gtk4 libadwaita gtk4-layer-shell glib \
+  --run 'cd pkgs/labd && cargo fmt --check && cargo clippy && cargo test'
+
 # Python GTK and provider scripts
 python -m py_compile home/scripts/guis/*.py
 
@@ -122,9 +127,12 @@ Visual changes need a screenshot check: trigger the state, capture with `grim`, 
 
 ## 9. Current state
 
-- **Foundations are in.** Tokens: `home/lab/design.nix` (`config.lab.design.tokens` in Nix, `~/.config/lab/tokens.json` at runtime). Token lint: `ci/lint-tokens.sh`, a flake check; files that predate it are in `ci/token-baseline.txt`, which may only shrink (remove a file from it when you clean it up). Bus: `home/scripts/guis/lab_bus.py`, served by `deskwidgets` on `$XDG_RUNTIME_DIR/lab.sock`; new store items appear as `event.<name>`. CLI: `lab publish|status|watch|keys|doctor` (`home/scripts/lab.py`). Publishing is best effort and exits 0 when the shell is down unless `--strict`.
-- Nothing renders bus events yet. The island is the next step.
-- The shell process is `deskwidgets` (`home/widgets.nix`, `home/scripts/guis/widgets_gui.py`). It is the seed for `labd`.
+- **Foundations are in.** Tokens: `home/lab/design.nix` (`config.lab.design.tokens` in Nix, `~/.config/lab/tokens.json` at runtime). Token lint: `ci/lint-tokens.sh`, a flake check; files that predate it are in `ci/token-baseline.txt`, which may only shrink (remove a file from it when you clean it up). CLI: `lab publish|status|watch|keys|doctor` (`home/scripts/lab.py`, client in `home/scripts/guis/lab_bus.py`). Publishing is best effort and exits 0 when the shell is down unless `--strict`.
+- **`labd` (Rust, `pkgs/labd`, service in `home/lab/shell.nix`) owns the bus** on `$XDG_RUNTIME_DIR/lab.sock` and draws the island (`src/island.rs`). Add a new island state in `card_for` in `island.rs`: map the event name to icon, text, optional level and hold time. Events with no mapping are ignored on purpose. Event contract changes must be made in both `src/bus.rs` and `lab_bus.py`.
+- **Island today:** volume, brightness, focus, room and handoff events render. Nothing publishes volume or brightness yet (the OSD wrappers still use swayosd), and `room`, `focus` and `home-lan` do not publish yet. Wiring publishers is next.
+- **Icons are Adwaita symbolic names** in `card_for` until the Lucide set from the tokens ships.
+- The island sits below Waybar while Waybar exists, because layer-shell respects its exclusive zone.
+- `deskwidgets` (Python) still draws the dashboard and wallpaper column. It is a bus client candidate, not the bus owner.
 - Waybar, SwayNC and Rofi are still the main bar, notification centre and palette. They stay as working fallbacks until the owner has verified the replacements on real hardware. Do not remove or break them, and do not delete their Nix modules, even after the replacements ship.
 - The phone PWA is in scope. It is served through the rpi4 ingress (`hosts/rpi4/ingress.nix`) and reads the same state bus events and tokens as the desktop.
 - The OSD wrappers `home/scripts/volume-osd.sh` and `home/scripts/brightness-osd.sh` are legacy. Do not add to them.
