@@ -13,6 +13,7 @@ This directory contains the detailed documentation for the `/etc/nixos` Flake co
 | [**Deployment Guide**](DEPLOYMENT.md) | Step-by-step homelab deployment (RPi4 orchestrator, Desktop worker, Laptop client). |
 | [**Usage & Operations Manual**](USAGE.md) | Accessing services from laptop, Kanidm SSO, Forgejo, Woodpecker, Flamenco, and SSH sandbox. |
 | [**Desktop Environment**](DESKTOP_ENVIRONMENT.md) | Hyprland, Waybar, Rofi, Kitty, and full keybinding reference. |
+| [**Lab Guidelines**](LAB_GUIDELINES.md) | Visual rules, interaction rules, state bus contract and the add-a-feature checklist for desk work. |
 | [**Ambient AI Suite**](AMBIENT_AI.md) | Local Gemma models, vector indexing, AI daemons, and shell integrations. |
 | [**Networking & VPN**](NETWORKING_AND_VPN.md) | Tailscale, Syncthing, Firewall rules, and isolated network namespaces. |
 
