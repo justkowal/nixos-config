@@ -96,6 +96,10 @@ status() {
           remaining_time=300; msg="Time for a short break (5 mins)!"
         fi
         notify-send -u critical -i timer-symbolic "Pomodoro Timer" "Work session finished! $msg"
+        # a focus session started by `focus on` ends with its pomodoro
+        if [ -f "${XDG_RUNTIME_DIR:-/tmp}/focus-pomodoro" ] && command -v focus >/dev/null 2>&1; then
+          (focus off >/dev/null 2>&1 &)
+        fi
       else
         type="work"; remaining_time=1500
         notify-send -u critical -i timer-symbolic "Pomodoro Timer" "Break finished! Back to work."
