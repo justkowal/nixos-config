@@ -74,6 +74,15 @@ The Waybar configuration utilizes Matugen CSS variables and custom widgets.
 *   **Layout**: Workspaces and submap indicators (Left) / Clocks and Pomodoro (Center) / MPRIS, SysInfo, Network, and System Tray (Right).
 *   **Ambient AI**: A custom block displays rotating background AI tips parsed from the `ai_ambient.sh` script.
 
+## Desktop Widgets
+
+`deskwidgets` (`home/widgets.nix`, GTK4 + gtk4-layer-shell, `app_id` `lab.justkowal.Widgets`) runs as a user service and draws two surfaces from one data store:
+
+*   **Wallpaper column**: top right on the `bottom` layer, so it sits above the wallpaper and under every window, and clicks pass through it. It shows the clock, agenda, weather, Claude/Gemini limits, CI, media and the tariff window (fewer on the laptop).
+*   **Dashboard**: `SUPER + W` opens a blurred overlay with everything: agenda, weather and air quality, electricity tariff, Claude and Gemini limits, Woodpecker CI, GitHub PRs, system graphs, notifications with a DND switch, fleet and focus, Nix generation and lock ages, backups, pools and SMART.
+
+Each provider polls on its own worker thread (`home/scripts/guis/widgets_providers.py`). The last good result is cached in `~/.cache/deskwidgets/` and shown as stale if a fetch fails. Media and notifications follow `playerctl --follow` and `swaync-client --subscribe` instead of polling. Run `deskwidgets --dump` to see raw provider output.
+
 ## Keybinding Matrix (`SUPER`)
 
 ### General Windows & Apps
@@ -101,6 +110,7 @@ The Waybar configuration utilizes Matugen CSS variables and custom widgets.
 | `SUPER + ESCAPE` | Open Rofi Power Menu |
 | `SUPER + L` | Lock screen |
 | `SUPER + SHIFT + W` | Cycle Wallpaper & Theme |
+| `SUPER + W` | Toggle widget dashboard |
 | `Print` | Region screenshot to clipboard (`grim` + `slurp`) |
 | `SHIFT + Print` | Fullscreen screenshot |
 

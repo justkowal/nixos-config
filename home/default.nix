@@ -19,6 +19,7 @@ in {
       ./handoff.nix
       ./focus.nix
       ./timemachine.nix
+      ./widgets.nix
     ]
     ++ lib.optionals (!laptop) [
       ./ai.nix
@@ -26,6 +27,7 @@ in {
 
   lab.rooms.enable = true;
   lab.focus.enable = true;
+  lab.widgets.enable = true;
 
   home.username = user;
   home.homeDirectory = homeDir;
