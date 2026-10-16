@@ -1,0 +1,23 @@
+# monthly rpi4 disaster-recovery drill (docs/ROADMAP.md item 2); needs /dev/kvm for the agent user
+labels:
+  backend: local
+
+when:
+  - event: cron
+    cron: dr-drill
+  - event: manual
+
+steps:
+  - name: dr-drill
+    image: bash
+    environment:
+      RESTIC_REPOSITORY:
+        from_secret: dr_restic_repository
+      RESTIC_PASSWORD:
+        from_secret: dr_restic_password
+      FORGEJO_TOKEN:
+        from_secret: dr_forgejo_token
+      PAPERLESS_TOKEN:
+        from_secret: dr_paperless_token
+    commands:
+      - nix shell --inputs-from . nixpkgs#restic nixpkgs#jq nixpkgs#curl --command bash ci/dr-drill/run.sh .
