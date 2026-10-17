@@ -29,6 +29,8 @@ in {
   lab.rooms.enable = true;
   lab.focus.enable = true;
   lab.widgets.enable = true;
+  # phone app: tailnet-only, token protected, see docs/ANDROID_SETUP.md part 5
+  lab.phone.enable = true;
 
   home.username = user;
   home.homeDirectory = homeDir;
