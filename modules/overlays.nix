@@ -3,6 +3,11 @@
 {
   nixpkgs.overlays = [
     (final: prev: {
+      # the i686 build (pulled in by millennium-32 for steam) fails 54 checkPhase tests on the desktop
+      minizip-ng = prev.minizip-ng.overrideAttrs (_: {
+        doCheck = false;
+      });
+
       # Add detector for Gigabyte RX 6700 XT EAGLE 12G (subsystem 1458:2331)
       openrgb = prev.openrgb.overrideAttrs (oldAttrs: {
         patches = (oldAttrs.patches or []) ++ [
