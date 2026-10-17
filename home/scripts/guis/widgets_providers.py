@@ -148,6 +148,26 @@ def _claude_local(now):
     return {"5 h": five_sum, "Week": week_sum}, hourly[:169]
 
 
+def _age_text(seconds):
+    seconds = max(0, seconds)
+    if seconds < 5400:
+        return f"{int(seconds // 60)} min"
+    if seconds < 172800:
+        return f"{int(seconds // 3600)} h"
+    return f"{int(seconds // 86400)} d"
+
+
+def _offline_reason(e, who):
+    """Say what is wrong and what to do, in one short line the column can show."""
+    if isinstance(e, FileNotFoundError):
+        return f"Not signed in to {who}"
+    if isinstance(e, urllib.error.URLError):
+        return "Usage endpoint unreachable"
+    if isinstance(e, RuntimeError):
+        return str(e)
+    return f"{who} credentials unreadable"
+
+
 def _budget_pct(cfg, label, tokens):
     """Optional user-set budgets (tokens) turn raw usage into an estimated percentage."""
     key = {"5 h": "fiveHour", "Week": "week"}.get(label)
@@ -163,7 +183,7 @@ def claude(cfg):
         creds = json.load(open(f"{HOME}/.claude/.credentials.json"))["claudeAiOauth"]
         # never refresh here: claude code rotates the refresh token and would get logged out
         if creds["expiresAt"] / 1000 < now:
-            raise RuntimeError("token expired, open claude code once to refresh it")
+            raise RuntimeError(f"Claude login expired {_age_text(now - creds['expiresAt'] / 1000)} ago, run claude once")
         u = http_json("https://api.anthropic.com/api/oauth/usage", {
             "Authorization": f"Bearer {creds['accessToken']}", "anthropic-beta": "oauth-2025-04-20"})
         labels = {"five_hour": "5 h", "seven_day": "Week", "seven_day_opus": "Week Opus", "seven_day_sonnet": "Week Sonnet"}
@@ -177,13 +197,18 @@ def claude(cfg):
         for label in ("5 h", "Week"):
             est = _budget_pct(cfg, label, tokens[label])
             windows.append({"label": label, "tokens": tokens[label], "pct": est, "estimate": est is not None})
-        out.update(source="local", reason=str(e)[:120], windows=windows)
+        out.update(source="local", reason=_offline_reason(e, "Claude Code"), windows=windows)
     series, last = pct_series("claude", now)
     out.update(pct_history=series, last_api=last)
     return out
 
 
 _gemini_project = None
+
+
+def _gemini_conversations():
+    """Both installs write here: the standalone app and the IDE."""
+    return glob.glob(f"{HOME}/.gemini/antigravity/conversations/*") + glob.glob(f"{HOME}/.gemini/antigravity-ide/conversations/*")
 
 
 def gemini(cfg):
@@ -194,7 +219,7 @@ def gemini(cfg):
     try:
         tok = json.load(open(f"{HOME}/.gemini/jetski-standalone-oauth-token"))["token"]
         if tok.get("expiry") and parse_iso(tok["expiry"]) < now:
-            raise RuntimeError("token expired, open antigravity once to refresh it")
+            raise RuntimeError(f"Antigravity login expired {_age_text(now - parse_iso(tok['expiry']))} ago, send a prompt there")
         hdr = {"Authorization": f"Bearer {tok['access_token']}"}
         if _gemini_project is None:
             r = http_json(f"{base}:loadCodeAssist", hdr, {"metadata": {"ideType": "ANTIGRAVITY"}})
@@ -212,15 +237,15 @@ def gemini(cfg):
         hist_append("gemini", now, {m["label"]: m["pct"] for m in models})
         out.update(source="api", windows=models[:4])
     except (OSError, KeyError, ValueError, RuntimeError, urllib.error.URLError) as e:
-        mt = [os.path.getmtime(p) for p in glob.glob(f"{HOME}/.gemini/antigravity/conversations/*")]
-        out.update(source="local", reason=str(e)[:120], windows=[
+        mt = [os.path.getmtime(p) for p in _gemini_conversations()]
+        out.update(source="local", reason=_offline_reason(e, "Antigravity"), windows=[
             {"label": "5 h", "sessions": sum(t > now - 5 * 3600 for t in mt)},
             {"label": "Week", "sessions": sum(t > now - 7 * 86400 for t in mt)},
         ])
     # conversations per day for two weeks: the only usage signal gemini leaves on disk
     days = [0] * HISTORY_DAYS
     midnight = time.mktime(time.localtime(now)[:3] + (0, 0, 0, 0, 0, -1))
-    for p in glob.glob(f"{HOME}/.gemini/antigravity/conversations/*"):
+    for p in _gemini_conversations():
         i = int((midnight + 86400 - os.path.getmtime(p)) // 86400)
         if 0 <= i < HISTORY_DAYS:
             days[HISTORY_DAYS - 1 - i] += 1

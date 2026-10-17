@@ -459,7 +459,7 @@ def _usage(box, d, compact, unit, bars, bars_caption, hot_tail, max_bar=None):
             line = "   ".join(f"{k} {v:.0f}%" for k, (_, v) in last.items())
             box.append(lbl(f"Last reading {ago(newest)}: {line}", "dw-cap"))
         # the column stays short, the full reason lives in the dashboard
-        box.append(lbl(d.get("reason", "") if not compact else "Live limits offline, showing local usage", "dw-cap", wrap=not compact))
+        box.append(lbl(d.get("reason", "Live limits offline"), "dw-cap", wrap=True))
 
     if bars and max(bars) > 0:
         box.append(Spark(bars, "bars", 30 if compact else 52, hot_tail, max_bar=max_bar))
