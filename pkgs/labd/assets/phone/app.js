@@ -2,6 +2,7 @@
 const $ = (id) => document.getElementById(id);
 const KEY = "lab-token";
 let armed = null;
+let sceneKey = "";
 
 function token() { try { return localStorage.getItem(KEY) || ""; } catch (e) { return ""; } }
 
@@ -41,14 +42,19 @@ function render(s) {
     li.append(dot, name, os);
     return li;
   }));
-  const sc = $("scenes");
-  sc.replaceChildren(...s.scenes.map((x) => {
-    const b = document.createElement("button");
-    b.textContent = x.title;
-    b.dataset.name = x.name;
-    b.addEventListener("click", () => runScene(b, x));
-    return b;
-  }));
+  // the buttons are only rebuilt when the scene list changes: replacing them every poll would eat a tap
+  // that lands mid-refresh and wipe the "tap again" state
+  const key = JSON.stringify(s.scenes);
+  if (key !== sceneKey) {
+    sceneKey = key;
+    $("scenes").replaceChildren(...s.scenes.map((x) => {
+      const b = document.createElement("button");
+      b.textContent = x.title;
+      b.dataset.name = x.name;
+      b.addEventListener("click", () => runScene(b, x));
+      return b;
+    }));
+  }
   const act = $("activity");
   act.replaceChildren(...s.activity.map((a) => {
     const li = document.createElement("li");
@@ -74,6 +80,8 @@ async function runScene(btn, scene) {
     return;
   }
   armed = null;
+  btn.classList.remove("armed");
+  btn.textContent = scene.title;
   try {
     await api("/api/scene/" + encodeURIComponent(scene.name), { method: "POST", headers: { Authorization: "Bearer " + token() } });
     $("status").textContent = scene.title + " started";

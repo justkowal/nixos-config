@@ -29,3 +29,24 @@ button.primary { background: var(--accent); color: var(--on-accent); font-weight
 button.armed { background: var(--danger); color: var(--on-accent); }
 input { width: 100%; font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px; }
 #status { margin-top: 24px; min-height: 1.4em; }
+
+/* tablet and landscape: devices and activity on the left, scenes as big targets on the right */
+@media (min-width: 720px) {
+  main {
+    max-width: 1000px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 40px;
+    align-items: start;
+    padding-top: 36px;
+  }
+  header, #unlock, #status { grid-column: 1 / -1; }
+  #devices-section { grid-column: 1; }
+  #activity-section { grid-column: 1; }
+  #scenes-section { grid-column: 2; grid-row: 2 / span 2; }
+  #scenes { grid-template-columns: 1fr; gap: 12px; }
+  h1 { font-size: 36px; }
+  body { font-size: 18px; }
+  button { min-height: 84px; font-size: 20px; padding: 20px 22px; }
+  li { padding: 16px 18px; }
+}

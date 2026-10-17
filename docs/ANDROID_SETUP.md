@@ -111,7 +111,7 @@ On the computer you want to control (for example the desktop):
 3. Switch the computer (`nh os switch`). The first start creates a private token file at `~/.config/lab/phone-token`.
 4. Run `lab phone`. It prints a URL and the token. Or press `SUPER + SPACE`, type `phone` and choose **Phone app: copy the token**, which copies the token and shows a notification with the URL.
 
-On the Android device:
+On each Android device (phone and tablet, same steps):
 
 1. Make sure Tailscale is on.
 2. Open the URL in Chrome. It is plain `http` on purpose: the connection is already encrypted by Tailscale, and the page cannot use a certificate for a bare tailnet address.
@@ -119,6 +119,8 @@ On the Android device:
 4. Chrome menu, **Add to Home screen**, then **Install** if Chrome offers it. You get an icon that opens full screen.
 
 Scenes ask for a second tap within three seconds, so a stray touch cannot lock your desktop.
+
+On the tablet the page uses the wide layout: devices and recent activity on the left, big scene buttons on the right (best in landscape, handy on a stand next to the desk). The token belongs to the computer, not the device: the phone and the tablet use the same URL and the same token. To cut a lost device off, delete `~/.config/lab/phone-token` on that computer and run `systemctl --user restart labd`. A new token is created and every device has to paste it again.
 
 **Check:** the Devices list shows your computers with a filled dot when online. Tapping a scene twice makes the island on the computer announce it.
 
