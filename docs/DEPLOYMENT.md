@@ -517,3 +517,27 @@ sudo tlp-stat -b
 | **Laptop** | Homelab Root CA | `curl -fsSL https://git.lab` | Clean HTTP 200 (no cert warnings or `-k` flags) |
 | **Laptop** | Cluster SSH | `ssh justkowal@nixos-rpi4.lab` | Key-based login with zero password prompts |
 | **Laptop** | Battery Health | `sudo tlp-stat -b \| grep -E 'START\|STOP'` | Thresholds: 85% start / 90% stop |
+
+## Deploying the rpi4 from a computer (runbook)
+
+The Pi has no git checkout and builds slowly, so build on the Pi but evaluate on the computer. Always do `test` first (activates without making it the boot default, a reboot undoes it), look, then `switch`:
+
+```bash
+REV=$(git rev-parse HEAD)   # deploy a committed revision, never a dirty tree
+nixos-rebuild test   --flake "git+file://$PWD?rev=$REV#rpi4" --target-host justkowal@nixos-rpi4.lab --build-host justkowal@nixos-rpi4.lab --sudo
+nixos-rebuild switch --flake "git+file://$PWD?rev=$REV#rpi4" --target-host justkowal@nixos-rpi4.lab --build-host justkowal@nixos-rpi4.lab --sudo
+```
+
+Expect 10 to 30 minutes for the first run (evaluation of the aarch64 system on an x86 machine is the slow part). Then check on the Pi: `systemctl --failed`, `systemctl list-jobs` (should be empty), `systemctl show paperless-scheduler -p NRestarts --value` (should be 0).
+
+**If an activation hangs.** `switch-to-configuration` waits for every start job. A service that keeps failing and restarting counts as "still starting", so it blocks the activation and every later deploy ("unit nixos-rebuild-switch-to-configuration.service already loaded"). Find the culprit with `systemctl list-jobs` and `sudo journalctl -u <unit>`, fix the cause, stop the looping units, and deploy again.
+
+Faults found and fixed on 2026-10-17 (the Pi had been stuck since 5 October):
+
+| Fault | Cause | Fix |
+| :--- | :--- | :--- |
+| Every deploy hung | `paperless-scheduler` restarted 66,651 times: its first-run migration needs longer than the 15 s start limit | `TimeoutStartSec = 15min`, `RestartSec = 30s` in `hosts/rpi4/apps.nix` |
+| Then paperless failed with `PermissionError` | `/home/justkowal` is mode 700 and the consume folder lives under it | tmpfiles ACL `u:paperless:--x` on `/home/justkowal` |
+| `oled-dashboard` failed | `ExecStart` pointed at `/etc/nixos/hosts/rpi4/scripts/oled-dashboard.py`, a path that does not exist on the Pi | use the Nix store path (`${./scripts/oled-dashboard.py}`) |
+| No DNS from Blocky, no focus blocking | Blocky bound `:53` on every interface, which collides with podman's `aardvark-dns` on `10.88.0.1:53`, so it crashed at start and took its http api down | bind `127.0.0.1`, `192.168.1.22` and `100.113.193.14` explicitly, retry calmly |
+

@@ -22,7 +22,7 @@ Phone: Nothing Phone (2a), already known to the tailnet but offline for about tw
 Before starting, confirm on the computers:
 
 1. The laptop and the desktop are switched to the latest config (`nh os switch`).
-2. The rpi4 hub is deployed with the current repo (it provides `.lab` DNS, ntfy and the focus hooks). Check from a computer: `curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://nixos-rpi4.lab:9100/hooks/focus-status` should not print `404`.
+2. The rpi4 hub is deployed with the current repo (it provides `.lab` DNS through Blocky, ntfy and the focus hooks). It was redeployed on 2026-10-17 and `dig @100.113.193.14 git.lab +short` answers `100.113.193.14`; the runbook is at the end of `docs/DEPLOYMENT.md`. Check from a computer: `curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://nixos-rpi4.lab:9100/hooks/focus-status` should not print `404`.
 3. The Tailscale policy in `tailscale/policy.hujson` is either applied or not applied, both work (see the warning in part 1).
 
 ---
