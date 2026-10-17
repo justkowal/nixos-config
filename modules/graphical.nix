@@ -3,6 +3,8 @@
   pkgs,
   ...
 }: {
+  imports = [./lab-greeter.nix ./lab-splash.nix];
+
   programs.hyprland = {
     enable = true;
     xwayland.enable = true;
@@ -44,7 +46,7 @@
   services.greetd = {
     enable = true;
     settings.default_session = {
-      command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd Hyprland";
+      command = config.lab.greeter.command;
       user = "greeter";
     };
   };
