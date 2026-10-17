@@ -61,6 +61,8 @@
 				"tcp:1714-1764", "udp:1714-1764",
 				"tcp:47984", "tcp:47989", "tcp:47990", "tcp:48010",
 				"udp:47998-48000", "udp:48002", "udp:48010",
+				// Lab phone app served by labd (lab.phone.enable)
+				"tcp:8765",
 			],
 		},
 
@@ -68,7 +70,7 @@
 		// lan-mouse and kdeconnect from the desktop, and roaming peers to each other
 		{"src": ["tag:worker", "tag:orchestrator"], "dst": ["tag:roaming"], "ip": ["tcp:22", "tcp:22000", "udp:22000"]},
 		{"src": ["tag:worker"], "dst": ["tag:roaming"], "ip": ["tcp:4242", "udp:4242", "tcp:1714-1764", "udp:1714-1764"]},
-		{"src": ["tag:roaming"], "dst": ["tag:roaming"], "ip": ["tcp:22", "tcp:22000", "udp:22000", "tcp:1714-1764", "udp:1714-1764"]},
+		{"src": ["tag:roaming"], "dst": ["tag:roaming"], "ip": ["tcp:22", "tcp:22000", "udp:22000", "tcp:1714-1764", "udp:1714-1764", "tcp:8765"]},
 
 		// exit node and LAN subnet via the rpi4 (WoL, router, printer)
 		{"src": ["tag:roaming"], "dst": ["autogroup:internet", "home-lan"], "ip": ["*"]},
@@ -77,7 +79,7 @@
 	"tests": [
 		{
 			"src":    "tag:roaming",
-			"accept": ["tag:orchestrator:443", "tag:orchestrator:80", "tag:orchestrator:22", "tag:orchestrator:9100", "tag:orchestrator:8428", "tag:worker:22", "tag:worker:47984"],
+			"accept": ["tag:orchestrator:443", "tag:orchestrator:80", "tag:orchestrator:22", "tag:orchestrator:9100", "tag:orchestrator:8428", "tag:worker:22", "tag:worker:47984", "tag:worker:8765"],
 			"deny":   ["tag:orchestrator:9000", "tag:orchestrator:8000", "tag:worker:80", "tag:worker:8080"],
 		},
 		{
