@@ -12,6 +12,11 @@ in {
       description = "Fixed design tokens. Colour is not here: it comes from Matugen.";
     };
     reducedMotion = lib.mkEnableOption "reduced motion for every Lab surface";
+    soundEnabled = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Scene and handoff sounds. System mute still applies.";
+    };
     textScale = lib.mkOption {
       type = lib.types.float;
       default = 1.0;
@@ -81,7 +86,7 @@ in {
 
     xdg.configFile."lab/tokens.json".text = builtins.toJSON (cfg.tokens
       // {
-        inherit (cfg) reducedMotion textScale;
+        inherit (cfg) reducedMotion soundEnabled textScale;
       });
   };
 }

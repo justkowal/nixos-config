@@ -81,6 +81,12 @@ in {
           title = e.label;
           inherit (e) group exec;
         }) (lib.filter (e: e.palette) config.lab.keymap.entries))
+        ++ (lib.mapAttrsToList (name: sc: {
+          title = "Scene: ${sc.title}";
+          group = "Scene";
+          exec = "lab scene ${name}";
+          glyph = "scene";
+        }) config.lab.scenes)
         ++ cfg.entries;
     };
   };

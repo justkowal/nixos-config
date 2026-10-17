@@ -24,6 +24,34 @@ def cmd_publish(a):
     os.execvp("lab-publish", ["lab-publish", *a.rest])
 
 
+def emit(name, payload, priority="normal"):
+    # best effort: scenes still run with the shell down
+    try:
+        lab_bus.request({"op": "publish", "event": {"name": name, "source": "scene", "payload": payload, "priority": priority}})
+    except (OSError, ValueError):
+        pass
+
+
+def cmd_scene(a):
+    scenes = load_conf("scenes.json")
+    if not a.name:
+        for name, sc in sorted(scenes.items()):
+            print(f"{name:<12} {sc['title']}  ({len(sc['steps'])} steps)")
+        return 0
+    sc = scenes.get(a.name)
+    if sc is None:
+        print(f"lab: no scene {a.name!r}, have: {', '.join(sorted(scenes))}", file=sys.stderr)
+        return 2
+    emit("scene.started", {"name": a.name, "title": sc["title"]}, "low")
+    failed = 0
+    for step in sc["steps"]:
+        if subprocess.run(step, shell=True).returncode != 0:
+            failed += 1
+            print(f"lab: scene {a.name}: step failed: {step}", file=sys.stderr)
+    emit("scene.done", {"name": a.name, "title": sc["title"], "announce": sc.get("announce", True), "failed": failed}, "high" if failed else "normal")
+    return 1 if failed else 0
+
+
 def cmd_status(a):
     state = lab_bus.request({"op": "state"})["state"]
     if a.json:
@@ -125,6 +153,9 @@ def main():
     p = sub.add_parser("publish", help="publish an event (see lab-publish)", add_help=False)
     p.add_argument("rest", nargs=argparse.REMAINDER)
     p.set_defaults(fn=cmd_publish)
+    p = sub.add_parser("scene", help="run a scene, or list them")
+    p.add_argument("name", nargs="?")
+    p.set_defaults(fn=cmd_scene)
     p = sub.add_parser("status", help="last event per name")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_status)

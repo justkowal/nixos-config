@@ -43,6 +43,7 @@ fn glyph_named(name: &str) -> Glyph {
         "lock" => Glyph::Lock,
         "handoff" => Glyph::Handoff,
         "search" => Glyph::Search,
+        "scene" => Glyph::Scene,
         "brightness" => Glyph::Brightness,
         _ => Glyph::Action,
     }

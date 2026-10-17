@@ -72,6 +72,20 @@ fn card_for(ev: &Value) -> Option<Card> {
         "focus.off" => (Glyph::FocusOff, "Focus off".to_owned(), None, 2500),
         "room.saved" => (Glyph::Room, text_of("Room saved", "name"), None, 2500),
         "room.restored" => (Glyph::Room, text_of("Room restored", "name"), None, 2500),
+        "scene.done" => {
+            let title = p["title"].as_str().unwrap_or("Scene");
+            let failed = p["failed"].as_u64().unwrap_or(0) > 0;
+            // scenes whose steps already show their own state stay quiet unless something broke
+            if !failed && !p["announce"].as_bool().unwrap_or(true) {
+                return None;
+            }
+            let text = if failed {
+                format!("Scene failed, {title}")
+            } else {
+                title.to_owned()
+            };
+            (Glyph::Scene, text, None, 2500)
+        }
         "handoff.arrived" => (
             Glyph::Handoff,
             text_of("Handoff complete", "peer"),

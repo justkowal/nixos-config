@@ -9,16 +9,9 @@
 
   focus = pkgs.writeShellApplication {
     name = "focus";
-    runtimeInputs =
-      (with pkgs; [coreutils curl jq libnotify]) ++ [config.lab.cli.package]
-      ++ lib.optional cfg.openrgb.enable (pkgs.python3.withPackages (ps: [ps.openrgb-python]));
+    runtimeInputs = (with pkgs; [coreutils curl jq libnotify]) ++ [config.lab.cli.package];
     text = ''
       export FOCUS_HOOKS=${lib.escapeShellArg cfg.hooksUrl}
-      ${lib.optionalString cfg.openrgb.enable ''
-        export FOCUS_OPENRGB=1
-        export FOCUS_OPENRGB_ON=${lib.escapeShellArg cfg.openrgb.focusProfile}
-        export FOCUS_OPENRGB_OFF=${lib.escapeShellArg cfg.openrgb.defaultProfile}
-      ''}
       ${builtins.readFile ./scripts/focus.sh}
     '';
   };
@@ -35,7 +28,7 @@ in {
       enable = lib.mkOption {
         type = lib.types.bool;
         default = !laptop;
-        description = "Switch OpenRGB profiles (saved on the OpenRGB server) when focus toggles.";
+        description = "Light the desk for focus. The LED layer (home/lab/led.nix) loads these profiles from the focus.on and focus.off events.";
       };
       focusProfile = lib.mkOption {
         type = lib.types.str;

@@ -33,15 +33,6 @@ remaining_min() {
   state | jq -r --argjson now "$(date +%s)" 'if .until then ((.until - $now) / 60 | ceil) else "" end'
 }
 
-openrgb_profile() {
-  [ -n "${FOCUS_OPENRGB:-}" ] || return 0
-  python3 - "$1" <<'EOF' >/dev/null 2>&1 || true
-import sys
-from openrgb import OpenRGBClient
-OpenRGBClient(name="focus").load_profile(sys.argv[1])
-EOF
-}
-
 # state change goes to the island; notify-send only covers a down labd
 announce() {
   lab publish "$1" --source focus --strict --payload "$2" 2>/dev/null ||
@@ -58,7 +49,6 @@ focus_on() {
     pomodoro toggle
   fi
   have caffeine && caffeine on >/dev/null
-  openrgb_profile "${FOCUS_OPENRGB_ON:-focus}"
   announce focus.on "$(jq -nc --arg m "$minutes" '{minutes: $m}')" "Focus on" "$minutes min, distractions blocked fleet-wide"
 }
 
@@ -69,7 +59,6 @@ focus_off() {
     rm -f "$MARKER"
     have caffeine && caffeine off >/dev/null
   fi
-  openrgb_profile "${FOCUS_OPENRGB_OFF:-default}"
   announce focus.off '{}' "Focus off" ""
 }
 
@@ -83,7 +72,6 @@ waybar() {
     if [ -f "$MARKER" ]; then
       rm -f "$MARKER"
       have caffeine && caffeine off >/dev/null
-      openrgb_profile "${FOCUS_OPENRGB_OFF:-default}"
       lab publish focus.off --source focus --payload '{"ended":"elsewhere"}' 2>/dev/null || true
     fi
     jq -nc '{text: "󰓾", class: "inactive", tooltip: "Focus off\nClick for 25 min of focus"}'
