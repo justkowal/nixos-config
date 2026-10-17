@@ -486,25 +486,51 @@ in {
     '';
   };
 
-  programs.hyprlock = {
+  programs.hyprlock = let
+    t = config.lab.design.tokens;
+    ui = t.type.ui;
+    display = t.type.display;
+  in {
     enable = true;
     # monitor-ctl writes $lock_monitor so the prompt lands on the screen in use; desktop shows it everywhere
     importantPrefixes = ["source" "$"];
     settings = {
-      source = lib.mkIf laptop ["${config.xdg.configHome}/hypr/primary.conf"];
-      general = {
-        disable_loading_bar = true;
-        grace = 15;
-        hide_cursor = true;
-      };
+      # colour comes from the same Matugen file as the bar and the island; only these variables are
+      # guaranteed to exist in it, so do not add others without adding them to the template as well
+      source =
+        ["${config.xdg.configHome}/hypr/matugen.conf"]
+        ++ lib.optional laptop "${config.xdg.configHome}/hypr/primary.conf";
+      # grace and disable_loading_bar no longer exist in hyprlock (they only produced config errors);
+      # the grace period is the --grace flag, which hypridle already passes
+      general.hide_cursor = true;
       label = [
+        # the time in the display face, big, the way the desktop clock is
         {
           text = "$TIME";
-          font_size = 64;
-          color = "rgba(205, 214, 244, 1.0)";
-          position = "0, 160";
+          font_family = display;
+          font_size = 128;
+          color = "$on_surface";
+          position = "0, 150";
           halign = "center";
           valign = "center";
+        }
+        {
+          text = "cmd[update:60000] date +'%A, %-d %B'";
+          font_family = ui;
+          font_size = 22;
+          color = "$secondary";
+          position = "0, 50";
+          halign = "center";
+          valign = "center";
+        }
+        {
+          text = "KOWAL LAB";
+          font_family = ui;
+          font_size = 11;
+          color = "$outline";
+          position = "0, 36";
+          halign = "center";
+          valign = "bottom";
         }
       ];
       auth = lib.mkIf laptop {
@@ -517,23 +543,37 @@ in {
           path = "screenshot";
           blur_passes = 3;
           blur_size = 8;
+          # dimmed so the clock reads on any wallpaper
+          brightness = 0.55;
+          vibrancy = 0.2;
         }
       ];
       input-field = [
         (lib.optionalAttrs laptop {monitor = "$lock_monitor";}
         // {
-          size = "250, 60";
+          size = "320, 58";
+          # -1 is fully rounded, the same pill as the island
+          rounding = -1;
           outline_thickness = 2;
-          dots_size = 0.2;
-          dots_spacing = 0.2;
+          dots_size = 0.25;
+          dots_spacing = 0.35;
+          dots_center = true;
+          dots_rounding = -1;
           fade_on_empty = false;
-          outer_color = "rgba(203, 166, 247, 1.0)";
-          inner_color = "rgba(30, 30, 46, 0.9)";
-          font_color = "rgba(205, 214, 244, 1.0)";
+          outer_color = "$primary";
+          inner_color = "$background_transparent";
+          font_color = "$on_surface";
+          check_color = "$secondary";
+          fail_color = "$tertiary";
+          font_family = ui;
+          position = "0, -110";
+          halign = "center";
+          valign = "center";
           placeholder_text =
             if laptop
             then "<i>Scan face, fingerprint or password...</i>"
             else "<i>Password...</i>";
+          fail_text = "<i>$FAIL ($ATTEMPTS)</i>";
         })
       ];
     };
