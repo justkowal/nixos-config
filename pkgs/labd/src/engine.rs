@@ -69,6 +69,24 @@ pub fn sound_key(ev: &Value) -> Option<&'static str> {
     }
 }
 
+/// Items that wait for the user get a notification as well, so the island's few seconds are not the only chance to see them.
+pub fn notification_for(ev: &Value) -> Option<(String, String)> {
+    match ev["name"].as_str()? {
+        "room.received" => {
+            let p = &ev["payload"];
+            Some((
+                "Room received".to_owned(),
+                format!(
+                    "{} from {}. Open the palette to accept it.",
+                    p["name"].as_str().unwrap_or("room"),
+                    p["from"].as_str().unwrap_or("another device")
+                ),
+            ))
+        }
+        _ => None,
+    }
+}
+
 impl Engine {
     pub fn new(tokens: &Tokens) -> Self {
         Engine {
@@ -103,6 +121,20 @@ impl Engine {
             // the scene command waits on its steps, so keep it off the main loop
             std::thread::spawn(move || {
                 let _ = Command::new("lab").args(["scene", &scene]).status();
+            });
+        }
+        if let Some((summary, body)) = notification_for(ev) {
+            std::thread::spawn(move || {
+                let _ = Command::new("notify-send")
+                    .args([
+                        "-a",
+                        "Kowal Lab",
+                        "-i",
+                        "mail-unread-symbolic",
+                        &summary,
+                        &body,
+                    ])
+                    .status();
             });
         }
         if self.sound_enabled {
@@ -155,6 +187,15 @@ mod tests {
     fn scene_events_never_start_scenes() {
         let ev = json!({"name": "handoff.arrived", "source": "scene"});
         assert!(engine().triggered(&ev).is_empty());
+    }
+
+    #[test]
+    fn received_rooms_leave_a_notification() {
+        let ev = json!({"name": "room.received", "payload": {"name": "proj", "from": "Laptop"}});
+        let (summary, body) = notification_for(&ev).unwrap();
+        assert_eq!(summary, "Room received");
+        assert_eq!(body, "proj from Laptop. Open the palette to accept it.");
+        assert!(notification_for(&json!({"name": "room.sent"})).is_none());
     }
 
     #[test]

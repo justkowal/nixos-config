@@ -119,7 +119,7 @@ fn card_for(ev: &Value) -> Option<Card> {
                 Glyph::Room,
                 format!("Room received, {name} from {from}"),
                 None,
-                5000,
+                8000,
             )
         }
         _ => return None,

@@ -164,7 +164,7 @@ Add a row here when you add an event. Payload keys are the contract between publ
 | `roster.show` | `keymap` | none | "Devices" with a dot per device (filled online, ring offline), `SUPER + ALT + D` |
 | `roster.device` | `roster` | `title`, `online` | "<title> connected" or "offline" |
 | `room.sent` | `room` | `name`, `peer` | "Room sent to <peer>" |
-| `room.received` | `lab-inbox` | `name`, `from`, `windows` | "Room received, <name> from <from>" (high priority) |
+| `room.received` | `lab-inbox` | `name`, `from`, `windows` | "Room received, <name> from <from>" for 8 s (high priority), plus a desktop notification that stays in the notification centre (`notification_for` in `engine.rs`) |
 | `room.accepted` | `room` | `name` | not shown |
 | `scene.started` | `scene` | `name`, `title` | not shown |
 | `scene.done` | `scene` | `name`, `title`, `announce`, `failed` | title when `announce`; "Scene failed, <title>" when `failed` > 0 |
@@ -174,6 +174,7 @@ Add a row here when you add an event. Payload keys are the contract between publ
 
 - **Roster:** `lab-roster` (`home/lab/roster.nix`, `home/scripts/lab-roster.py`) reads `tailscale status --json` every 15 s, keeps only nodes owned by your own tailnet user, and names them from `lab.roster.devices` (keyed by the tailscale dns label). It publishes `roster.changed` on change and every 4 minutes, and `roster.device` when a device goes online or offline.
 - **Transport is Taildrop, on purpose.** `room send NAME` runs `tailscale file cp` to the peer (`lab.rooms.peer`, default the handoff peer). Tailscale authenticates the transfer between your own devices and labd opens no listener, so there is no new network surface. Do not replace this with a custom port or ssh without a written reason.
+- **Items that wait for you get a notification too.** The island is a few seconds long and easy to miss, so `notification_for` in `src/engine.rs` posts a notification for events that need a later action (today only `room.received`). The shell decides this, publishers never call `notify-send`.
 - **Receiving:** `lab-inbox` (`home/scripts/lab-inbox.py`, started from `home/rooms.nix`) runs `tailscale file get --wait` into `~/.local/state/rooms/inbox-raw`, validates each file (JSON, at most 256 KB, safe name, a non-empty `windows` list), moves valid ones to `~/.local/state/rooms/inbox` and publishes `room.received`. It needs tailscale's operator to be your user (`--operator=justkowal`; set on the desktop, and via `extraSetFlags` on the laptop). Nothing opens automatically.
 - **Accepting is explicit.** Inbox rooms appear first in the palette ("<name> from <device>"). Enter runs `room take NAME`, which accepts the room and opens it. Accepting rewrites it with `sanitize_foreign` in `room.py`: terminals keep only their cwd, browsers keep nothing else, other windows may relaunch only an installed desktop application by program name with no arguments, and anything else is dropped. A received room can never carry its own command line.
 - **Send:** typing "send" in the palette lists "Send <room> to <peer>" for each saved room (rank 2, hidden from the default list). Rooms saved by `leave` (`last`) are sendable too.
