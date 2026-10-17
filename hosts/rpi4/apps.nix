@@ -263,6 +263,14 @@
     };
   };
 
+  # the first start runs django migrations, which take longer than the module's 15 s start limit on a
+  # Pi 4 under load. The unit was killed and restarted 66k times (and held every later activation
+  # hostage) before this. Give it time and stop it hammering the CPU between attempts.
+  systemd.services.paperless-scheduler.serviceConfig = {
+    TimeoutStartSec = lib.mkForce "15min";
+    RestartSec = lib.mkForce "30s";
+  };
+
   # ── Blocky: Fast DNS Proxy, Ad-Blocker & Homelab Split-DNS ─────────────
   services.blocky = {
     enable = true;
