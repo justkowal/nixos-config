@@ -187,7 +187,7 @@ in {
 
     serviceConfig = {
       Type       = "simple";
-      ExecStart  = "${python}/bin/python3 /etc/nixos/hosts/rpi4/scripts/oled-dashboard.py";
+      ExecStart  = "${python}/bin/python3 ${./scripts/oled-dashboard.py}";
       Restart    = "on-failure";
       RestartSec = "5s";
       # i2c group owns /dev/i2c-* via udev rule below; run as root for simplicity

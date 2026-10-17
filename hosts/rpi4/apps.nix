@@ -271,6 +271,13 @@
     RestartSec = lib.mkForce "30s";
   };
 
+  # the consume folder sits under the user's home, which is mode 700. Paperless only needs to walk
+  # through it (x, no listing); the folders below are already open. Without this the pre-start
+  # check fails with PermissionError and the unit loops, which also stalls every activation.
+  systemd.tmpfiles.rules = [
+    "a+ /home/justkowal - - - - u:paperless:--x"
+  ];
+
   # ── Blocky: Fast DNS Proxy, Ad-Blocker & Homelab Split-DNS ─────────────
   services.blocky = {
     enable = true;
