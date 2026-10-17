@@ -24,6 +24,8 @@ rustPlatform.buildRustPackage {
   # layer-shell has to be loaded before libwayland-client, link order alone is not reliable
   preFixup = ''
     gappsWrapperArgs+=(--prefix LD_PRELOAD : ${gtk4-layer-shell}/lib/libgtk4-layer-shell.so)
+    # the palette launches apps with `gio launch`
+    gappsWrapperArgs+=(--prefix PATH : ${lib.makeBinPath [glib.bin]})
   '';
 
   meta.mainProgram = "labd";

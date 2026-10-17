@@ -290,11 +290,9 @@ in {
         if laptop
         then ''
           bind = $mod, D, exec, rofi -show drun
-          bind = $mod, SPACE, exec, rofi -show drun
         ''
         else ''
           bind = $mod, D, exec, bash ~/.config/hypr/scripts/spotlight.sh
-          bind = $mod, SPACE, exec, bash ~/.config/hypr/scripts/spotlight.sh
           bind = $mod, A, exec, bash ~/.config/hypr/scripts/rofi_ai.sh
         ''
       }

@@ -5,6 +5,7 @@ use serde_json::Value;
 
 pub struct Tokens {
     pub ui_font: String,
+    pub radius_md: f64,
     pub radius_xl: f64,
     pub alpha_surface: f64,
     pub gap: i32,
@@ -38,6 +39,7 @@ impl Tokens {
                 .as_str()
                 .unwrap_or("Outfit")
                 .to_owned(),
+            radius_md: num(&["radius", "md"], 12.0),
             radius_xl: num(&["radius", "xl"], 24.0),
             alpha_surface: num(&["material", "alpha", "surface"], 0.92),
             gap: raw["space"][3].as_f64().unwrap_or(16.0) as i32,
@@ -56,16 +58,29 @@ impl Tokens {
 
     pub fn css(&self) -> String {
         format!(
-            "window.labd-island {{ background: none; }}\n\
-             .island {{ background-color: alpha(@window_bg_color, {alpha}); color: @window_fg_color; \
-               border-radius: {radius}px; padding: 10px 20px; font-family: \"{font}\"; font-size: {size}px; \
+            "window.labd-island, window.labd-palette {{ background: none; }}\n\
+             .island, .palette {{ background-color: alpha(@window_bg_color, {alpha}); color: @window_fg_color; \
+               font-family: \"{font}\"; font-size: {size}px; \
                border: 1px solid alpha(@window_fg_color, 0.08); box-shadow: 0 8px 24px alpha(black, 0.35); }}\n\
+             .island {{ border-radius: {xl}px; padding: 10px 20px; }}\n\
              .island label {{ font-weight: 500; }}\n\
-             .island progressbar trough, .island progressbar progress {{ min-height: 4px; border-radius: 2px; }}\n",
+             .island progressbar trough, .island progressbar progress {{ min-height: 4px; border-radius: 2px; }}\n\
+             .palette {{ border-radius: {xl}px; padding: 12px; }}\n\
+             .palette entry {{ background: none; border: none; box-shadow: none; outline: none; \
+               font-size: {big}px; padding: 8px 12px; min-height: 0; }}\n\
+             .palette scrolledwindow {{ margin-top: 6px; }}\n\
+             .palette list {{ background: none; }}\n\
+             .palette row {{ border-radius: {md}px; padding: 8px 12px; margin: 1px 0; background: none; }}\n\
+             .palette row:selected {{ background-color: alpha(@accent_bg_color, 0.22); color: @window_fg_color; }}\n\
+             .palette .dim {{ opacity: 0.55; font-size: {small}px; }}\n\
+             .palette .empty {{ opacity: 0.55; padding: 18px 12px; }}\n",
             alpha = self.alpha_surface,
-            radius = self.radius_xl,
             font = self.ui_font,
             size = self.body_px,
+            big = self.body_px * 1.6,
+            small = self.body_px * 0.9,
+            xl = self.radius_xl,
+            md = self.radius_md,
         )
     }
 }

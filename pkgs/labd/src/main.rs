@@ -1,9 +1,10 @@
-//! labd: owns the Kowal Lab state bus and draws the island.
+//! labd: owns the Kowal Lab state bus, draws the island and the command palette.
 //! `labd --no-ui` runs the bus alone and logs events, for tests and headless hosts.
 
-use labd::bus;
 mod glyphs;
 mod island;
+mod motion;
+mod palette;
 mod tokens;
 
 use std::cell::RefCell;
@@ -11,6 +12,7 @@ use std::cell::RefCell;
 use adw::prelude::*;
 use gtk::{gdk, glib};
 use gtk4 as gtk;
+use labd::bus;
 use libadwaita as adw;
 
 const APP_ID: &str = "lab.justkowal.Labd";
@@ -44,15 +46,19 @@ fn main() -> glib::ExitCode {
         }
         adw::StyleManager::default().set_color_scheme(adw::ColorScheme::PreferDark);
 
-        let island = island::Island::new(app, tokens);
+        let island = island::Island::new(app, &tokens, motion::Motion::new(&tokens));
+        let palette = palette::Palette::new(app, &tokens, motion::Motion::new(&tokens));
         if let Some(rx) = rx.borrow_mut().take() {
             glib::spawn_future_local(async move {
                 while let Ok(ev) = rx.recv().await {
-                    island.on_event(&ev);
+                    match ev["name"].as_str() {
+                        Some("palette.toggle") => palette.toggle(),
+                        _ => island.on_event(&ev),
+                    }
                 }
             });
         }
-        // the window only exists while an event is showing, so nothing else keeps the app alive
+        // windows only exist while showing, so nothing else keeps the app alive
         std::mem::forget(app.hold());
     });
     app.connect_activate(|_| {});

@@ -20,6 +20,11 @@ in {
         exec = lib.mkOption {type = lib.types.str;};
         group = lib.mkOption {type = lib.types.str;};
         label = lib.mkOption {type = lib.types.str;};
+        palette = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "List this bind as an entry in the command palette.";
+        };
       };
     });
   };

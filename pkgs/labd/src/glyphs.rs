@@ -2,9 +2,12 @@
 //! Drawn instead of loaded so the island never depends on whichever icon theme is active,
 //! and so every state shares one stroke weight.
 
+use std::cell::Cell;
 use std::f64::consts::PI;
+use std::rc::Rc;
 
 use gtk4::cairo::{Context, LineCap, LineJoin};
+use gtk4::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Glyph {
@@ -18,6 +21,9 @@ pub enum Glyph {
     FocusOff,
     Room,
     Handoff,
+    Action,
+    Power,
+    Lock,
 }
 
 pub const SIZE: f64 = 24.0;
@@ -105,6 +111,21 @@ pub fn draw(cr: &Context, glyph: Glyph) {
                 cr.rectangle(x, y, 7.0, 7.0);
             }
         }
+        Glyph::Action => {
+            line(cr, &[(4.0, 7.0), (10.0, 12.0), (4.0, 17.0)]);
+            line(cr, &[(13.0, 18.0), (20.0, 18.0)]);
+        }
+        Glyph::Power => {
+            cr.arc(12.0, 13.0, 8.0, -PI / 2.0 + 0.55, 1.5 * PI - 0.55);
+            line(cr, &[(12.0, 3.0), (12.0, 12.0)]);
+        }
+        Glyph::Lock => {
+            cr.rectangle(5.0, 11.0, 14.0, 10.0);
+            cr.move_to(8.0, 11.0);
+            cr.line_to(8.0, 8.0);
+            cr.arc(12.0, 8.0, 4.0, PI, 0.0);
+            cr.line_to(16.0, 11.0);
+        }
         Glyph::Handoff => {
             line(cr, &[(4.0, 8.0), (20.0, 8.0)]);
             line(cr, &[(16.0, 4.0), (20.0, 8.0), (16.0, 12.0)]);
@@ -113,6 +134,28 @@ pub fn draw(cr: &Context, glyph: Glyph) {
         }
     }
     let _ = cr.stroke();
+}
+
+/// A square drawing area that strokes the shared glyph in the widget's text colour.
+pub fn area(glyph: &Rc<Cell<Glyph>>, px: i32) -> gtk4::DrawingArea {
+    let area = gtk4::DrawingArea::builder()
+        .content_width(px)
+        .content_height(px)
+        .valign(gtk4::Align::Center)
+        .build();
+    let glyph = glyph.clone();
+    area.set_draw_func(move |area, cr, w, h| {
+        let c = area.color();
+        cr.set_source_rgba(
+            f64::from(c.red()),
+            f64::from(c.green()),
+            f64::from(c.blue()),
+            f64::from(c.alpha()),
+        );
+        cr.scale(f64::from(w) / SIZE, f64::from(h) / SIZE);
+        draw(cr, glyph.get());
+    });
+    area
 }
 
 #[cfg(test)]
@@ -139,6 +182,9 @@ mod tests {
             Glyph::FocusOff,
             Glyph::Room,
             Glyph::Handoff,
+            Glyph::Action,
+            Glyph::Power,
+            Glyph::Lock,
         ];
         let cell = 96;
         let surface = ImageSurface::create(Format::ARgb32, cell * all.len() as i32, cell).unwrap();

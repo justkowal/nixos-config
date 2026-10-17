@@ -15,6 +15,7 @@ use libadwaita as adw;
 use serde_json::Value;
 
 use crate::glyphs::{self, Glyph};
+use crate::motion::Motion;
 use crate::tokens::Tokens;
 
 const QUEUE_MAX: usize = 4;
@@ -96,23 +97,27 @@ fn card_for(ev: &Value) -> Option<Card> {
 }
 
 pub struct Island {
-    tokens: Tokens,
+    gap: i32,
     win: gtk::Window,
     pill: gtk::Box,
     icon: gtk::DrawingArea,
     glyph: Rc<Cell<Glyph>>,
     label: gtk::Label,
     bar: gtk::ProgressBar,
+    motion: Rc<Motion>,
     current: RefCell<Option<Card>>,
     queue: RefCell<VecDeque<Card>>,
     hiding: Cell<bool>,
     generation: Cell<u64>,
-    progress: Cell<f64>,
-    anim: RefCell<Option<adw::SpringAnimation>>,
+}
+
+fn apply(win: &gtk::Window, pill: &gtk::Box, gap: i32, p: f64) {
+    pill.set_opacity(p.clamp(0.0, 1.0));
+    win.set_margin(Edge::Top, gap + ((p - 1.0) * SLIDE_PX) as i32);
 }
 
 impl Island {
-    pub fn new(app: &adw::Application, tokens: Tokens) -> Rc<Self> {
+    pub fn new(app: &adw::Application, tokens: &Tokens, motion: Rc<Motion>) -> Rc<Self> {
         let win = gtk::Window::builder()
             .application(app)
             .decorated(false)
@@ -126,23 +131,7 @@ impl Island {
         win.set_anchor(Edge::Top, true);
 
         let glyph = Rc::new(Cell::new(Glyph::Room));
-        let icon = gtk::DrawingArea::builder()
-            .content_width(22)
-            .content_height(22)
-            .valign(gtk::Align::Center)
-            .build();
-        let drawn = glyph.clone();
-        icon.set_draw_func(move |area, cr, w, h| {
-            let c = area.color();
-            cr.set_source_rgba(
-                f64::from(c.red()),
-                f64::from(c.green()),
-                f64::from(c.blue()),
-                f64::from(c.alpha()),
-            );
-            cr.scale(f64::from(w) / glyphs::SIZE, f64::from(h) / glyphs::SIZE);
-            glyphs::draw(cr, drawn.get());
-        });
+        let icon = glyphs::area(&glyph, 22);
         let label = gtk::Label::new(None);
         let bar = gtk::ProgressBar::builder()
             .valign(gtk::Align::Center)
@@ -165,23 +154,21 @@ impl Island {
             }
         });
 
-        let island = Rc::new(Island {
-            tokens,
+        apply(&win, &pill, tokens.gap, 0.0);
+        Rc::new(Island {
+            gap: tokens.gap,
             win,
             pill,
             icon,
             glyph,
             label,
             bar,
+            motion,
             current: RefCell::new(None),
             queue: RefCell::new(VecDeque::new()),
             hiding: Cell::new(false),
             generation: Cell::new(0),
-            progress: Cell::new(0.0),
-            anim: RefCell::new(None),
-        });
-        island.set_progress(0.0);
-        island
+        })
     }
 
     pub fn on_event(self: &Rc<Self>, ev: &Value) {
@@ -220,8 +207,8 @@ impl Island {
         *self.current.borrow_mut() = Some(card);
         self.hiding.set(false);
         self.win.present();
-        if self.progress.get() < 1.0 {
-            self.animate(1.0, || {});
+        if self.motion.progress() < 1.0 {
+            self.fade(1.0, || {});
         }
 
         let gen = self.generation.get() + 1;
@@ -243,7 +230,7 @@ impl Island {
         }
         self.hiding.set(true);
         let me = Rc::downgrade(self);
-        self.animate(0.0, move || {
+        self.fade(0.0, move || {
             if let Some(me) = me.upgrade() {
                 me.win.set_visible(false);
                 *me.current.borrow_mut() = None;
@@ -252,38 +239,9 @@ impl Island {
         });
     }
 
-    fn set_progress(&self, p: f64) {
-        self.progress.set(p);
-        self.pill.set_opacity(p.clamp(0.0, 1.0));
-        self.win
-            .set_margin(Edge::Top, self.tokens.gap + ((p - 1.0) * SLIDE_PX) as i32);
-    }
-
-    fn animate(self: &Rc<Self>, to: f64, on_done: impl Fn() + 'static) {
-        // pausing the old animation drops its done callback, which is what we want when interrupted
-        if let Some(old) = self.anim.borrow_mut().take() {
-            old.pause();
-        }
-        if self.tokens.reduced_motion {
-            self.set_progress(to);
-            on_done();
-            return;
-        }
-        let me = Rc::downgrade(self);
-        let target = adw::CallbackAnimationTarget::new(move |v| {
-            if let Some(me) = me.upgrade() {
-                me.set_progress(v);
-            }
-        });
-        let params = adw::SpringParams::new(
-            self.tokens.damping_ratio(),
-            self.tokens.mass,
-            self.tokens.stiffness,
-        );
-        let anim = adw::SpringAnimation::new(&self.pill, self.progress.get(), to, params, target);
-        anim.set_epsilon(0.002);
-        anim.connect_done(move |_| on_done());
-        anim.play();
-        *self.anim.borrow_mut() = Some(anim);
+    fn fade(&self, to: f64, on_done: impl Fn() + 'static) {
+        let (win, pill, gap) = (self.win.clone(), self.pill.clone(), self.gap);
+        self.motion
+            .animate(&self.pill, to, move |p| apply(&win, &pill, gap, p), on_done);
     }
 }

@@ -5,6 +5,7 @@
   room open <name> [--dry-run]
   room pick                    rofi list of saved rooms plus git repos under ~
   room list
+  room entries                 JSON for the command palette: saved rooms plus git repos
 """
 
 import json
@@ -210,6 +211,11 @@ def main(argv):
         pick()
     elif cmd == "list":
         print("\n".join(saved()))
+    elif cmd == "entries":
+        rooms = saved()
+        found = [{"name": r, "kind": "room"} for r in rooms]
+        found += [{"name": n, "kind": "repo"} for n in sorted(repos()) if n not in rooms]
+        print(json.dumps(found))
     else:
         sys.exit(__doc__.strip())
 
