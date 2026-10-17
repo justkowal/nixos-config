@@ -35,8 +35,28 @@ pub struct Point {
     pub watts: f64,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ForecastView {
+    pub points: Vec<(f64, f64)>,
+    pub lo: Vec<(f64, f64)>,
+    pub hi: Vec<(f64, f64)>,
+    pub sleep: Vec<(f64, f64)>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AgendaItem {
+    pub title: String,
+    pub start: f64,
+    pub status: String,
+    pub due: Option<f64>,
+}
+
 #[derive(Default)]
 pub struct Snapshot {
+    pub forecast: Option<ForecastView>,
+    pub agenda: Vec<AgendaItem>,
+    pub reminders_on: bool,
+    pub reminder_min_use: f64,
     pub live: Option<Sample>,
     pub battery_name: String,
     pub battery_count: usize,
@@ -67,7 +87,7 @@ pub struct Snapshot {
 }
 
 fn state_file() -> std::path::PathBuf {
-    let rt = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
+    let rt = std::env::var("ACCUBATTERY_RUNTIME_DIR").or_else(|_| std::env::var("XDG_RUNTIME_DIR")).unwrap_or_else(|_| "/tmp".into());
     std::path::Path::new(&rt).join("accubattery/state.json")
 }
 
@@ -135,6 +155,24 @@ pub fn snapshot(bats: &[Battery]) -> Snapshot {
     snap.alarm_enabled = setting("alarm_enabled").map(|v| !v.eq_ignore_ascii_case("false")).unwrap_or(true);
     snap.alarm_target = setting("alarm_target").and_then(|v| v.parse().ok()).unwrap_or(80.0);
     snap.keep_awake = setting("keep_awake_charging").is_some_and(|v| v.eq_ignore_ascii_case("true"));
+    snap.reminders_on = setting("reminders_enabled").map(|v| !v.eq_ignore_ascii_case("false")).unwrap_or(true);
+    snap.reminder_min_use = setting("reminder_min_use").and_then(|v| v.parse().ok()).unwrap_or(0.35);
+    if let Some(st) = &snap.state {
+        let pairs = |v: &Value| -> Vec<(f64, f64)> { v.as_array().map(|a| a.iter().filter_map(|p| Some((p[0].as_f64()?, p[1].as_f64()?))).collect()).unwrap_or_default() };
+        let f = &st["forecast"];
+        if f["points"].is_array() {
+            snap.forecast = Some(ForecastView {
+                points: pairs(&f["points"]),
+                lo: pairs(&f["lo"]),
+                hi: pairs(&f["hi"]),
+                sleep: pairs(&f["sleep"]),
+            });
+        }
+        snap.agenda = st["agenda"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|e| Some(AgendaItem { title: e["title"].as_str()?.to_string(), start: e["start"].as_f64()?, status: e["status"].as_str()?.to_string(), due: e["due"].as_f64() })).collect())
+            .unwrap_or_default();
+    }
     snap.sched_enabled = setting("sched_enabled").is_some_and(|v| v.eq_ignore_ascii_case("true"));
     snap.sched_dow = setting("sched_dow").and_then(|v| v.parse().ok()).unwrap_or(0);
     snap.sched_time = setting("sched_time").unwrap_or_else(|| "06:30".into());
@@ -201,18 +239,22 @@ pub fn snapshot(bats: &[Battery]) -> Snapshot {
     snap.above_90_h = above / 3600.0;
     snap.habit = estimate::habit(charges.len(), in_band, above, ac);
 
-    // standby drain per night: sleep_drain rows grouped by the day they started, in mW
+    // standby drain per night, from every suspend the daemon saw on battery
     let mut nights: Vec<(String, f64, f64, Option<String>)> = Vec::new();
-    for c in snap.cycles.iter().filter(|c| c.kind == "sleep_drain" && now - c.start < 8.0 * 86400.0) {
-        let day = glib_day(c.start);
-        let culprit = c.wake.first().map(|w| w.0.clone());
-        match nights.iter_mut().find(|n| n.0 == day) {
-            Some(n) => {
-                n.1 += c.wh;
-                n.2 += c.duration_min / 60.0;
-                n.3 = n.3.take().or(culprit);
+    if let Ok(mut st) = db.0.prepare("SELECT ts,secs,wh,wake_json FROM standby_log WHERE ts>? ORDER BY ts DESC") {
+        if let Ok(rows) = st.query_map([now - 8.0 * 86400.0], |r| Ok((r.get::<_, f64>(0)?, r.get::<_, f64>(1)?, r.get::<_, f64>(2)?, r.get::<_, Option<String>>(3)?))) {
+            for (ts, secs, wh, wake) in rows.flatten() {
+                let day = glib_day(ts);
+                let culprit = parse_wake(wake).first().map(|w| w.0.clone());
+                match nights.iter_mut().find(|n| n.0 == day) {
+                    Some(n) => {
+                        n.1 += wh;
+                        n.2 += secs / 3600.0;
+                        n.3 = n.3.take().or(culprit);
+                    }
+                    None => nights.push((day, wh, secs / 3600.0, culprit)),
+                }
             }
-            None => nights.push((day, c.wh, c.duration_min / 60.0, culprit)),
         }
     }
     snap.standby = nights.into_iter().filter(|n| n.2 > 0.5).map(|(d, wh, h, c)| (d, wh / h * 1000.0, c)).collect();

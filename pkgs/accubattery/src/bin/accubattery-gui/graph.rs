@@ -13,6 +13,10 @@ use libadwaita as adw;
 pub struct Series {
     /// dashed continuation of the primary line, same axes
     pub projection: Vec<(f64, f64)>,
+    /// p10 and p90 curves of the forecast, shaded between
+    pub band: Option<(Vec<(f64, f64)>, Vec<(f64, f64)>)>,
+    /// intervals the laptop is expected to be asleep or off
+    pub strips: Vec<(f64, f64)>,
     pub primary: Vec<(f64, f64)>,
     pub secondary: Vec<(f64, f64)>,
     /// fixed range for the primary axis; None fits the data
@@ -107,6 +111,34 @@ fn draw(area: &gtk::DrawingArea, s: &Series, cr: &gtk::cairo::Context, w: f64, h
     });
     let x = |t: f64| ML + (t - t0) / tspan * pw;
     let y = |v: f64| MT + ph - (v - lo) / (hi - lo).max(1e-6) * ph;
+
+    for (a, b) in &s.strips {
+        let (xa, xb) = (x(a.max(t0)), x(b.min(t1)));
+        if xb > xa {
+            cr.set_source_rgba(fg.red() as f64, fg.green() as f64, fg.blue() as f64, 0.07);
+            cr.rectangle(xa, MT, xb - xa, ph);
+            let _ = cr.fill();
+            cr.set_source_rgba(fg.red() as f64, fg.green() as f64, fg.blue() as f64, 0.5);
+            if xb - xa > 46.0 {
+                label(area, cr, "asleep", xa + 4.0, MT + 8.0, 0.0);
+            }
+        }
+    }
+    if let Some((lo_c, hi_c)) = &s.band {
+        if lo_c.len() >= 2 && lo_c.len() == hi_c.len() {
+            let c = rgba(&line, 0.14);
+            cr.set_source_rgba(c.0, c.1, c.2, c.3);
+            cr.move_to(x(hi_c[0].0), y(hi_c[0].1));
+            for p in hi_c {
+                cr.line_to(x(p.0), y(p.1));
+            }
+            for p in lo_c.iter().rev() {
+                cr.line_to(x(p.0), y(p.1));
+            }
+            cr.close_path();
+            let _ = cr.fill();
+        }
+    }
 
     cr.set_line_width(1.0);
     for i in 0..=4 {

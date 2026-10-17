@@ -53,6 +53,11 @@ impl Db {
              CREATE TABLE IF NOT EXISTS charge_profile (
                 adapter TEXT NOT NULL, band INTEGER NOT NULL, avg_w REAL NOT NULL, n INTEGER NOT NULL,
                 PRIMARY KEY (adapter, band));
+             CREATE TABLE IF NOT EXISTS habit (
+                hour_of_week INTEGER PRIMARY KEY, battery_awake_s REAL NOT NULL DEFAULT 0, battery_asleep_s REAL NOT NULL DEFAULT 0,
+                battery_off_s REAL NOT NULL DEFAULT 0, any_awake_s REAL NOT NULL DEFAULT 0, any_away_s REAL NOT NULL DEFAULT 0);
+             CREATE TABLE IF NOT EXISTS standby_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, secs REAL NOT NULL, wh REAL NOT NULL, wake_json TEXT);
              CREATE TABLE IF NOT EXISTS daily (
                 date_str TEXT PRIMARY KEY, secs_above_90 REAL NOT NULL DEFAULT 0, secs_on_ac REAL NOT NULL DEFAULT 0);",
         )?;
@@ -347,4 +352,101 @@ impl Db {
         }
         b
     }
+}
+
+impl Db {
+    /// col is one of the habit columns, never user input
+    pub fn habit_add(&self, how: usize, col: &str, secs: f64) -> Result<()> {
+        let col = match col {
+            "battery_awake_s" | "battery_asleep_s" | "battery_off_s" | "any_awake_s" | "any_away_s" => col,
+            _ => return Ok(()),
+        };
+        self.0.execute(
+            &format!("INSERT INTO habit (hour_of_week,{col}) VALUES (?1,?2) ON CONFLICT(hour_of_week) DO UPDATE SET {col}={col}+?2"),
+            params![how as i64, secs],
+        )?;
+        Ok(())
+    }
+
+    pub fn habit_load(&self) -> crate::estimate::Habit {
+        let mut h = crate::estimate::Habit::default();
+        if let Ok(mut st) = self.0.prepare("SELECT hour_of_week,battery_awake_s,battery_asleep_s,battery_off_s,any_awake_s,any_away_s FROM habit") {
+            if let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?, r.get::<_, f64>(2)?, r.get::<_, f64>(3)?, r.get::<_, f64>(4)?, r.get::<_, f64>(5)?))) {
+                for (how, a, s, o, ua, uy) in rows.flatten() {
+                    if (0..168).contains(&how) {
+                        let i = how as usize;
+                        (h.awake[i], h.asleep[i], h.off[i], h.use_awake[i], h.use_away[i]) = (a, s, o, ua, uy);
+                    }
+                }
+            }
+        }
+        h
+    }
+
+    /// Old weeks fade so a changed timetable takes over: half-life about ten weeks.
+    pub fn habit_decay_daily(&self, date: &str) -> Result<()> {
+        if self.setting("habit_decay_date").as_deref() == Some(date) {
+            return Ok(());
+        }
+        self.0.execute(
+            "UPDATE habit SET battery_awake_s=battery_awake_s*0.99, battery_asleep_s=battery_asleep_s*0.99,
+                battery_off_s=battery_off_s*0.99, any_awake_s=any_awake_s*0.99, any_away_s=any_away_s*0.99",
+            [],
+        )?;
+        self.0.execute("INSERT OR REPLACE INTO settings (key,value) VALUES ('habit_decay_date', ?)", [date])?;
+        Ok(())
+    }
+
+    pub fn standby_log(&self, ts: f64, secs: f64, wh: f64, wake: Option<&str>) -> Result<()> {
+        self.0.execute("INSERT INTO standby_log (ts,secs,wh,wake_json) VALUES (?,?,?,?)", params![ts, secs, wh, wake])?;
+        Ok(())
+    }
+
+    /// measured draw while asleep on battery, 0.5 W until there is data
+    pub fn standby_w(&self, now: f64) -> f64 {
+        self.0
+            .query_row("SELECT SUM(wh),SUM(secs) FROM standby_log WHERE ts>? AND secs>=600", [now - 60.0 * 86400.0], |r| Ok((r.get::<_, Option<f64>>(0)?, r.get::<_, Option<f64>>(1)?)))
+            .ok()
+            .and_then(|(wh, s)| Some(wh? / (s? / 3600.0)))
+            .filter(|w| *w > 0.0 && *w < 10.0)
+            .unwrap_or(0.5)
+    }
+
+    /// One time: the old telemetry already holds weeks of awake draw per hour of week, so the
+    /// daily curve starts from that instead of waiting a month.
+    pub fn backfill_draw(&self) -> Result<()> {
+        if self.setting("backfill_draw_v1").is_some() {
+            return Ok(());
+        }
+        let mut st = self.0.prepare(
+            "SELECT t.timestamp, t.power_w FROM telemetry t JOIN cycles c ON c.id=t.cycle_id
+             WHERE c.session_type='discharge' AND t.power_w>0.3 AND t.power_w<200",
+        )?;
+        let rows: Vec<(f64, f64)> = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_>>()?;
+        drop(st);
+        let tz = tz_offset_s();
+        let mut last_bucket = i64::MIN;
+        for (ts, w) in rows {
+            // GUI-open sessions sampled every 2 s, keep one sample per 10 s
+            let bucket = (ts / 10.0) as i64;
+            if bucket == last_bucket {
+                continue;
+            }
+            last_bucket = bucket;
+            self.hourly(crate::estimate::local_how(ts, tz) as i64, w)?;
+        }
+        self.0.execute("INSERT OR REPLACE INTO settings (key,value) VALUES ('backfill_draw_v1','done')", [])?;
+        Ok(())
+    }
+}
+
+/// local offset from UTC in seconds, from `date +%z`
+pub fn tz_offset_s() -> f64 {
+    let out = std::process::Command::new("date").arg("+%z").output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    if out.len() < 5 {
+        return 0.0;
+    }
+    let sign = if out.starts_with('-') { -1.0 } else { 1.0 };
+    let (h, m): (f64, f64) = (out[1..3].parse().unwrap_or(0.0), out[3..5].parse().unwrap_or(0.0));
+    sign * (h * 3600.0 + m * 60.0)
 }

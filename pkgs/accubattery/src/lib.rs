@@ -1,4 +1,5 @@
 pub mod apps;
+pub mod calendar;
 pub mod battery;
 pub mod control;
 pub mod db;

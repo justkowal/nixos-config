@@ -506,7 +506,7 @@ in {
     };
     Service = {
       ExecStart = "${accubattery}/bin/accubattery daemon";
-      Environment = "PATH=${lib.makeBinPath (with pkgs; [coreutils procps systemd swayosd hyprland])}:/etc/profiles/per-user/${config.home.username}/bin:/run/current-system/sw/bin";
+      Environment = "PATH=${lib.makeBinPath (with pkgs; [coreutils procps systemd swayosd hyprland])}:${accubattery}/bin:/etc/profiles/per-user/${config.home.username}/bin:/run/current-system/sw/bin";
       Restart = "on-failure";
       RestartSec = 10;
     };

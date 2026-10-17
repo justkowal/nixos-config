@@ -15,7 +15,9 @@ use libadwaita as adw;
 const APP_ID: &str = "lab.justkowal.AccuBattery";
 
 fn main() -> glib::ExitCode {
-    let app = adw::Application::builder().application_id(APP_ID).build();
+    // a second instance for testing must not hand over to the running one
+    let id = std::env::var("ACCUBATTERY_APP_ID").unwrap_or_else(|_| APP_ID.into());
+    let app = adw::Application::builder().application_id(id).build();
     app.connect_activate(|app| {
         if let Some(w) = app.active_window() {
             w.present();

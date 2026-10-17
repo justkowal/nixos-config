@@ -11,7 +11,7 @@ fn run(name: &str) -> Vec<String> {
     ring::load(&path)
         .into_iter()
         .flat_map(|s| e.step(s))
-        .filter(|ev| !matches!(ev, Event::Telemetry(_)))
+        .filter(|ev| !matches!(ev, Event::Telemetry(_) | Event::Gap { .. }))
         .map(|ev| describe(&ev))
         .collect()
 }

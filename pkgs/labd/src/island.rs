@@ -164,6 +164,17 @@ fn card_for(ev: &Value) -> Option<Card> {
                 5000,
             )
         }
+        "battery.reminder" => {
+            let title = p["title"].as_str().unwrap_or("your event");
+            let text = match p["kind"].as_str() {
+                Some("raise_limit") => format!(
+                    "Full charge needed for {title}, the limit is {:.0} %",
+                    p["limit"].as_f64().unwrap_or(80.0)
+                ),
+                _ => format!("Plug in before {title}, the battery will not last it"),
+            };
+            (Glyph::Battery, text, None, 14000)
+        }
         "battery.trip" => {
             let text = match p["state"].as_str() {
                 Some("started") if p["scheduled"].as_bool().unwrap_or(false) => {

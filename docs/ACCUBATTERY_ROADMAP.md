@@ -64,3 +64,30 @@ To fix a wrong detection: copy the relevant stretch of `ring-BAT0.csv` into `tes
 
 
 
+
+## Forecast and calendar reminders
+
+The Now graph draws the last two hours, then a dashed forecast with a shaded p10 to p90 band and grey strips where the laptop is expected to sleep. It is small on-device learning, all in `src/estimate.rs`, no external model:
+
+* **Habit model.** Seconds on battery spent awake, asleep and off per hour of the week, recorded from the engine's gap events. A sparse hour is shrunk toward the same hour on the other days of its group (weekdays or weekend) and its neighbours, so one odd day does not rewrite the forecast. Old weeks decay by 1 % per day.
+* **Awake draw.** Recursive least squares with forgetting fits a smooth daily curve (three harmonics and a weekend term) to measured draw, so hours never observed still get a sensible value. It starts from the weeks of telemetry already in the database (one time backfill).
+* **Standby draw.** Measured from every suspend the daemon saw on battery (`standby_log`), 0.5 W until there is data.
+* **Monte Carlo.** 200 paths over 72 h in five minute steps. Each path switches between awake, asleep and off with sticky states drawn from the hour's mix, scaled by a per-path error taken from the model's running relative error. The window shows the median, the band and the range of empty times ("likely 1 h 49 min to 3 h 53 min"). The seed changes every 30 minutes so the curve does not jitter.
+* **Charging.** The learned per-band charge power gives the curve, flat at the hardware limit.
+
+Until sleep habits have been seen (needs about half an hour of observed battery time per hour of week, pooled across days) the forecast assumes the laptop stays awake and says "still learning when you sleep".
+
+### Reminders
+
+`accubattery-events` (evolution-data-server, the same calendars as the travel check, recurring events expanded) is polled by the daemon every ten minutes on a worker thread. For each event in the next 12 hours that falls in hours you tend to use the laptop (learned use probability, default threshold 35 %, adjustable in Settings), the daemon compares the battery expected at the start with what the event needs: the draw from the fitted curve, times the event length, times 1.15, above a 10 % reserve. If it falls short:
+
+* on battery: an island card "Plug in before EVENT, the battery will not last it", sent once per event, timed so there is still room to charge the shortfall (learned charge profile) plus 20 minutes;
+* on AC but with a charge limit too low for the event: "Full charge needed for EVENT, the limit is N %". `accubattery trip` fixes that.
+
+The Now page lists the next events with their verdict. Until use habits exist an event counts as "might use it", because a wrong reminder costs less than a dead laptop.
+
+### Limits worth knowing
+
+* The learning needs time. Awake draw starts from existing telemetry, sleep and use habits start empty and fill with real nights.
+* The forecast assumes the charger stays unplugged. Plugging in changes it to the charge curve on the next refresh (once a minute).
+* This is a few hundred parameters trained on one machine, which is the right size for one person's data. A neural network would overfit it.

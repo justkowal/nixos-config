@@ -9,7 +9,9 @@ use accubattery::battery::{self, now, Battery};
 use accubattery::control::{self, Action, Inputs, LocalTime};
 use accubattery::db::{self, Db};
 use accubattery::engine::{self, Engine, Event, Kind, Sample, Status};
-use accubattery::{estimate, export, fleet, notify, ring, wake};
+use accubattery::calendar::{self, Ev};
+use accubattery::estimate::{self, ChargeInputs, DischargeInputs, Habit, PowerModel};
+use accubattery::{export, fleet, notify, ring, wake};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -25,6 +27,11 @@ struct Persist {
     low_cycle: Option<i64>,
     low_level: u8,
     apps: Apps,
+    #[serde(default)]
+    model: PowerModel,
+    /// calendar events already reminded about
+    #[serde(default)]
+    notified: Vec<String>,
 }
 
 /// everything the daemon keeps per battery
@@ -38,6 +45,9 @@ struct Runner {
     profile_loaded: f64,
     last_wall: Option<f64>,
     eta: Option<serde_json::Value>,
+    fc_eta: Option<serde_json::Value>,
+    forecast: Option<serde_json::Value>,
+    model_ticks: u32,
 }
 
 fn persist_path(name: &str) -> PathBuf {
@@ -45,7 +55,7 @@ fn persist_path(name: &str) -> PathBuf {
 }
 
 fn state_path() -> PathBuf {
-    let rt = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
+    let rt = std::env::var("ACCUBATTERY_RUNTIME_DIR").or_else(|_| std::env::var("XDG_RUNTIME_DIR")).unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(rt).join("accubattery/state.json")
 }
 
@@ -103,6 +113,27 @@ fn apply(db: &Db, r: &mut Runner, ev: Vec<Event>, pd: Option<&str>) {
                     );
                 }
                 db.offline_cycle(kind, cause, &from, &to, est_s, &name, wake_json.as_deref())
+            }
+            Event::Gap { cause, from, to } => {
+                let tz = db::tz_offset_s();
+                let on_battery = !from.ac;
+                let (col, end) = match cause {
+                    engine::GapCause::Suspend => ("battery_asleep_s", to.wall),
+                    engine::GapCause::PowerOff => ("battery_off_s", to.wall.min(now() - uptime_s())),
+                };
+                for (how, secs) in estimate::spread_hours(from.wall, end, tz) {
+                    if on_battery {
+                        let _ = db.habit_add(how, col, secs);
+                    }
+                    let _ = db.habit_add(how, "any_away_s", secs);
+                }
+                let secs = to.wall - from.wall;
+                if cause == engine::GapCause::Suspend && on_battery && secs >= 600.0 && to.wh <= from.wh {
+                    let wake_json = wake::culprits(&r.wake_prev, &wake::snapshot());
+                    db.standby_log(from.wall, secs, from.wh - to.wh, wake_json.as_deref())
+                } else {
+                    Ok(())
+                }
             }
             Event::Glitch { reason, from, to } => {
                 db.event(to.wall, &name, "glitch", &format!("{reason}: {:.2} Wh to {:.2} Wh, capacity {:.1} Wh to {:.1} Wh", from.wh, to.wh, from.full_wh, to.full_wh))
@@ -177,6 +208,9 @@ fn daemon() -> ExitCode {
             profile_loaded: 0.0,
             last_wall: None,
             eta: None,
+            fc_eta: None,
+            forecast: None,
+            model_ticks: 0,
         })
         .collect();
     let keep: Vec<i64> = runners.iter().filter_map(|r| r.st.cycle_id).collect();
@@ -191,6 +225,11 @@ fn daemon() -> ExitCode {
     let mut last_health = 0.0;
     let mut baseline = db.baseline();
     let mut baseline_at = 0.0;
+    let events: Arc<Mutex<Vec<Ev>>> = Arc::new(Mutex::new(Vec::new()));
+    calendar::spawn_refresher(events.clone());
+    let _ = db.backfill_draw();
+    let mut forecast_at = 0.0;
+    let mut agenda = json!([]);
     let mut local: Option<(f64, LocalTime)> = None;
     let mut ac_off_since: Option<f64> = None;
     let mut last_control = 0.0;
@@ -264,6 +303,50 @@ fn daemon() -> ExitCode {
             }
             r.last_wall = Some(s.wall);
             r.eta = eta(r, &s, &baseline, how, target);
+            if s.status == Status::Discharging {
+                if let Some(e) = &r.fc_eta {
+                    r.eta = Some(e.clone());
+                }
+            } else {
+                r.fc_eta = None;
+            }
+            if i == 0 {
+                if dt > 0.0 {
+                    let _ = db.habit_add(how, "any_awake_s", dt);
+                    if s.status == Status::Discharging {
+                        let _ = db.habit_add(how, "battery_awake_s", dt);
+                    }
+                }
+                // one regression update per minute from the mean of its six polls
+                if s.status == Status::Discharging {
+                    r.model_ticks += 1;
+                    if r.model_ticks >= 6 {
+                        r.model_ticks = 0;
+                        let n = r.recent_w.len().min(6).max(1);
+                        let mean = r.recent_w.iter().rev().take(n).sum::<f64>() / n as f64;
+                        r.st.model.update(how, mean);
+                    }
+                }
+                if s.status != Status::Discharging && s.status != Status::Charging {
+                    r.forecast = None;
+                }
+                if t_now - forecast_at >= 60.0 {
+                    forecast_at = t_now;
+                    let habit = db.habit_load();
+                    let standby_w = db.standby_w(t_now);
+                    let _ = db.habit_decay_daily(&lt.date);
+                    let tz = db::tz_offset_s();
+                    let limit = r.bat.thresholds().0.map_or(100.0, |t| t as f64);
+                    let (fc, eta2) = make_forecast(r, &s, &habit, &baseline, standby_w, tz, limit, t_now);
+                    r.forecast = fc;
+                    r.fc_eta = eta2.clone();
+                    if eta2.is_some() {
+                        r.eta = eta2;
+                    }
+                    let evs = events.lock().map(|g| g.clone()).unwrap_or_default();
+                    agenda = calendar_pass(r, &s, &evs, &habit, &baseline, standby_w, tz, &db, t_now);
+                }
+            }
 
             let active = r.st.engine.active.as_ref();
             states.insert(
@@ -366,6 +449,8 @@ fn daemon() -> ExitCode {
                     "start_pct": first["start_pct"],
                     "eta": r0.eta,
                     "batteries": states,
+                    "forecast": r0.forecast,
+                    "agenda": agenda,
                     "power": pinfo,
                     "pd": battery::pd_label(s),
                     "trip": control::load_trip(),
@@ -498,3 +583,136 @@ fn main() -> ExitCode {
     }
 }
 
+
+fn uptime_s() -> f64 {
+    std::fs::read_to_string("/proc/uptime").ok().and_then(|s| s.split_whitespace().next().and_then(|v| v.parse().ok())).unwrap_or(0.0)
+}
+
+fn thin(p: &[(f64, f64)], max: usize) -> Vec<[f64; 2]> {
+    let step = (p.len() / max).max(1);
+    p.iter().step_by(step).map(|x| [x.0.round(), (x.1 * 10.0).round() / 10.0]).collect()
+}
+
+fn minutes(t: Option<f64>, now: f64) -> Option<f64> {
+    t.map(|t| ((t - now) / 60.0).round())
+}
+
+/// (forecast curve for the window, estimate for the label) for the battery's current state
+fn make_forecast(
+    r: &Runner,
+    s: &Sample,
+    habit: &Habit,
+    baseline: &[Option<f64>; 168],
+    standby_w: f64,
+    tz: f64,
+    limit: f64,
+    now: f64,
+) -> (Option<serde_json::Value>, Option<serde_json::Value>) {
+    match s.status {
+        Status::Discharging => {
+            let w: Vec<f64> = r.recent_w.iter().copied().collect();
+            let awake_w = estimate::decayed_watts(&w).unwrap_or(s.watts);
+            let f = estimate::forecast_discharge(&DischargeInputs {
+                now,
+                wh: s.wh,
+                full_wh: s.full_wh,
+                awake_w,
+                baseline,
+                model: Some(&r.st.model),
+                habit,
+                standby_w,
+                tz_off: tz,
+            });
+            if f.points.is_empty() {
+                return (None, None);
+            }
+            let eta = f.end_at.map(|t| {
+                json!({"kind": "empty", "minutes": ((t - now) / 60.0).round(), "early": minutes(f.end_early, now),
+                       "late": minutes(f.end_late, now), "learned": f.learned})
+            });
+            let fc = json!({
+                "kind": "discharge", "points": thin(&f.points, 240), "lo": thin(&f.lo, 240), "hi": thin(&f.hi, 240),
+                "sleep": f.sleep.iter().map(|x| [x.0.round(), x.1.round()]).collect::<Vec<_>>(),
+                "end_at": f.end_at, "learned": f.learned,
+            });
+            (Some(fc), eta)
+        }
+        Status::Charging => {
+            let f = estimate::forecast_charge(&ChargeInputs { now, pct: s.pct, full_wh: s.full_wh, live_w: s.watts, profile: &r.st.engine.profile, limit });
+            if f.points.is_empty() {
+                return (None, None);
+            }
+            (Some(json!({"kind": "charge", "points": thin(&f.points, 240), "end_at": f.end_at, "limit": limit, "learned": f.learned})), None)
+        }
+        Status::Idle => (None, None),
+    }
+}
+
+/// Calendar pass: one agenda line per upcoming event, and one island reminder per event that needs it.
+#[allow(clippy::too_many_arguments)]
+fn calendar_pass(
+    r: &mut Runner,
+    s: &Sample,
+    events: &[Ev],
+    habit: &Habit,
+    baseline: &[Option<f64>; 168],
+    standby_w: f64,
+    tz: f64,
+    db: &Db,
+    now: f64,
+) -> serde_json::Value {
+    let on = db.setting("reminders_enabled").map(|v| !v.eq_ignore_ascii_case("false")).unwrap_or(true);
+    let min_use: f64 = db.setting("reminder_min_use").and_then(|v| v.parse().ok()).unwrap_or(0.35);
+    let reserve: f64 = db.setting("reminder_reserve").and_then(|v| v.parse().ok()).unwrap_or(10.0);
+    let how = estimate::local_how(now, tz);
+    let w: Vec<f64> = r.recent_w.iter().copied().collect();
+    let awake_w = estimate::decayed_watts(&w).or_else(|| r.st.model.predict(how)).or(baseline[how]).unwrap_or(10.0);
+    let live_charge = if s.status == Status::Charging { s.watts } else { r.st.engine.ref_charge_w.max(20.0) };
+    let limit = r.bat.thresholds().0.map_or(100.0, |t| t as f64);
+    let ctx = calendar::Ctx {
+        now,
+        pct: s.pct,
+        full_wh: s.full_wh,
+        ac: s.ac,
+        limit,
+        awake_w,
+        model: Some(&r.st.model),
+        baseline,
+        habit,
+        profile: &r.st.engine.profile,
+        live_charge_w: live_charge,
+        standby_w,
+        tz_off: tz,
+        min_use,
+        reserve_pct: reserve,
+    };
+    let mut agenda = Vec::new();
+    for ev in events.iter().filter(|e| !e.all_day && e.end > now && e.start < now + 24.0 * 3600.0).take(8) {
+        let rem = calendar::check(ev, &ctx);
+        let (status, due) = match &rem {
+            Some(x) => (if matches!(x.kind, calendar::Kind::PlugIn) { "plug_in" } else { "raise_limit" }, Some(x.due)),
+            None => ("ok", None),
+        };
+        agenda.push(json!({"title": ev.title, "start": ev.start, "end": ev.end, "status": status, "due": due}));
+        if let (true, Some(x)) = (on, rem) {
+            if now >= x.due && !r.st.notified.contains(&ev.uid) {
+                r.st.notified.push(ev.uid.clone());
+                if r.st.notified.len() > 60 {
+                    r.st.notified.remove(0);
+                }
+                let (kind, limit_v) = match x.kind {
+                    calendar::Kind::PlugIn => ("plug_in", None),
+                    calendar::Kind::RaiseLimit { limit } => ("raise_limit", Some(limit)),
+                };
+                let title: String = ev.title.chars().take(40).collect();
+                notify::publish(
+                    "battery.reminder",
+                    json!({"title": title, "kind": kind, "short_min": x.short_min.round(), "limit": limit_v, "start": ev.start}),
+                    true,
+                    &format!("Plug in before {title}"),
+                );
+            }
+        }
+    }
+    json!(agenda)
+}

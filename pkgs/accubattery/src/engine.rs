@@ -68,6 +68,8 @@ pub enum Event {
     Offline { kind: Kind, cause: GapCause, from: Sample, to: Sample, est_s: f64 },
     /// the gauge moved in a way no load can explain (relearn, firmware reset); no session is logged
     Glitch { reason: &'static str, from: Sample, to: Sample },
+    /// every stretch where polling stopped, whether or not it became a session
+    Gap { cause: GapCause, from: Sample, to: Sample },
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -215,6 +217,7 @@ impl Engine {
     /// true when the active session was closed and the stream starts fresh
     fn handle_gap(&mut self, prev: &Sample, s: &Sample, want: Option<Kind>, out: &mut Vec<Event>) -> bool {
         let cause = if prev.boot_id == s.boot_id { GapCause::Suspend } else { GapCause::PowerOff };
+        out.push(Event::Gap { cause, from: prev.clone(), to: s.clone() });
         let dwh = s.wh - prev.wh;
         let thr = GAP_MIN_FRAC * s.full_wh.max(prev.full_wh);
 
@@ -296,6 +299,7 @@ mod tests {
                 Event::Close { .. } => "close",
                 Event::Offline { .. } => "offline",
                 Event::Glitch { .. } => "glitch",
+                Event::Gap { .. } => "gap",
             })
             .collect()
     }
@@ -341,7 +345,7 @@ mod tests {
         let mut e = Engine::default();
         e.step(smp(0.0, "a", Status::Discharging, 80.0));
         let ev = e.step(smp(3600.0, "a", Status::Discharging, 78.0));
-        assert_eq!(kinds(&ev), ["tel"]);
+        assert_eq!(kinds(&ev), ["gap", "tel"]);
     }
 
     #[test]
@@ -349,7 +353,7 @@ mod tests {
         let mut e = Engine::default();
         e.step(smp(0.0, "a", Status::Discharging, 80.0));
         let ev = e.step(smp(36000.0, "a", Status::Charging, 70.0));
-        assert_eq!(kinds(&ev), ["close", "offline", "open", "tel"]);
+        assert_eq!(kinds(&ev), ["gap", "close", "offline", "open", "tel"]);
     }
 
     #[test]
@@ -421,5 +425,6 @@ pub fn describe(e: &Event) -> String {
             format!("offline {} {:?} {:.0}%->{:.0}%", kind.as_str(), cause, from.pct, to.pct)
         }
         Event::Glitch { reason, .. } => format!("glitch {reason}"),
+        Event::Gap { cause, from, to } => format!("gap {cause:?} {:.0}s", to.wall - from.wall),
     }
 }

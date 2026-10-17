@@ -91,6 +91,8 @@ pub struct Ui {
     apps_group: adw::PreferencesGroup,
     apps_rows: RefCell<Vec<adw::ActionRow>>,
     apps_key: RefCell<String>,
+    agenda_group: adw::PreferencesGroup,
+    agenda_rows: RefCell<Vec<adw::ActionRow>>,
     // history
     hist_group: adw::PreferencesGroup,
     hist_rows: RefCell<Vec<adw::ActionRow>>,
@@ -113,6 +115,8 @@ pub struct Ui {
     // settings
     s_alarm: adw::SwitchRow,
     s_awake: adw::SwitchRow,
+    rm_on: adw::SwitchRow,
+    rm_min: adw::SpinRow,
     s_target: adw::SpinRow,
     s_abm: adw::ComboRow,
     s_limit: adw::ComboRow,
@@ -159,6 +163,11 @@ impl Ui {
         for r in [&r_session, &r_gain, &r_wear, &r_power, &r_adapter, &r_daemon] {
             g_sess.add(r);
         }
+        let agenda_group = adw::PreferencesGroup::builder()
+            .title("Next up")
+            .description("Checked against your calendar and the battery forecast.")
+            .visible(false)
+            .build();
         let apps_group = adw::PreferencesGroup::builder()
             .title("Top apps this session")
             .description("An estimate: CPU and GPU time share of the measured draw.")
@@ -167,6 +176,7 @@ impl Ui {
         let p_now = adw::PreferencesPage::new();
         p_now.add(&g_top);
         p_now.add(&g_sess);
+        p_now.add(&agenda_group);
         p_now.add(&apps_group);
         stack.add_titled_with_icon(&p_now, Some("now"), "Now", "battery-level-80-symbolic");
 
@@ -272,8 +282,19 @@ impl Ui {
             g_sched.add(w);
         }
 
+        let rm_on = adw::SwitchRow::builder()
+            .title("Calendar reminders")
+            .subtitle("Tells you in the island to plug in before an event the battery would not last")
+            .build();
+        let rm_min = adw::SpinRow::with_range(0.0, 100.0, 5.0);
+        rm_min.set_title("Only for hours I use the laptop at least");
+        rm_min.set_subtitle("Percent of the time, learned from your habits");
+        let g_rem = adw::PreferencesGroup::builder().title("Reminders").build();
+        g_rem.add(&rm_on);
+        g_rem.add(&rm_min);
         let p_set = adw::PreferencesPage::new();
         p_set.add(&g_alarm);
+        p_set.add(&g_rem);
         p_set.add(&g_hw);
         p_set.add(&g_sched);
         stack.add_titled_with_icon(&p_set, Some("settings"), "Settings", "preferences-system-symbolic");
@@ -293,6 +314,8 @@ impl Ui {
             apps_group,
             apps_rows: RefCell::default(),
             apps_key: RefCell::default(),
+            agenda_group,
+            agenda_rows: RefCell::default(),
             hist_group,
             hist_rows: RefCell::default(),
             hist_key: Cell::new((usize::MAX, 0)),
@@ -312,6 +335,8 @@ impl Ui {
             sb_rows: RefCell::default(),
             s_alarm,
             s_awake,
+            rm_on,
+            rm_min,
             s_target,
             s_abm,
             s_limit,
@@ -413,6 +438,19 @@ impl Ui {
         });
 
         let ui = self.clone();
+        self.rm_on.connect_active_notify(move |r| {
+            if ready(&ui) {
+                data::set_setting("reminders_enabled", if r.is_active() { "true" } else { "false" });
+            }
+        });
+        let ui = self.clone();
+        self.rm_min.connect_value_notify(move |r| {
+            if ready(&ui) {
+                data::set_setting("reminder_min_use", &format!("{:.2}", r.value() / 100.0));
+            }
+        });
+
+        let ui = self.clone();
         export_btn.connect_clicked(move |_| ui.export());
     }
 
@@ -439,6 +477,8 @@ impl Ui {
         if !self.settings_ready.get() {
             self.s_alarm.set_active(s.alarm_enabled);
             self.s_awake.set_active(s.keep_awake);
+            self.rm_on.set_active(s.reminders_on);
+            self.rm_min.set_value(s.reminder_min_use * 100.0);
             self.s_target.set_value(s.alarm_target);
             if let Some(l) = s.abm {
                 let i = ABM_LEVELS.iter().position(|v| i64::from(*v) == l).unwrap_or(if l >= 3 { 2 } else { 1 });
@@ -484,14 +524,8 @@ impl Ui {
         self.eta.set_text(&eta_text(s));
 
         let tone = if l.status == Status::Charging { "success" } else { "warning" };
-        self.graph.set(Series {
-            primary: s.active.iter().map(|p| (p.t, p.pct)).collect(),
-            secondary: s.active.iter().map(|p| (p.t, p.watts)).collect(),
-            range: Some((0.0, 100.0)),
-            unit: "%",
-            tone,
-            ..Default::default()
-        });
+        self.graph.set(now_series(s, l.wall, l.pct, tone));
+        self.update_agenda(s);
 
         let st = s.state.as_ref();
         let start_pct = st.and_then(|v| v["start_pct"].as_f64());
@@ -546,6 +580,30 @@ impl Ui {
                 .collect();
             refill(&self.apps_group, &self.apps_rows, rows);
         }
+    }
+
+    fn update_agenda(&self, s: &Snapshot) {
+        let rows = s
+            .agenda
+            .iter()
+            .map(|e| {
+                let when = fmt_date(e.start);
+                let sub = match (e.status.as_str(), e.due) {
+                    ("plug_in", Some(d)) => format!("{when}, the battery will not last it. Plug in by {}", fmt_clock(d)),
+                    ("raise_limit", _) => format!("{when}, the charge limit is too low for it. Start a full charge"),
+                    _ => format!("{when}, battery is enough"),
+                };
+                let r = adw::ActionRow::builder().title(glib::markup_escape_text(&e.title)).subtitle(sub).build();
+                if e.status != "ok" {
+                    let w = dim("charge");
+                    w.add_css_class("warning");
+                    w.set_valign(gtk::Align::Center);
+                    r.add_suffix(&w);
+                }
+                r
+            })
+            .collect();
+        refill(&self.agenda_group, &self.agenda_rows, rows);
     }
 
     fn update_history(self: &Rc<Self>, s: &Snapshot) {
@@ -739,7 +797,14 @@ fn eta_text(s: &Snapshot) -> String {
     let Some(e) = s.state.as_ref().map(|v| &v["eta"]).filter(|e| e["minutes"].is_number()) else { return String::new() };
     let m = e["minutes"].as_f64().unwrap_or(0.0);
     match e["kind"].as_str() {
-        Some("empty") => format!("About {} left, an estimate from your usual day", fmt_dur(m)),
+        Some("empty") => {
+            let range = match (e["early"].as_f64(), e["late"].as_f64()) {
+                (Some(a), Some(b)) => format!(", likely {} to {}", fmt_dur(a), fmt_dur(b)),
+                _ => String::new(),
+            };
+            let learned = if e["learned"].as_bool().unwrap_or(false) { "" } else { ", still learning when you sleep" };
+            format!("About {} left{range}{learned}", fmt_dur(m))
+        }
         Some("target") if m < 1.0 => "Target reached".into(),
         Some("target") => format!("About {} to {:.0} %", fmt_dur(m), e["target"].as_f64().unwrap_or(100.0)),
         _ => String::new(),
@@ -748,4 +813,27 @@ fn eta_text(s: &Snapshot) -> String {
 
 fn temp_suffix(t: f64) -> String {
     if t > 0.0 { format!(", {t:.0} C") } else { String::new() }
+}
+
+fn fmt_clock(t: f64) -> String {
+    glib::DateTime::from_unix_local(t as i64).ok().and_then(|d| d.format("%H:%M").ok()).map(|s| s.to_string()).unwrap_or_default()
+}
+
+/// Last two hours of the session, then the forecast: median dashed, p10 to p90 shaded, sleep marked.
+fn now_series(s: &Snapshot, now: f64, pct: f64, tone: &'static str) -> Series {
+    let from = now - 2.0 * 3600.0;
+    let mut primary: Vec<(f64, f64)> = s.active.iter().filter(|p| p.t >= from).map(|p| (p.t, p.pct)).collect();
+    let secondary: Vec<(f64, f64)> = s.active.iter().filter(|p| p.t >= from).map(|p| (p.t, p.watts)).collect();
+    if primary.len() < 2 {
+        primary = vec![(now - 60.0, pct), (now, pct)];
+    }
+    let mut series = Series { primary, secondary, range: Some((0.0, 100.0)), unit: "%", tone, ..Default::default() };
+    if let Some(f) = &s.forecast {
+        series.projection = f.points.clone();
+        if !f.lo.is_empty() {
+            series.band = Some((f.lo.clone(), f.hi.clone()));
+        }
+        series.strips = f.sleep.clone();
+    }
+    series
 }
