@@ -253,7 +253,10 @@ pub fn parse_binds(binds: &Value, keymap: &Value) -> Vec<Bind> {
     for b in binds.as_array().into_iter().flatten() {
         let arg = b["arg"].as_str().unwrap_or("");
         if b["dispatcher"] == "submap" && arg != "reset" {
-            let mut combo: Vec<String> = mods_from_mask(b["modmask"].as_u64().unwrap_or(0)).iter().map(|m| (*m).to_owned()).collect();
+            let mut combo: Vec<String> = mods_from_mask(b["modmask"].as_u64().unwrap_or(0))
+                .iter()
+                .map(|m| (*m).to_owned())
+                .collect();
             combo.push(key_name(b["key"].as_str().unwrap_or(""), 0));
             enter.insert(arg.to_owned(), combo.join(" + "));
         }
@@ -613,13 +616,16 @@ fn friendly(line: &str) -> String {
         ("continuity services", "Devices and rooms"),
         ("tokens", "Design tokens"),
         ("keymap", "Keymap"),
-        ("waybar and swaync fallbacks", "Fallback bar and notifications"),
+        (
+            "waybar and swaync fallbacks",
+            "Fallback bar and notifications",
+        ),
         ("sound", "Sound"),
     ];
-    NAMES
-        .iter()
-        .find(|(k, _)| line.starts_with(k))
-        .map_or_else(|| line.to_owned(), |(k, v)| format!("{v}{}", &line[k.len()..]))
+    NAMES.iter().find(|(k, _)| line.starts_with(k)).map_or_else(
+        || line.to_owned(),
+        |(k, v)| format!("{v}{}", &line[k.len()..]),
+    )
 }
 
 fn build_features(page: &gtk::Box, help: &Value) {
@@ -679,13 +685,20 @@ mod tests {
             {"modmask": 0, "key": "1", "dispatcher": "exec", "arg": "resize-split width 25", "submap": "resize"},
         ]);
         let out = parse_binds(&binds, &Value::Null);
-        assert!(out.iter().any(|b| b.group == "Resize mode, press SUPER + R first"), "{out:?}");
+        assert!(
+            out.iter()
+                .any(|b| b.group == "Resize mode, press SUPER + R first"),
+            "{out:?}"
+        );
     }
 
     #[test]
     fn doctor_lines_get_plain_names() {
         assert_eq!(friendly("bus (1 events)"), "Event bus (1 events)");
-        assert_eq!(friendly("continuity services: lab-inbox is failed"), "Devices and rooms: lab-inbox is failed");
+        assert_eq!(
+            friendly("continuity services: lab-inbox is failed"),
+            "Devices and rooms: lab-inbox is failed"
+        );
         assert_eq!(friendly("something else"), "something else");
     }
 

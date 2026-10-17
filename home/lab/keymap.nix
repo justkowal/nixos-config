@@ -4,6 +4,10 @@
   ...
 }: let
   cfg = config.lab.keymap;
+  # $mod is only defined further down hyprland.nix, and lines from modules imported earlier land
+  # above that definition, where an undefined $mod silently drops the modifier. Write SUPER instead.
+  norm = lib.replaceStrings ["$mod"] ["SUPER"];
+  entries = map (e: e // {mods = norm e.mods;}) cfg.entries;
   id = e: "${e.mods}|${e.key}";
 in {
   options.lab.keymap.entries = lib.mkOption {
@@ -32,14 +36,14 @@ in {
   config = {
     assertions = [
       {
-        assertion = lib.length (lib.unique (map id cfg.entries)) == lib.length cfg.entries;
+        assertion = lib.length (lib.unique (map id entries)) == lib.length entries;
         message = "lab.keymap.entries contains a duplicate mods+key pair";
       }
     ];
 
     wayland.windowManager.hyprland.extraConfig =
-      lib.concatMapStringsSep "\n" (e: "bind = ${e.mods}, ${e.key}, exec, ${e.exec}") cfg.entries;
+      lib.concatMapStringsSep "\n" (e: "bind = ${e.mods}, ${e.key}, exec, ${e.exec}") entries;
 
-    xdg.configFile."lab/keymap.json".text = builtins.toJSON cfg.entries;
+    xdg.configFile."lab/keymap.json".text = builtins.toJSON entries;
   };
 }
