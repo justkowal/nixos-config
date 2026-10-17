@@ -313,9 +313,8 @@ fn load_data() -> Data {
                 .map(|l| {
                     (
                         l.starts_with("ok"),
-                        l.splitn(2, char::is_whitespace)
-                            .nth(1)
-                            .unwrap_or(l)
+                        l.split_once(char::is_whitespace)
+                            .map_or(l, |x| x.1)
                             .trim()
                             .to_owned(),
                     )
@@ -335,6 +334,7 @@ pub struct Help {
     binds: gtk::ListBox,
     rows: RefCell<Vec<Bind>>,
     health: gtk::Box,
+    stack: gtk::Stack,
 }
 
 impl Help {
@@ -406,6 +406,7 @@ impl Help {
             binds,
             rows: RefCell::new(Vec::new()),
             health,
+            stack,
         });
         me.wire();
         me
@@ -477,11 +478,16 @@ impl Help {
         });
     }
 
-    pub fn toggle(self: &Rc<Self>) {
-        if self.win.is_visible() {
+    /// `page` is binds, features or health. Asking for the page that is already showing closes the window.
+    pub fn toggle(self: &Rc<Self>, page: Option<&str>) {
+        let page = page
+            .filter(|p| matches!(*p, "binds" | "features" | "health"))
+            .unwrap_or("binds");
+        if self.win.is_visible() && self.stack.visible_child_name().as_deref() == Some(page) {
             self.win.set_visible(false);
             return;
         }
+        self.stack.set_visible_child_name(page);
         self.win.present();
         self.search.set_text("");
         self.refresh();

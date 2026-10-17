@@ -58,7 +58,7 @@ fn main() -> glib::ExitCode {
                     engine.handle(&ev);
                     match ev["name"].as_str() {
                         Some("palette.toggle") => palette.toggle(),
-                        Some("help.toggle") => help.toggle(),
+                        Some("help.toggle") => help.toggle(ev["payload"]["page"].as_str()),
                         _ => island.on_event(&ev),
                     }
                 }

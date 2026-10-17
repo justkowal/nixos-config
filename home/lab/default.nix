@@ -5,6 +5,7 @@
     ./scenes.nix
     ./palette.nix
     ./actions.nix
+    ./help.nix
     ./cli.nix
     ./led.nix
     ./roster.nix

@@ -1,6 +1,4 @@
-mod battery;
-mod db;
-mod engine;
+use accubattery::{battery, db, engine};
 mod power;
 
 use std::path::PathBuf;

@@ -2,9 +2,21 @@
 name = "accubattery"
 version = "0.1.0"
 edition = "2021"
-description = "AccuBattery session engine and daemon for Linux laptops"
+description = "AccuBattery session engine, daemon and GTK window for Linux laptops"
+
+[[bin]]
+name = "accubattery"
+path = "src/main.rs"
+
+[[bin]]
+name = "accubattery-gui"
+path = "src/bin/accubattery-gui/main.rs"
 
 [dependencies]
+async-channel = "2.5.0"
+gtk4 = { version = "0.11.5", features = ["v4_12"] }
+libadwaita = { version = "0.9.2", features = ["v1_6"] }
+pangocairo = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
