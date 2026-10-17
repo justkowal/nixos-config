@@ -62,7 +62,7 @@ fn palette_json() -> Value {
         .unwrap_or(Value::Null)
 }
 
-const DEFAULT_SEARCH: &str = "https://duckduckgo.com/?q=%s";
+const DEFAULT_SEARCH: &str = "https://www.google.com/search?q=%s";
 
 /// Percent-encodes everything outside the RFC 3986 unreserved set.
 fn url_encode(s: &str) -> String {

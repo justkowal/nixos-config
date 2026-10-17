@@ -7,7 +7,7 @@
 in {
   options.lab.palette.searchUrl = lib.mkOption {
     type = lib.types.str;
-    default = "https://duckduckgo.com/?q=%s";
+    default = "https://www.google.com/search?q=%s";
     description = "Web search fallback row in the palette. %s is the percent-encoded query.";
   };
 
