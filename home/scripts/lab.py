@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 
 import lab_bus
 
@@ -179,6 +181,33 @@ def chk_fallbacks():
         raise RuntimeError(f"fallback missing: {', '.join(gone)}")
 
 
+def chk_hub():
+    """Focus mode lives on the hub: its webhook has to know the focus hooks, or `focus` cannot start."""
+    base = os.environ.get("LAB_HUB_HOOKS")
+    if not base:
+        return "not configured here"
+    try:
+        with urllib.request.urlopen(base.rstrip("/") + "/focus-status", timeout=4) as r:
+            json.load(r)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise RuntimeError("the hub has no focus hooks, deploy nixos-rpi4 (docs/DEPLOYMENT.md)") from e
+        raise RuntimeError(f"the hub answered {e.code}") from e
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        raise RuntimeError(f"the hub is unreachable ({getattr(e, 'reason', e)})") from e
+    return "focus hooks answer"
+
+
+def chk_tailnet():
+    out = subprocess.run([os.environ.get("TAILSCALE", "tailscale"), "status", "--json"],
+                         capture_output=True, text=True, timeout=10).stdout
+    st = json.loads(out)
+    if st.get("BackendState") != "Running":
+        raise RuntimeError(f"tailscale is {st.get('BackendState', 'unknown')}")
+    online = sum(1 for p in st.get("Peer", {}).values() if p.get("Online"))
+    return f"{online} other devices online"
+
+
 def chk_sound():
     if not shutil.which("canberra-gtk-play"):
         raise RuntimeError("canberra-gtk-play not on PATH")
@@ -186,7 +215,7 @@ def chk_sound():
 
 def cmd_doctor(_a):
     results = [check(label, fn) for label, fn in (
-        ("bus", chk_bus), ("shell services", chk_shell), ("continuity services", chk_continuity), ("tokens", chk_tokens),
+        ("bus", chk_bus), ("tailnet", chk_tailnet), ("hub focus hooks", chk_hub), ("shell services", chk_shell), ("continuity services", chk_continuity), ("tokens", chk_tokens),
         ("keymap", chk_keymap), ("waybar and swaync fallbacks", chk_fallbacks), ("sound", chk_sound))]
     return 0 if all(results) else 1
 

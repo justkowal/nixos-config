@@ -15,6 +15,7 @@
     name = "lab";
     runtimeInputs = [pkgs.python3 pkgs.systemd config.lab.shell.package];
     text = ''
+      export LAB_HUB_HOOKS=${lib.escapeShellArg config.lab.focus.hooksUrl}
       if [ "''${1:-}" = publish ]; then
         shift
         exec lab-publish "$@"

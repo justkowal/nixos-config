@@ -612,6 +612,8 @@ impl Help {
 fn friendly(line: &str) -> String {
     const NAMES: &[(&str, &str)] = &[
         ("bus", "Event bus"),
+        ("tailnet", "Tailnet"),
+        ("hub focus hooks", "Hub (focus mode)"),
         ("shell services", "Shell"),
         ("continuity services", "Devices and rooms"),
         ("tokens", "Design tokens"),
@@ -700,6 +702,14 @@ mod tests {
             "Devices and rooms: lab-inbox is failed"
         );
         assert_eq!(friendly("something else"), "something else");
+        assert_eq!(
+            friendly("hub focus hooks: the hub has no focus hooks"),
+            "Hub (focus mode): the hub has no focus hooks"
+        );
+        assert_eq!(
+            friendly("tailnet (3 other devices online)"),
+            "Tailnet (3 other devices online)"
+        );
     }
 
     #[test]
