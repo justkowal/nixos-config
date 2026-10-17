@@ -65,7 +65,10 @@ check() {
   if ip=$(find_peer); then
     echo 0 > "$RUN/fails"
     echo "$ip" > "$RUN/peer-ip"
-    active || systemctl --user start home-lan.target
+    if ! active; then
+      systemctl --user start home-lan.target
+      lab publish handoff.arrived --source home-lan --payload "$(jq -nc --arg p "$PEER" --arg ip "$ip" '{peer: $p, ip: $ip}')" 2>/dev/null || true
+    fi
   else
     local fails
     fails=$(( $(cat "$RUN/fails" 2>/dev/null || echo 0) + 1 ))
@@ -74,6 +77,7 @@ check() {
     if [ "$fails" -ge "$FAIL_LIMIT" ] && active; then
       rm -f "$RUN/peer-ip"
       systemctl --user stop home-lan.target
+      lab publish handoff.left --source home-lan --payload "$(jq -nc --arg p "$PEER" '{peer: $p}')" 2>/dev/null || true
     fi
   fi
 }

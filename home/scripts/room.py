@@ -66,6 +66,15 @@ def relaunchable(argv, klass):
     return [klass.lower()]
 
 
+def publish(event, payload):
+    # the island may be down, rooms must work without it
+    try:
+        subprocess.run(["lab", "publish", event, "--source", "room", "--payload", json.dumps(payload)],
+                       check=False, capture_output=True)
+    except OSError:
+        pass
+
+
 def save(name, all_ws):
     if all_ws:
         wanted = {w["id"] for w in hypr("workspaces") if w["id"] > 0}
@@ -95,6 +104,7 @@ def save(name, all_ws):
     STATE.mkdir(parents=True, exist_ok=True)
     (STATE / f"{name}.json").write_text(json.dumps({"name": name, "windows": windows}, indent=2))
     print(f"saved {len(windows)} windows to {STATE / f'{name}.json'}")
+    publish("room.saved", {"name": name, "windows": len(windows)})
 
 
 def terminal_cmd(klass, cwd):
@@ -157,6 +167,8 @@ def open_room(name, dry_run=False):
             subprocess.run(["hyprctl", "dispatch", "exec", cmd], check=False, capture_output=True)
     if not dry_run and remap:
         subprocess.run(["hyprctl", "dispatch", "workspace", str(min(remap.values()))], check=False, capture_output=True)
+    if not dry_run:
+        publish("room.restored", {"name": name, "windows": len(windows)})
 
 
 def repos():

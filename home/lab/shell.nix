@@ -6,25 +6,34 @@
 }: let
   labd = pkgs.callPackage ../../pkgs/labd {};
 in {
-  home.packages = [labd];
-
-  systemd.user.services.labd = {
-    Unit = {
-      Description = "Kowal Lab state bus and island";
-      PartOf = ["graphical-session.target"];
-      After = ["graphical-session.target"];
-    };
-    Service = {
-      ExecStart = lib.getExe labd;
-      Restart = "on-failure";
-      RestartSec = 2;
-    };
-    Install.WantedBy = ["graphical-session.target"];
+  options.lab.shell.package = lib.mkOption {
+    type = lib.types.package;
+    readOnly = true;
+    description = "labd: the state bus, the island, and the lab-publish client.";
   };
 
-  wayland.windowManager.hyprland.extraConfig = ''
-    layerrule = blur 1, match:namespace ^(labd-island)$
-    layerrule = ignore_alpha 0.3, match:namespace ^(labd-island)$
-    layerrule = no_anim 1, match:namespace ^(labd-island)$
-  '';
+  config = {
+    lab.shell.package = labd;
+    home.packages = [labd];
+
+    systemd.user.services.labd = {
+      Unit = {
+        Description = "Kowal Lab state bus and island";
+        PartOf = ["graphical-session.target"];
+        After = ["graphical-session.target"];
+      };
+      Service = {
+        ExecStart = lib.getExe labd;
+        Restart = "on-failure";
+        RestartSec = 2;
+      };
+      Install.WantedBy = ["graphical-session.target"];
+    };
+
+    wayland.windowManager.hyprland.extraConfig = ''
+      layerrule = blur 1, match:namespace ^(labd-island)$
+      layerrule = ignore_alpha 0.3, match:namespace ^(labd-island)$
+      layerrule = no_anim 1, match:namespace ^(labd-island)$
+    '';
+  };
 }

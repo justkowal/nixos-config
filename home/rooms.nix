@@ -8,7 +8,7 @@
 
   room = pkgs.writeShellApplication {
     name = "room";
-    runtimeInputs = with pkgs; [python3 hyprland rofi];
+    runtimeInputs = (with pkgs; [python3 hyprland rofi]) ++ [config.lab.cli.package];
     text = ''exec python3 ${./scripts/room.py} "$@"'';
   };
 in {

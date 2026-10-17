@@ -9,7 +9,7 @@
 
   home-lan = pkgs.writeShellApplication {
     name = "home-lan";
-    runtimeInputs = with pkgs; [iproute2 iputils jq tailscale gawk gnused gnugrep coreutils systemd kdePackages.kdeconnect-kde pulseaudio];
+    runtimeInputs = with pkgs; [iproute2 iputils jq tailscale gawk gnused gnugrep coreutils systemd kdePackages.kdeconnect-kde pulseaudio config.lab.cli.package];
     text = ''
       export HOME_LAN_PEER=${lib.escapeShellArg cfg.peer}
       export HOME_LAN_PEER_MAC=${lib.escapeShellArg cfg.peerMac}

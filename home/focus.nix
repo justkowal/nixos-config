@@ -10,7 +10,7 @@
   focus = pkgs.writeShellApplication {
     name = "focus";
     runtimeInputs =
-      (with pkgs; [coreutils curl jq libnotify])
+      (with pkgs; [coreutils curl jq libnotify]) ++ [config.lab.cli.package]
       ++ lib.optional cfg.openrgb.enable (pkgs.python3.withPackages (ps: [ps.openrgb-python]));
     text = ''
       export FOCUS_HOOKS=${lib.escapeShellArg cfg.hooksUrl}

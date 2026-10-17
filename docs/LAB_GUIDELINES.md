@@ -128,8 +128,8 @@ Visual changes need a screenshot check: trigger the state, capture with `grim`, 
 ## 9. Current state
 
 - **Foundations are in.** Tokens: `home/lab/design.nix` (`config.lab.design.tokens` in Nix, `~/.config/lab/tokens.json` at runtime). Token lint: `ci/lint-tokens.sh`, a flake check; files that predate it are in `ci/token-baseline.txt`, which may only shrink (remove a file from it when you clean it up). CLI: `lab publish|status|watch|keys|doctor` (`home/scripts/lab.py`, client in `home/scripts/guis/lab_bus.py`). Publishing is best effort and exits 0 when the shell is down unless `--strict`.
-- **`labd` (Rust, `pkgs/labd`, service in `home/lab/shell.nix`) owns the bus** on `$XDG_RUNTIME_DIR/lab.sock` and draws the island (`src/island.rs`). Add a new island state in `card_for` in `island.rs`: map the event name to icon, text, optional level and hold time. Events with no mapping are ignored on purpose. Event contract changes must be made in both `src/bus.rs` and `lab_bus.py`.
-- **Island today:** volume, brightness, focus, room and handoff events render. Nothing publishes volume or brightness yet (the OSD wrappers still use swayosd), and `room`, `focus` and `home-lan` do not publish yet. Wiring publishers is next.
+- **`labd` (Rust, `pkgs/labd`, service in `home/lab/shell.nix`) owns the bus** on `$XDG_RUNTIME_DIR/lab.sock` and draws the island (`src/island.rs`). Add a new island state in `card_for` in `island.rs`: map the event name to icon, text, optional level and hold time. Events with no mapping are ignored on purpose. The event contract lives only in `src/bus.rs` (`make_event`). Publish with `lab publish` (or `lab-publish`, the compiled client in `src/bin/lab-publish.rs`, fast enough for key repeat). Python code that needs the bus uses `lab_bus.py` (client only).
+- **Island today:** volume, mic, brightness, focus, room and handoff events render, and `volume-osd`, `brightness-osd`, `focus`, `room` and `home-lan` publish them (see the event catalog). swayosd and `notify-send` remain only as fallbacks inside those scripts, used when `lab publish --strict` finds the bus down. Screenshot binds and `tablet-display.sh` still call swayosd directly and are not migrated yet.
 - **Icons are Adwaita symbolic names** in `card_for` until the Lucide set from the tokens ships.
 - The island sits below Waybar while Waybar exists, because layer-shell respects its exclusive zone.
 - `deskwidgets` (Python) still draws the dashboard and wallpaper column. It is a bus client candidate, not the bus owner.
@@ -137,3 +137,19 @@ Visual changes need a screenshot check: trigger the state, capture with `grim`, 
 - The phone PWA is in scope. It is served through the rpi4 ingress (`hosts/rpi4/ingress.nix`) and reads the same state bus events and tokens as the desktop.
 - The OSD wrappers `home/scripts/volume-osd.sh` and `home/scripts/brightness-osd.sh` are legacy. Do not add to them.
 - Matugen templates in `home/matugen/templates/` are the colour source and stay that way.
+
+## 10. Event catalog
+
+Add a row here when you add an event. Payload keys are the contract between publisher and `card_for` in `island.rs`.
+
+| Event | Source | Payload | Island |
+| :--- | :--- | :--- | :--- |
+| `volume.changed` | `volume-osd` | `value` (percent, may exceed 100), `muted` | icon, "Volume" or "Muted", level bar |
+| `mic.changed` | `volume-osd` | `muted` | "Microphone muted" or "active" |
+| `brightness.changed` | `brightness-osd` | `value` (percent), `monitor` | "Brightness", level bar |
+| `focus.on` | `focus` | `minutes` (string) | "Focus on" |
+| `focus.off` | `focus` | `ended` (only when it ended elsewhere) | "Focus off" |
+| `room.saved` | `room` | `name`, `windows` | "Room saved, <name>" |
+| `room.restored` | `room` | `name`, `windows` | "Room restored, <name>" |
+| `handoff.arrived` | `home-lan` | `peer`, `ip` | "Handoff complete, <peer>" |
+| `handoff.left` | `home-lan` | `peer` | not shown (kept for scenes) |

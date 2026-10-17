@@ -20,18 +20,8 @@ def load_conf(name):
 
 
 def cmd_publish(a):
-    try:
-        ev = lab_bus.make_event(a.name, a.source, json.loads(a.payload) if a.payload else {}, a.priority, a.ttl)
-    except ValueError as e:
-        print(f"lab: {e}", file=sys.stderr)
-        return 2
-    try:
-        lab_bus.request({"op": "publish", "event": ev})
-    except (OSError, ValueError) as e:
-        print(f"lab: bus unreachable ({e})", file=sys.stderr)
-        # publishers run inside other tools, a down shell must not break them
-        return 1 if a.strict else 0
-    return 0
+    # the compiled client owns the event contract and is fast enough for key repeat
+    os.execvp("lab-publish", ["lab-publish", *a.rest])
 
 
 def cmd_status(a):
@@ -132,13 +122,8 @@ def cmd_doctor(_a):
 def main():
     ap = argparse.ArgumentParser(prog="lab")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("publish", help="publish an event to the bus")
-    p.add_argument("name")
-    p.add_argument("--source", default="cli")
-    p.add_argument("--payload", help="JSON object")
-    p.add_argument("--priority", default="normal", choices=lab_bus.PRIORITIES)
-    p.add_argument("--ttl", type=float, default=30)
-    p.add_argument("--strict", action="store_true", help="exit 1 when the bus is down")
+    p = sub.add_parser("publish", help="publish an event (see lab-publish)", add_help=False)
+    p.add_argument("rest", nargs=argparse.REMAINDER)
     p.set_defaults(fn=cmd_publish)
     p = sub.add_parser("status", help="last event per name")
     p.add_argument("--json", action="store_true")

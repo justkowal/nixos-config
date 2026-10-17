@@ -64,6 +64,25 @@ fn card_for(ev: &Value) -> Option<Card> {
                 1500,
             )
         }
+        "mic.changed" => {
+            let muted = p["muted"].as_bool().unwrap_or(false);
+            let icon = if muted {
+                "microphone-sensitivity-muted-symbolic"
+            } else {
+                "microphone-sensitivity-high-symbolic"
+            };
+            (
+                icon,
+                if muted {
+                    "Microphone muted"
+                } else {
+                    "Microphone active"
+                }
+                .to_owned(),
+                None,
+                1800,
+            )
+        }
         "brightness.changed" => (
             "display-brightness-symbolic",
             "Brightness".to_owned(),

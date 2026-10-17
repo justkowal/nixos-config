@@ -21,8 +21,11 @@ fi
 osd() {
   local pct="$1"
   [ "$ACTION" = "get" ] && return 0
-  swayosd-client --monitor "$TARGET" --custom-progress "$(awk -v b="$pct" 'BEGIN {print b / 100}')" \
-    --custom-icon display-brightness --custom-message "Brightness $pct%" 2>/dev/null || true
+  # the island is the OSD, swayosd only covers a down labd
+  lab publish brightness.changed --source brightness --strict --ttl 5 \
+    --payload "$(jq -nc --argjson v "$pct" --arg m "$TARGET" '{value: $v, monitor: $m}')" 2>/dev/null ||
+    swayosd-client --monitor "$TARGET" --custom-progress "$(awk -v b="$pct" 'BEGIN {print b / 100}')" \
+      --custom-icon display-brightness --custom-message "Brightness $pct%" 2>/dev/null || true
 }
 
 if [ "$HAS_BACKLIGHT" -eq 1 ] && { [ -z "$TARGET" ] || [[ "$TARGET" == eDP-* ]]; }; then

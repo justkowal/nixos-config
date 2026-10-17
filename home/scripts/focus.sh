@@ -42,6 +42,12 @@ OpenRGBClient(name="focus").load_profile(sys.argv[1])
 EOF
 }
 
+# state change goes to the island; notify-send only covers a down labd
+announce() {
+  lab publish "$1" --source focus --strict --payload "$2" 2>/dev/null ||
+    notify-send -a Focus -i timer-symbolic "$3" "$4"
+}
+
 focus_on() {
   local minutes="${1:-25}"
   curl -fsS -m 5 -X POST "$HOOKS/focus-on?minutes=$minutes" >/dev/null
@@ -53,7 +59,7 @@ focus_on() {
   fi
   have caffeine && caffeine on >/dev/null
   openrgb_profile "${FOCUS_OPENRGB_ON:-focus}"
-  notify-send -a Focus -i timer-symbolic "Focus on" "$minutes min, distractions blocked fleet-wide"
+  announce focus.on "$(jq -nc --arg m "$minutes" '{minutes: $m}')" "Focus on" "$minutes min, distractions blocked fleet-wide"
 }
 
 focus_off() {
@@ -64,7 +70,7 @@ focus_off() {
     have caffeine && caffeine off >/dev/null
   fi
   openrgb_profile "${FOCUS_OPENRGB_OFF:-default}"
-  notify-send -a Focus -i timer-symbolic "Focus off" ""
+  announce focus.off '{}' "Focus off" ""
 }
 
 waybar() {
@@ -78,6 +84,7 @@ waybar() {
       rm -f "$MARKER"
       have caffeine && caffeine off >/dev/null
       openrgb_profile "${FOCUS_OPENRGB_OFF:-default}"
+      lab publish focus.off --source focus --payload '{"ended":"elsewhere"}' 2>/dev/null || true
     fi
     jq -nc '{text: "󰓾", class: "inactive", tooltip: "Focus off\nClick for 25 min of focus"}'
   fi

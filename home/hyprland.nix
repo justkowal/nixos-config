@@ -8,13 +8,13 @@
   # Script wrappers — installed on PATH as commands
   volume-osd = pkgs.writeShellApplication {
     name = "volume-osd";
-    runtimeInputs = with pkgs; [wireplumber gawk gnugrep swayosd coreutils];
+    runtimeInputs = (with pkgs; [wireplumber gawk gnugrep swayosd coreutils]) ++ [config.lab.cli.package];
     text = builtins.readFile ./scripts/volume-osd.sh;
   };
 
   brightness-osd = pkgs.writeShellApplication {
     name = "brightness-osd";
-    runtimeInputs = with pkgs; [brightnessctl ddcutil gnugrep swayosd gawk coreutils jq hyprland];
+    runtimeInputs = (with pkgs; [brightnessctl ddcutil gnugrep swayosd gawk coreutils jq hyprland]) ++ [config.lab.cli.package];
     text = builtins.readFile ./scripts/brightness-osd.sh;
   };
 

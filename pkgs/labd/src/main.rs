@@ -1,7 +1,7 @@
 //! labd: owns the Kowal Lab state bus and draws the island.
 //! `labd --no-ui` runs the bus alone and logs events, for tests and headless hosts.
 
-mod bus;
+use labd::bus;
 mod island;
 mod tokens;
 
