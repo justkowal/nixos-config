@@ -5,6 +5,12 @@
 }: let
   cfg = config.lab.palette;
 in {
+  options.lab.palette.searchUrl = lib.mkOption {
+    type = lib.types.str;
+    default = "https://duckduckgo.com/?q=%s";
+    description = "Web search fallback row in the palette. %s is the percent-encoded query.";
+  };
+
   options.lab.palette.entries = lib.mkOption {
     default = [];
     description = "Extra command palette entries. Keymap entries are listed automatically.";
@@ -68,12 +74,14 @@ in {
       }
     ];
 
-    xdg.configFile."lab/palette.json".text = builtins.toJSON (
-      (map (e: {
-        title = e.label;
-        inherit (e) group exec;
-      }) (lib.filter (e: e.palette) config.lab.keymap.entries))
-      ++ cfg.entries
-    );
+    xdg.configFile."lab/palette.json".text = builtins.toJSON {
+      search = cfg.searchUrl;
+      entries =
+        (map (e: {
+          title = e.label;
+          inherit (e) group exec;
+        }) (lib.filter (e: e.palette) config.lab.keymap.entries))
+        ++ cfg.entries;
+    };
   };
 }

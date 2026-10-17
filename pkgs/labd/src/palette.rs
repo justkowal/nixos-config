@@ -42,6 +42,7 @@ fn glyph_named(name: &str) -> Glyph {
         "power" => Glyph::Power,
         "lock" => Glyph::Lock,
         "handoff" => Glyph::Handoff,
+        "search" => Glyph::Search,
         "brightness" => Glyph::Brightness,
         _ => Glyph::Action,
     }
@@ -54,12 +55,43 @@ fn config_file(name: &str) -> Option<PathBuf> {
         .map(|d| d.join("lab").join(name))
 }
 
-fn static_items() -> Vec<Item> {
-    let raw = config_file("palette.json")
+fn palette_json() -> Value {
+    config_file("palette.json")
         .and_then(|f| std::fs::read_to_string(f).ok())
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .unwrap_or(Value::Null);
-    raw.as_array()
+        .unwrap_or(Value::Null)
+}
+
+const DEFAULT_SEARCH: &str = "https://duckduckgo.com/?q=%s";
+
+/// Percent-encodes everything outside the RFC 3986 unreserved set.
+fn url_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                char::from(b).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+fn web_item(term: &str, template: &str) -> Item {
+    let url = template.replace("%s", &url_encode(term));
+    Item {
+        title: format!("Search the web for \"{term}\""),
+        group: "Web".into(),
+        exec: format!("xdg-open {}", shell_quote(&url)),
+        confirm: false,
+        glyph: Glyph::Search,
+        icon: None,
+        rank: 3,
+    }
+}
+
+fn static_items(raw: &Value) -> Vec<Item> {
+    raw["entries"]
+        .as_array()
         .map(|a| {
             a.iter()
                 .filter_map(|e| {
@@ -161,6 +193,7 @@ pub struct Palette {
     scroll: gtk::ScrolledWindow,
     motion: Rc<Motion>,
     items: RefCell<Vec<Item>>,
+    search_url: RefCell<String>,
     shown: RefCell<Vec<usize>>,
     pending: Cell<Option<usize>>,
     open: Cell<bool>,
@@ -217,6 +250,7 @@ impl Palette {
             scroll,
             motion,
             items: RefCell::new(Vec::new()),
+            search_url: RefCell::new(DEFAULT_SEARCH.to_owned()),
             shown: RefCell::new(Vec::new()),
             pending: Cell::new(None),
             open: Cell::new(false),
@@ -295,7 +329,9 @@ impl Palette {
     }
 
     fn open(self: &Rc<Self>) {
-        let mut items = static_items();
+        let raw = palette_json();
+        *self.search_url.borrow_mut() = raw["search"].as_str().unwrap_or(DEFAULT_SEARCH).to_owned();
+        let mut items = static_items(&raw);
         items.extend(app_items());
         *self.items.borrow_mut() = items;
         self.pending.set(None);
@@ -343,13 +379,25 @@ impl Palette {
             .chars()
             .flat_map(char::to_lowercase)
             .collect();
+        {
+            // the web row follows the typed text and always ranks last, so it only wins when nothing else matches
+            let mut items = self.items.borrow_mut();
+            items.retain(|it| it.group != "Web");
+            let text = self.entry.text();
+            let term = text.trim();
+            if !term.is_empty() {
+                items.push(web_item(term, &self.search_url.borrow()));
+            }
+        }
         let items = self.items.borrow();
         let mut hits: Vec<(i32, usize)> = items
             .iter()
             .enumerate()
             .filter(|(_, it)| query.is_empty() && it.rank < 2 || !query.is_empty())
             .filter_map(|(i, it)| {
-                let base = if query.is_empty() {
+                let base = if it.group == "Web" {
+                    Some(-1000)
+                } else if query.is_empty() {
                     Some(0)
                 } else {
                     fuzzy(&query, &it.title)
@@ -511,6 +559,14 @@ mod tests {
     fn quotes_survive_the_shell() {
         assert_eq!(shell_quote("a b"), "'a b'");
         assert_eq!(shell_quote("it's"), r"'it'\''s'");
+    }
+
+    #[test]
+    fn web_search_url_is_encoded_and_quoted() {
+        assert_eq!(url_encode("a b&c/ł"), "a%20b%26c%2F%C5%82");
+        let it = web_item("rust gtk4", "https://example.org/?q=%s");
+        assert_eq!(it.exec, "xdg-open 'https://example.org/?q=rust%20gtk4'");
+        assert_eq!(it.group, "Web");
     }
 
     #[test]

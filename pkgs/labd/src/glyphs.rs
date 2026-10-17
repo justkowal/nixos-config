@@ -24,6 +24,7 @@ pub enum Glyph {
     Action,
     Power,
     Lock,
+    Search,
 }
 
 pub const SIZE: f64 = 24.0;
@@ -126,6 +127,10 @@ pub fn draw(cr: &Context, glyph: Glyph) {
             cr.arc(12.0, 8.0, 4.0, PI, 0.0);
             cr.line_to(16.0, 11.0);
         }
+        Glyph::Search => {
+            cr.arc(10.0, 10.0, 6.5, 0.0, 2.0 * PI);
+            line(cr, &[(15.0, 15.0), (21.0, 21.0)]);
+        }
         Glyph::Handoff => {
             line(cr, &[(4.0, 8.0), (20.0, 8.0)]);
             line(cr, &[(16.0, 4.0), (20.0, 8.0), (16.0, 12.0)]);
@@ -185,6 +190,7 @@ mod tests {
             Glyph::Action,
             Glyph::Power,
             Glyph::Lock,
+            Glyph::Search,
         ];
         let cell = 96;
         let surface = ImageSurface::create(Format::ARgb32, cell * all.len() as i32, cell).unwrap();
