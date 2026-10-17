@@ -122,6 +122,39 @@ fn card_for(ev: &Value) -> Option<Card> {
                 8000,
             )
         }
+        "battery.target" => (
+            Glyph::Battery,
+            format!("Charged to {:.0} %", p["value"].as_f64().unwrap_or(0.0)),
+            value,
+            4000,
+        ),
+        "battery.low" => (
+            Glyph::Battery,
+            format!("Battery {:.0} %", p["value"].as_f64().unwrap_or(0.0)),
+            value,
+            if p["critical"].as_bool().unwrap_or(false) { 8000 } else { 5000 },
+        ),
+        "battery.offline_charge" => {
+            let place = if p["off"].as_bool().unwrap_or(false) { "off" } else { "asleep" };
+            (
+                Glyph::Battery,
+                format!(
+                    "Charged {:.0} % to {:.0} % while {place}",
+                    p["from"].as_f64().unwrap_or(0.0),
+                    p["to"].as_f64().unwrap_or(0.0)
+                ),
+                None,
+                5000,
+            )
+        }
+        "battery.trip" => {
+            let text = match p["state"].as_str() {
+                Some("started") if p["scheduled"].as_bool().unwrap_or(false) => "Charging to full for your schedule",
+                Some("started") => "Full charge on",
+                _ => "Charge limit restored",
+            };
+            (Glyph::Battery, text.to_owned(), None, 3000)
+        }
         _ => return None,
     };
     let priority = match ev["priority"].as_str() {
@@ -148,8 +181,12 @@ fn roster_from(ev: &Value) -> Vec<(String, bool)> {
         .map(|a| {
             a.iter()
                 .filter_map(|d| {
+                    let mut title = d["title"].as_str()?.to_owned();
+                    if let Some(pct) = d["battery"]["pct"].as_f64() {
+                        title.push_str(&format!(" {pct:.0} %"));
+                    }
                     Some((
-                        d["title"].as_str()?.to_owned(),
+                        title,
                         d["online"].as_bool().unwrap_or(false),
                     ))
                 })

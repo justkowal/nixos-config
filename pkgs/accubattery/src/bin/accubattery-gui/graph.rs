@@ -11,6 +11,8 @@ use libadwaita as adw;
 
 #[derive(Default, Clone)]
 pub struct Series {
+    /// dashed continuation of the primary line, same axes
+    pub projection: Vec<(f64, f64)>,
     pub primary: Vec<(f64, f64)>,
     pub secondary: Vec<(f64, f64)>,
     /// fixed range for the primary axis; None fits the data
@@ -24,6 +26,10 @@ pub struct Series {
 pub struct Graph {
     pub area: gtk::DrawingArea,
     data: Rc<RefCell<Series>>,
+}
+
+thread_local! {
+    static STYLE: crate::tokens::Style = crate::tokens::load();
 }
 
 const ML: f64 = 44.0;
@@ -48,7 +54,8 @@ fn tone(area: &gtk::DrawingArea, name: &str) -> gdk::RGBA {
 fn label(area: &gtk::DrawingArea, cr: &gtk::cairo::Context, text: &str, x: f64, y: f64, align: f64) {
     let l = area.create_pango_layout(Some(text));
     let attrs = pango::AttrList::new();
-    attrs.insert(pango::AttrFloat::new_scale(0.85));
+    let pt = STYLE.with(|s| s.caption_pt * 1.15);
+    attrs.insert(pango::AttrSize::new((pt * pango::SCALE as f64) as i32));
     l.set_attributes(Some(&attrs));
     let (w, h) = l.pixel_size();
     cr.move_to(x - w as f64 * align, y - h as f64 / 2.0);
@@ -89,11 +96,12 @@ fn draw(area: &gtk::DrawingArea, s: &Series, cr: &gtk::cairo::Context, w: f64, h
         return;
     }
 
-    let (t0, t1) = (s.primary[0].0, s.primary[s.primary.len() - 1].0);
+    let (t0, t1) = (s.primary[0].0, s.projection.last().map_or(s.primary[s.primary.len() - 1].0, |p| p.0));
     let tspan = (t1 - t0).max(1.0);
     let (lo, hi) = s.range.unwrap_or_else(|| {
-        let lo = s.primary.iter().map(|p| p.1).fold(f64::MAX, f64::min);
-        let hi = s.primary.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+        let all = s.primary.iter().chain(s.projection.iter()).map(|p| p.1);
+        let lo = all.clone().fold(f64::MAX, f64::min);
+        let hi = all.fold(f64::MIN, f64::max);
         let pad = ((hi - lo) * 0.15).max(0.5);
         (lo - pad, hi + pad)
     });
@@ -132,7 +140,8 @@ fn draw(area: &gtk::DrawingArea, s: &Series, cr: &gtk::cairo::Context, w: f64, h
 
     let c = rgba(&line, 1.0);
     cr.set_source_rgba(c.0, c.1, c.2, c.3);
-    cr.set_line_width(2.0);
+    let lw = STYLE.with(|s| s.line_px);
+    cr.set_line_width(lw);
     cr.set_line_join(gtk::cairo::LineJoin::Round);
     for (i, p) in s.primary.iter().enumerate() {
         if i == 0 {
@@ -142,6 +151,20 @@ fn draw(area: &gtk::DrawingArea, s: &Series, cr: &gtk::cairo::Context, w: f64, h
         }
     }
     let _ = cr.stroke();
+    if s.projection.len() >= 2 {
+        cr.set_dash(&[6.0, 5.0], 0.0);
+        cr.set_source_rgba(c.0, c.1, c.2, 0.7);
+        for (i, p) in s.projection.iter().enumerate() {
+            if i == 0 {
+                cr.move_to(x(p.0), y(p.1));
+            } else {
+                cr.line_to(x(p.0), y(p.1));
+            }
+        }
+        let _ = cr.stroke();
+        cr.set_dash(&[], 0.0);
+        cr.set_source_rgba(c.0, c.1, c.2, c.3);
+    }
     let last = s.primary[s.primary.len() - 1];
     cr.arc(x(last.0), y(last.1), 3.5, 0.0, std::f64::consts::TAU);
     let _ = cr.fill();

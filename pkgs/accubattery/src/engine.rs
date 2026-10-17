@@ -66,6 +66,8 @@ pub enum Event {
     Close { start: Sample, kind: Kind, at: Sample },
     /// session reconstructed from the energy delta across a gap
     Offline { kind: Kind, cause: GapCause, from: Sample, to: Sample, est_s: f64 },
+    /// the gauge moved in a way no load can explain (relearn, firmware reset); no session is logged
+    Glitch { reason: &'static str, from: Sample, to: Sample },
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -75,6 +77,74 @@ pub struct Engine {
     pending: Option<(Option<Kind>, u8, Sample)>,
     /// last healthy charge rate, used to date a charge that happened while we were not running
     pub ref_charge_w: f64,
+    /// learned charge power in W for each 10 % band of the battery, 0 when unknown
+    #[serde(default)]
+    pub profile: [f64; 10],
+}
+
+impl Sample {
+    pub const CSV_HEADER: &'static str = "wall,boot_id,status,ac,pct,wh,full_wh,watts,volts,ma,temp";
+
+    pub fn to_csv(&self) -> String {
+        let st = match self.status {
+            Status::Charging => 'C',
+            Status::Discharging => 'D',
+            Status::Idle => 'I',
+        };
+        format!(
+            "{:.1},{},{},{},{:.4},{:.4},{:.4},{:.3},{:.3},{:.1},{:.1}",
+            self.wall, self.boot_id, st, self.ac as u8, self.pct, self.wh, self.full_wh, self.watts, self.volts, self.ma, self.temp
+        )
+    }
+
+    pub fn from_csv(line: &str) -> Option<Sample> {
+        let f: Vec<&str> = line.trim().split(',').collect();
+        if f.len() != 11 {
+            return None;
+        }
+        let n = |i: usize| f[i].parse::<f64>().ok();
+        Some(Sample {
+            wall: n(0)?,
+            boot_id: f[1].to_string(),
+            status: match f[2] {
+                "C" => Status::Charging,
+                "D" => Status::Discharging,
+                "I" => Status::Idle,
+                _ => return None,
+            },
+            ac: f[3] == "1",
+            pct: n(4)?,
+            wh: n(5)?,
+            full_wh: n(6)?,
+            watts: n(7)?,
+            volts: n(8)?,
+            ma: n(9)?,
+            temp: n(10)?,
+        })
+    }
+}
+
+/// Seconds to charge the battery from `from` to `to` percent using the learned band powers.
+/// Bands without data fall back to `fallback_w`; None when nothing is known at all.
+pub fn charge_seconds(profile: &[f64; 10], from: f64, to: f64, full_wh: f64, fallback_w: f64) -> Option<f64> {
+    if to <= from || full_wh <= 0.0 {
+        return Some(0.0);
+    }
+    let mut secs = 0.0;
+    #[allow(clippy::needless_range_loop)]
+    for band in 0..10 {
+        let (lo, hi) = (band as f64 * 10.0, band as f64 * 10.0 + 10.0);
+        let span = to.min(hi) - from.max(lo);
+        if span <= 0.0 {
+            continue;
+        }
+        let w = if profile[band] > 1.0 { profile[band] } else { fallback_w };
+        if w < 1.0 {
+            return None;
+        }
+        secs += span / 100.0 * full_wh / w * 3600.0;
+    }
+    Some(secs)
 }
 
 fn kind_of(s: &Sample) -> Option<Kind> {
@@ -95,8 +165,20 @@ impl Engine {
 
         let mut reset = false;
         if let Some(prev) = self.prev.clone() {
-            if s.wall - prev.wall > GAP_S {
+            let dt = s.wall - prev.wall;
+            if dt > GAP_S {
                 reset = self.handle_gap(&prev, &s, want, &mut out);
+            } else if dt > 0.0 {
+                // a load of 100 W for 30 s moves 0.8 Wh; anything far past that is the gauge, not the battery
+                let expected = prev.watts.max(s.watts) * dt / 3600.0;
+                if (s.wh - prev.wh).abs() > (expected * 10.0 + 0.3).max(1.0) {
+                    out.push(Event::Glitch { reason: "energy jump", from: prev.clone(), to: s.clone() });
+                    self.close(&prev, &mut out);
+                    self.pending = None;
+                    reset = true;
+                } else if prev.full_wh > 0.0 && (s.full_wh - prev.full_wh).abs() / prev.full_wh > 0.04 {
+                    out.push(Event::Glitch { reason: "capacity relearn", from: prev.clone(), to: s.clone() });
+                }
             }
         }
 
@@ -153,13 +235,13 @@ impl Engine {
         if dwh.abs() >= thr {
             let kind = if dwh > 0.0 { Kind::Charge } else { Kind::Discharge };
             let gap = s.wall - prev.wall;
-            let rate = if kind == Kind::Charge {
-                if prev.status == Status::Charging && prev.watts > 5.0 { prev.watts } else { self.ref_charge_w }
-            } else {
-                0.0
-            };
+            let fallback = if prev.status == Status::Charging && prev.watts > 5.0 { prev.watts } else { self.ref_charge_w };
             // a charge that topped out finished early; do not stretch it over the whole gap
-            let est_s = if rate > 5.0 { (dwh.abs() / rate * 3600.0).min(gap) } else { gap };
+            let est_s = match kind {
+                Kind::Charge => charge_seconds(&self.profile, prev.pct, s.pct, s.full_wh.max(prev.full_wh), fallback)
+                    .map_or(gap, |t| t.min(gap)),
+                Kind::Discharge => gap,
+            };
             out.push(Event::Offline { kind, cause, from: prev.clone(), to: s.clone(), est_s });
         }
         true
@@ -213,6 +295,7 @@ mod tests {
                 Event::Telemetry(_) => "tel",
                 Event::Close { .. } => "close",
                 Event::Offline { .. } => "offline",
+                Event::Glitch { .. } => "glitch",
             })
             .collect()
     }
@@ -232,8 +315,8 @@ mod tests {
     fn charge_limit_hold_closes_session() {
         let mut e = Engine::default();
         e.step(smp(0.0, "a", Status::Charging, 80.0));
-        e.step(smp(10.0, "a", Status::Idle, 90.0));
-        let ev = e.step(smp(20.0, "a", Status::Idle, 90.0));
+        e.step(smp(10.0, "a", Status::Idle, 80.1));
+        let ev = e.step(smp(20.0, "a", Status::Idle, 80.1));
         assert_eq!(kinds(&ev), ["close"]);
         assert!(e.active.is_none());
     }
@@ -273,5 +356,70 @@ mod tests {
     fn wear_matches_old_formula() {
         assert!((wear(0.0, 100.0) - 1.0).abs() < 1e-9);
         assert!((wear(0.0, 80.0) - 0.458).abs() < 0.01);
+    }
+}
+
+#[cfg(test)]
+mod more_tests {
+    use super::*;
+
+    fn smp(wall: f64, st: Status, pct: f64, wh: f64) -> Sample {
+        Sample {
+            wall,
+            boot_id: "a".into(),
+            status: st,
+            ac: st != Status::Discharging,
+            pct,
+            wh,
+            full_wh: 50.0,
+            watts: 10.0,
+            volts: 12.0,
+            ma: 800.0,
+            temp: 0.0,
+        }
+    }
+
+    #[test]
+    fn energy_jump_is_a_glitch_not_a_session() {
+        let mut e = Engine::default();
+        e.step(smp(0.0, Status::Discharging, 60.0, 30.0));
+        let ev = e.step(smp(10.0, Status::Discharging, 40.0, 20.0));
+        assert!(ev.iter().any(|x| matches!(x, Event::Glitch { .. })));
+        assert!(!ev.iter().any(|x| matches!(x, Event::Offline { .. })));
+    }
+
+    #[test]
+    fn csv_roundtrip() {
+        let s = smp(1234.5, Status::Charging, 55.5, 27.75);
+        let back = Sample::from_csv(&s.to_csv()).unwrap();
+        assert_eq!(back.status, Status::Charging);
+        assert!((back.pct - 55.5).abs() < 1e-3);
+        assert!(Sample::from_csv("junk").is_none());
+    }
+
+    #[test]
+    fn profile_dates_a_taper() {
+        let mut p = [0.0; 10];
+        p.iter_mut().for_each(|v| *v = 40.0);
+        p[9] = 10.0;
+        let fast = charge_seconds(&p, 0.0, 80.0, 50.0, 0.0).unwrap();
+        let slow = charge_seconds(&p, 90.0, 100.0, 50.0, 0.0).unwrap();
+        // 40 Wh at 40 W is an hour, 5 Wh at 10 W is half an hour
+        assert!((fast - 3600.0).abs() < 1.0);
+        assert!((slow - 1800.0).abs() < 1.0);
+        assert!(charge_seconds(&[0.0; 10], 0.0, 50.0, 50.0, 0.0).is_none());
+    }
+}
+
+/// One line per event, stable enough to assert on in replay tests.
+pub fn describe(e: &Event) -> String {
+    match e {
+        Event::Open { kind, at } => format!("open {} at {:.0}% t={:.0}", kind.as_str(), at.pct, at.wall),
+        Event::Telemetry(_) => "tel".into(),
+        Event::Close { kind, at, start } => format!("close {} {:.0}%->{:.0}%", kind.as_str(), start.pct, at.pct),
+        Event::Offline { kind, cause, from, to, .. } => {
+            format!("offline {} {:?} {:.0}%->{:.0}%", kind.as_str(), cause, from.pct, to.pct)
+        }
+        Event::Glitch { reason, .. } => format!("glitch {reason}"),
     }
 }

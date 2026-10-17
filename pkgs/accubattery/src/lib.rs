@@ -1,3 +1,11 @@
+pub mod apps;
 pub mod battery;
+pub mod control;
 pub mod db;
 pub mod engine;
+pub mod estimate;
+pub mod export;
+pub mod fleet;
+pub mod notify;
+pub mod ring;
+pub mod wake;

@@ -471,7 +471,6 @@ in {
 
           # Caffeine mode toggle & AccuBattery Studio
           bind = $mod ALT, C, exec, caffeine toggle
-          bind = $mod ALT, B, exec, accubattery-gui
 
           # Lid switch: docked -> drop the panel, undocked -> lock and blank
           bindl = , switch:on:Lid Switch, exec, monitor-ctl lid-close

@@ -120,6 +120,8 @@ Each provider polls on its own worker thread (`home/scripts/guis/widgets_provide
 | `SUPER + SPACE` | Spotlight Search (Apps & AI Fallback) |
 | `SUPER + A` | Open Rofi AI Assistant |
 | `SUPER + ALT + N` | Trigger AI Notification Digest |
+| `SUPER + ALT + B` | Battery sessions and health (laptop) |
+| `SUPER + ALT + SHIFT + B` | Full charge for a trip, restores the limit after 12 h or on unplug (laptop) |
 | `SUPER + SHIFT + S` | Capture Region + AI Multimodal Vision Analysis |
 
 ### Hardware & Volume (OSD Overlays)

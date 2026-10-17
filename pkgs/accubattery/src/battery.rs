@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::engine::{Sample, Status};
 
 pub struct Battery {
+    pub name: String,
     dir: PathBuf,
     ac: Option<PathBuf>,
 }
@@ -25,18 +26,41 @@ pub fn boot_id() -> String {
 
 impl Battery {
     pub fn find() -> Option<Self> {
+        Self::find_all().into_iter().next()
+    }
+
+    /// Every battery, sorted by name, so BAT0 stays the primary one.
+    pub fn find_all() -> Vec<Self> {
         let root = Path::new("/sys/class/power_supply");
-        let mut bat = None;
+        let Ok(rd) = fs::read_dir(root) else { return Vec::new() };
+        let mut bats = Vec::new();
         let mut ac = None;
-        for e in fs::read_dir(root).ok()?.flatten() {
+        for e in rd.flatten() {
             let p = e.path();
             match fs::read_to_string(p.join("type")).unwrap_or_default().trim() {
-                "Battery" if bat.is_none() && p.join("capacity").exists() => bat = Some(p),
+                "Battery" if p.join("capacity").exists() => bats.push(p),
                 "Mains" | "USB" if ac.is_none() && p.join("online").exists() => ac = Some(p),
                 _ => {}
             }
         }
-        Some(Self { dir: bat?, ac })
+        bats.sort();
+        bats.into_iter()
+            .map(|dir| Self { name: dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), dir, ac: ac.clone() })
+            .filter(|b| b.present())
+            .collect()
+    }
+
+    fn present(&self) -> bool {
+        num(&self.dir, "present").is_none_or(|v| v >= 1.0)
+    }
+
+    /// Charge stop and start thresholds in percent when the firmware exposes them.
+    pub fn thresholds(&self) -> (Option<i64>, Option<i64>) {
+        let rd = |names: [&str; 2]| names.iter().find_map(|n| num(&self.dir, n)).map(|v| v as i64);
+        (
+            rd(["charge_control_end_threshold", "charge_stop_threshold"]),
+            rd(["charge_control_start_threshold", "charge_start_threshold"]),
+        )
     }
 
     pub fn ac_online(&self) -> bool {
@@ -110,4 +134,58 @@ pub fn pd_label(sample: &Sample) -> Option<String> {
     }
     let rev = rev.map(|r| format!("USB-PD {r}")).unwrap_or_else(|| "AC".into());
     Some(if sample.status == Status::Charging { format!("{rev} ({:.0} W)", sample.watts) } else { rev })
+}
+
+impl Battery {
+    /// Direct write, only works where sysfs is writable for the user. Both attribute spellings are tried.
+    pub fn write_thresholds(&self, start: i64, stop: i64) -> std::io::Result<()> {
+        let mut wrote = false;
+        let mut last = Ok(());
+        for (names, v) in [(["charge_control_start_threshold", "charge_start_threshold"], start), (["charge_control_end_threshold", "charge_stop_threshold"], stop)] {
+            for n in names {
+                let p = self.dir.join(n);
+                if p.exists() {
+                    match fs::write(&p, v.to_string()) {
+                        Ok(()) => wrote = true,
+                        Err(e) => last = Err(e),
+                    }
+                }
+            }
+        }
+        if wrote { Ok(()) } else { last.and(Err(std::io::Error::other("no threshold files"))) }
+    }
+}
+
+pub fn abm_files() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    if let Ok(rd) = fs::read_dir("/sys/class/drm") {
+        for e in rd.flatten() {
+            let p = e.path().join("amdgpu/panel_power_savings");
+            if p.exists() {
+                v.push(p);
+            }
+        }
+    }
+    v
+}
+
+/// modules/power-saving.nix makes these world writable, so no privilege is needed
+pub fn set_abm(level: u8) -> std::io::Result<()> {
+    let files = abm_files();
+    if files.is_empty() {
+        return Err(std::io::Error::other("no panel_power_savings"));
+    }
+    for f in files {
+        fs::write(f, level.to_string())?;
+    }
+    Ok(())
+}
+
+/// Adapter identity for the charge profile: the negotiated PD revision when known.
+pub fn adapter_key(sample: &Sample) -> String {
+    pd_label(sample).map(|l| l.split(" (").next().unwrap_or("AC").to_string()).unwrap_or_else(|| "AC".into())
+}
+
+pub fn hostname() -> String {
+    fs::read_to_string("/proc/sys/kernel/hostname").map(|s| s.trim().to_string()).unwrap_or_default()
 }

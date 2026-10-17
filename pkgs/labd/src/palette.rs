@@ -45,6 +45,7 @@ fn glyph_named(name: &str) -> Glyph {
         "search" => Glyph::Search,
         "scene" => Glyph::Scene,
         "brightness" => Glyph::Brightness,
+        "battery" => Glyph::Battery,
         _ => Glyph::Action,
     }
 }

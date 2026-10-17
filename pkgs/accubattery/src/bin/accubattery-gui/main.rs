@@ -1,5 +1,6 @@
 mod data;
 mod graph;
+mod tokens;
 mod ui;
 
 use std::rc::Rc;
@@ -44,6 +45,9 @@ fn main() -> glib::ExitCode {
             win.add_breakpoint(bp);
         }
         ui.set_window(&win);
+        if let Ok(p) = std::env::var("ACCUBATTERY_PAGE") {
+            ui.stack.set_visible_child_name(&p);
+        }
 
         let (tx, rx) = async_channel::unbounded();
         let poll = {
@@ -51,8 +55,9 @@ fn main() -> glib::ExitCode {
             move || {
                 let tx = tx.clone();
                 std::thread::spawn(move || {
-                    if let Some(bat) = Battery::find() {
-                        let _ = tx.send_blocking(data::snapshot(&bat));
+                    let bats = Battery::find_all();
+                    if !bats.is_empty() {
+                        let _ = tx.send_blocking(data::snapshot(&bats));
                     }
                 });
             }

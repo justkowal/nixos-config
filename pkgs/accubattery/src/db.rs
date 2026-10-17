@@ -44,18 +44,32 @@ impl Db {
                 cycle_count INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS hourly_baseline (
                 hour_of_week INTEGER PRIMARY KEY, avg_watts REAL NOT NULL, sample_count INTEGER NOT NULL);
-             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, battery TEXT NOT NULL,
+                kind TEXT NOT NULL, detail TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS hourly_draw (
+                hour_of_week INTEGER PRIMARY KEY, avg_watts REAL NOT NULL, sample_count INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS charge_profile (
+                adapter TEXT NOT NULL, band INTEGER NOT NULL, avg_w REAL NOT NULL, n INTEGER NOT NULL,
+                PRIMARY KEY (adapter, band));
+             CREATE TABLE IF NOT EXISTS daily (
+                date_str TEXT PRIMARY KEY, secs_above_90 REAL NOT NULL DEFAULT 0, secs_on_ac REAL NOT NULL DEFAULT 0);",
         )?;
         let have: Vec<String> = self
             .0
             .prepare("SELECT name FROM pragma_table_info('cycles')")?
             .query_map([], |r| r.get(0))?
             .collect::<Result<_>>()?;
-        if !have.iter().any(|c| c == "kind") {
-            self.0.execute("ALTER TABLE cycles ADD COLUMN kind TEXT NOT NULL DEFAULT 'live'", [])?;
-        }
-        if !have.iter().any(|c| c == "gap_s") {
-            self.0.execute("ALTER TABLE cycles ADD COLUMN gap_s REAL NOT NULL DEFAULT 0", [])?;
+        for (name, ddl) in [
+            ("kind", "TEXT NOT NULL DEFAULT 'live'"),
+            ("gap_s", "REAL NOT NULL DEFAULT 0"),
+            ("battery", "TEXT NOT NULL DEFAULT 'BAT0'"),
+            ("wake_json", "TEXT"),
+        ] {
+            if !have.iter().any(|c| c == name) {
+                self.0.execute(&format!("ALTER TABLE cycles ADD COLUMN {name} {ddl}"), [])?;
+            }
         }
         Ok(())
     }
@@ -64,13 +78,13 @@ impl Db {
         self.0.query_row("SELECT value FROM settings WHERE key=?", [key], |r| r.get(0)).optional().ok().flatten()
     }
 
-    pub fn open_cycle(&self, kind: Kind, at: &Sample) -> Result<i64> {
+    pub fn open_cycle(&self, kind: Kind, at: &Sample, battery: &str) -> Result<i64> {
         self.0.execute(
             "INSERT INTO cycles (session_type,start_time,end_time,duration_min,start_pct,end_pct,gain_pct,wear_cycles,
                 energy_wh,energy_mah,avg_power_w,max_power_w,avg_temp_c,max_temp_c,min_voltage_v,max_voltage_v,
-                pd_standard,top_apps_json,kind)
-             VALUES (?1,?2,?2,0,?3,?3,0,0,0,0,0,0,0,0,0,0,NULL,'[]','live')",
-            params![kind.as_str(), at.wall, at.pct],
+                pd_standard,top_apps_json,kind,battery)
+             VALUES (?1,?2,?2,0,?3,?3,0,0,0,0,0,0,0,0,0,0,NULL,'[]','live',?4)",
+            params![kind.as_str(), at.wall, at.pct, battery],
         )?;
         Ok(self.0.last_insert_rowid())
     }
@@ -136,7 +150,8 @@ impl Db {
         Ok(())
     }
 
-    pub fn offline_cycle(&self, kind: Kind, cause: GapCause, from: &Sample, to: &Sample, est_s: f64) -> Result<()> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn offline_cycle(&self, kind: Kind, cause: GapCause, from: &Sample, to: &Sample, est_s: f64, battery: &str, wake: Option<&str>) -> Result<()> {
         let gap = to.wall - from.wall;
         let wh = (to.wh - from.wh).abs();
         let hours = (est_s / 3600.0).max(1e-6);
@@ -150,8 +165,8 @@ impl Db {
         self.0.execute(
             "INSERT INTO cycles (session_type,start_time,end_time,duration_min,start_pct,end_pct,gain_pct,wear_cycles,
                 energy_wh,energy_mah,avg_power_w,max_power_w,avg_temp_c,max_temp_c,min_voltage_v,max_voltage_v,
-                pd_standard,top_apps_json,kind,gap_s)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, '[]', ?, ?)",
+                pd_standard,top_apps_json,kind,gap_s,battery,wake_json)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, '[]', ?, ?, ?, ?)",
             params![
                 kind.as_str(),
                 from.wall,
@@ -171,7 +186,9 @@ impl Db {
                 from.volts.max(to.volts),
                 if kind == Kind::Charge && cause == GapCause::PowerOff { Some("Powered off") } else { None::<&str> },
                 label,
-                gap
+                gap,
+                battery,
+                wake
             ],
         )?;
         Ok(())
@@ -184,7 +201,7 @@ impl Db {
 
     pub fn hourly(&self, hour_of_week: i64, watts: f64) -> Result<()> {
         self.0.execute(
-            "INSERT INTO hourly_baseline (hour_of_week,avg_watts,sample_count) VALUES (?1,?2,1)
+            "INSERT INTO hourly_draw (hour_of_week,avg_watts,sample_count) VALUES (?1,?2,1)
              ON CONFLICT(hour_of_week) DO UPDATE SET
                avg_watts=(avg_watts*sample_count+?2)/(sample_count+1), sample_count=sample_count+1",
             params![hour_of_week, watts],
@@ -205,5 +222,129 @@ impl Db {
             params![ts, date, (health * 10.0).round() / 10.0, (cap_wh * 100.0).round() / 100.0, (design_wh * 100.0).round() / 100.0, cycles],
         )?;
         Ok(())
+    }
+
+    pub fn set_top_apps(&self, id: i64, json: &str) -> Result<()> {
+        self.0.execute("UPDATE cycles SET top_apps_json=? WHERE id=?", params![json, id])?;
+        Ok(())
+    }
+
+    pub fn event(&self, ts: f64, battery: &str, kind: &str, detail: &str) -> Result<()> {
+        self.0.execute("INSERT INTO events (ts,battery,kind,detail) VALUES (?,?,?,?)", params![ts, battery, kind, detail])?;
+        Ok(())
+    }
+
+    pub fn daily_add(&self, date: &str, above_90_s: f64, ac_s: f64) -> Result<()> {
+        self.0.execute(
+            "INSERT INTO daily (date_str,secs_above_90,secs_on_ac) VALUES (?1,?2,?3)
+             ON CONFLICT(date_str) DO UPDATE SET secs_above_90=secs_above_90+?2, secs_on_ac=secs_on_ac+?3",
+            params![date, above_90_s, ac_s],
+        )?;
+        Ok(())
+    }
+
+    pub fn profile_load(&self, adapter: &str) -> [f64; 10] {
+        let mut p = [0.0; 10];
+        if let Ok(mut st) = self.0.prepare("SELECT band,avg_w FROM charge_profile WHERE adapter=? AND n>=5") {
+            if let Ok(rows) = st.query_map([adapter], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))) {
+                for (b, w) in rows.flatten() {
+                    if (0..10).contains(&b) {
+                        p[b as usize] = w;
+                    }
+                }
+            }
+        }
+        p
+    }
+
+    /// running mean per 10 % band, capped at 500 samples so a worn adapter or cell can still move it
+    pub fn profile_update(&self, adapter: &str, pct: f64, watts: f64) -> Result<()> {
+        let band = ((pct / 10.0).floor() as i64).clamp(0, 9);
+        self.0.execute(
+            "INSERT INTO charge_profile (adapter,band,avg_w,n) VALUES (?1,?2,?3,1)
+             ON CONFLICT(adapter,band) DO UPDATE SET
+               avg_w=(avg_w*MIN(n,500)+?3)/(MIN(n,500)+1), n=n+1",
+            params![adapter, band, watts],
+        )?;
+        Ok(())
+    }
+
+    /// Closes rows an old crash or the Python logger left open, and drops empty ones.
+    /// Rows in `keep` belong to live sessions and are left alone.
+    pub fn repair(&self, keep: &[i64], now: f64) -> Result<usize> {
+        let ids: Vec<(i64, f64, f64)> = {
+            let mut st = self.0.prepare("SELECT id,start_time,start_pct FROM cycles WHERE duration_min=0 AND kind='live'")?;
+            let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.collect::<Result<_>>()?
+        };
+        let mut fixed = 0;
+        for (id, t0, p0) in ids {
+            if keep.contains(&id) {
+                continue;
+            }
+            let last: Option<(f64, f64)> = self
+                .0
+                .query_row("SELECT timestamp,capacity_pct FROM telemetry WHERE cycle_id=? ORDER BY timestamp DESC LIMIT 1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()?;
+            let Some((t1, p1)) = last else {
+                if now - t0 > 3600.0 {
+                    self.0.execute("DELETE FROM cycles WHERE id=?", [id])?;
+                    fixed += 1;
+                }
+                continue;
+            };
+            if t1 - t0 < 120.0 && (p1 - p0).abs() < 1.0 {
+                self.0.execute("DELETE FROM cycles WHERE id=?", [id])?;
+                fixed += 1;
+                continue;
+            }
+            let (avg_p, max_p, avg_t, max_t, min_v, max_v): (f64, f64, f64, f64, f64, f64) = self.0.query_row(
+                "SELECT IFNULL(AVG(power_w),0),IFNULL(MAX(power_w),0),IFNULL(AVG(temp_c),0),IFNULL(MAX(temp_c),0),
+                        IFNULL(MIN(voltage_v),0),IFNULL(MAX(voltage_v),0) FROM telemetry WHERE cycle_id=?",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+            )?;
+            let hours = (t1 - t0) / 3600.0;
+            let wh = avg_p * hours;
+            self.0.execute(
+                "UPDATE cycles SET end_time=?,duration_min=?,end_pct=?,gain_pct=?,wear_cycles=?,energy_wh=?,energy_mah=?,
+                    avg_power_w=?,max_power_w=?,avg_temp_c=?,max_temp_c=?,min_voltage_v=?,max_voltage_v=? WHERE id=?",
+                params![
+                    t1,
+                    (hours * 600.0).round() / 10.0,
+                    p1,
+                    ((p1 - p0) * 10.0).round() / 10.0,
+                    wear(p0, p1),
+                    (wh * 100.0).round() / 100.0,
+                    if min_v > 0.0 { (wh / min_v.max(11.0) * 10000.0).round() / 10.0 } else { 0.0 },
+                    avg_p,
+                    max_p,
+                    avg_t,
+                    max_t,
+                    min_v,
+                    max_v,
+                    id
+                ],
+            )?;
+            fixed += 1;
+        }
+        Ok(fixed)
+    }
+}
+
+impl Db {
+    /// discharge watts per hour of week, only hours with enough samples to mean something
+    pub fn baseline(&self) -> [Option<f64>; 168] {
+        let mut b = [None; 168];
+        if let Ok(mut st) = self.0.prepare("SELECT hour_of_week,avg_watts FROM hourly_draw WHERE sample_count>=30") {
+            if let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))) {
+                for (h, w) in rows.flatten() {
+                    if (0..168).contains(&h) {
+                        b[h as usize] = Some(w);
+                    }
+                }
+            }
+        }
+        b
     }
 }

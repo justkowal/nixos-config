@@ -29,6 +29,7 @@ pub enum Glyph {
     Device,
     Dot,
     Ring,
+    Battery,
 }
 
 pub const SIZE: f64 = 24.0;
@@ -161,6 +162,11 @@ pub fn draw(cr: &Context, glyph: Glyph) {
             let _ = cr.fill();
             return;
         }
+        Glyph::Battery => {
+            cr.rectangle(2.5, 7.5, 16.0, 9.0);
+            line(cr, &[(21.0, 10.5), (21.0, 13.5)]);
+            line(cr, &[(5.5, 12.0), (12.0, 12.0)]);
+        }
         Glyph::Ring => {
             cr.arc(12.0, 12.0, 6.5, 0.0, 2.0 * PI);
         }
@@ -228,6 +234,7 @@ mod tests {
             Glyph::Device,
             Glyph::Dot,
             Glyph::Ring,
+            Glyph::Battery,
         ];
         let cell = 96;
         let surface = ImageSurface::create(Format::ARgb32, cell * all.len() as i32, cell).unwrap();

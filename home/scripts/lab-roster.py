@@ -3,6 +3,7 @@
 
 roster.changed {devices:[{host,title,kind,os,online,self}]} on change and every few minutes,
 roster.device {title,online} when a device comes or goes.
+Laptops with accubattery running also carry battery {pct,status,ac} in their roster entry.
 """
 
 import json
@@ -10,6 +11,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lab_bus  # noqa: E402
@@ -17,6 +19,7 @@ import lab_bus  # noqa: E402
 TAILSCALE = os.environ.get("TAILSCALE", "tailscale")
 INTERVAL = 15
 REPUBLISH = 240
+BATTERY_PORT = 47651
 
 
 def short(node):
@@ -35,6 +38,32 @@ def devices_from_status(status, names):
                     "os": node.get("OS", ""), "online": bool(is_self or node.get("Online")), "self": is_self})
     out.sort(key=lambda d: (not d["self"], d["title"].lower()))
     return out
+
+
+def battery_summary(dev):
+    """One line from accubattery: this machine reads its own file, laptops are asked over the tailnet."""
+    try:
+        if dev["self"]:
+            path = os.path.expanduser("~/.local/share/accubattery/summary.json")
+            with open(path) as f:
+                data = json.load(f)
+        elif dev["online"] and dev["kind"] == "laptop":
+            with urllib.request.urlopen(f"http://{dev['host']}:{BATTERY_PORT}/", timeout=2) as r:
+                data = json.load(r)
+        else:
+            return None
+    except (OSError, ValueError):
+        return None
+    if time.time() - data.get("updated", 0) > 300:
+        return None
+    return {"pct": data.get("pct"), "status": data.get("status"), "ac": data.get("ac")}
+
+
+def attach_batteries(devices):
+    for d in devices:
+        b = battery_summary(d)
+        if b:
+            d["battery"] = b
 
 
 def emit(name, payload, ttl=300):
@@ -66,6 +95,7 @@ def main(names_path):
                 if d["host"] in last and last[d["host"]] != d["online"] and not d["self"]:
                     emit("roster.device", {"title": d["title"], "online": d["online"]}, 30)
         if state != last or time.time() - sent > REPUBLISH:
+            attach_batteries(devices)
             emit("roster.changed", {"devices": devices})
             sent = time.time()
         last = state

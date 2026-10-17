@@ -7,6 +7,7 @@
     ./actions.nix
     ./help.nix
     ./cli.nix
+    ./battery.nix
     ./led.nix
     ./roster.nix
     ./shell.nix
