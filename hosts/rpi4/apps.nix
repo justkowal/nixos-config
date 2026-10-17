@@ -282,7 +282,13 @@
   services.blocky = {
     enable = true;
     settings = {
-      ports.dns = 53;
+      # not plain 53: podman's aardvark-dns owns 10.88.0.1:53 and a wildcard bind crashes Blocky on
+      # start, which also takes its http api (focus mode) down. Loopback, the home LAN and the tailnet.
+      ports.dns = [
+        "127.0.0.1:53"
+        "192.168.1.22:53"
+        "100.113.193.14:53"
+      ];
       upstreams.groups.default = [
         "1.1.1.1"
         "1.0.0.1"
@@ -302,6 +308,13 @@
         };
       };
     };
+  };
+
+  # the tailnet address only exists once tailscale is up, so retry calmly instead of in a hot loop
+  systemd.services.blocky = {
+    after = [ "tailscaled.service" "network-online.target" ];
+    wants = [ "network-online.target" ];
+    serviceConfig.RestartSec = lib.mkForce "5s";
   };
 
   # ── Harmonia: Shared Binary Cache ──────────────────────────────────────
