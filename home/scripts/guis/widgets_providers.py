@@ -69,26 +69,96 @@ def weather(cfg):
 
 # ── AI limits ────────────────────────────────────────────────────────────────
 
-def _jsonl_usage(paths, since):
-    tokens = 0
-    for p in paths:
+CACHE = os.path.join(os.environ.get("XDG_CACHE_HOME", f"{HOME}/.cache"), "deskwidgets")
+HISTORY_DAYS = 14
+
+
+def _hist_path(name):
+    return os.path.join(CACHE, "history", f"{name}.jsonl")
+
+
+def hist_append(name, ts, pcts):
+    """One line per successful api poll: {ts, pct: {window label: percent}}. Trimmed to HISTORY_DAYS."""
+    path = _hist_path(name)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps({"ts": ts, "pct": pcts}) + "\n")
+        if os.path.getsize(path) > 200_000:
+            keep = hist_read(name, ts - HISTORY_DAYS * 86400)
+            with open(path, "w") as f:
+                f.writelines(json.dumps(r) + "\n" for r in keep)
+    except OSError:
+        pass
+
+
+def hist_read(name, since):
+    rows = []
+    try:
+        with open(_hist_path(name)) as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if r.get("ts", 0) >= since:
+                    rows.append(r)
+    except OSError:
+        pass
+    return rows
+
+
+def pct_series(name, now):
+    """label -> [[ts, pct]] for the last week, plus the last known reading per label."""
+    rows = hist_read(name, now - 7 * 86400)
+    series = {}
+    for r in rows:
+        for label, v in r["pct"].items():
+            series.setdefault(label, []).append([r["ts"], v])
+    last = {label: pts[-1] for label, pts in series.items()}
+    return series, last
+
+
+def _claude_local(now):
+    """One pass over the session logs: tokens per hour for a week plus the exact 5 h and week sums."""
+    week, five = now - 7 * 86400, now - 5 * 3600
+    start = int(week // 3600) * 3600
+    hourly = [0] * 170
+    five_sum = week_sum = 0
+    for p in glob.glob(f"{HOME}/.claude/projects/*/*.jsonl"):
+        if os.path.getmtime(p) < week:
+            continue
         with open(p, errors="ignore") as f:
             for line in f:
                 if '"usage"' not in line:
                     continue
                 try:
                     e = json.loads(line)
-                    if parse_iso(e["timestamp"]) < since:
-                        continue
+                    ts = parse_iso(e["timestamp"])
                     u = e["message"]["usage"]
                 except (ValueError, KeyError, TypeError):
                     continue
-                tokens += u.get("input_tokens", 0) + u.get("output_tokens", 0) + u.get("cache_creation_input_tokens", 0)
-    return tokens
+                if ts < week:
+                    continue
+                n = u.get("input_tokens", 0) + u.get("output_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+                hourly[min(169, int((ts - start) // 3600))] += n
+                week_sum += n
+                if ts >= five:
+                    five_sum += n
+    return {"5 h": five_sum, "Week": week_sum}, hourly[:169]
+
+
+def _budget_pct(cfg, label, tokens):
+    """Optional user-set budgets (tokens) turn raw usage into an estimated percentage."""
+    key = {"5 h": "fiveHour", "Week": "week"}.get(label)
+    limit = ((cfg.get("budgets") or {}).get("claude") or {}).get(key)
+    return 100.0 * tokens / limit if limit else None
 
 
 def claude(cfg):
     now = time.time()
+    tokens, hourly = _claude_local(now)
+    out = {"hourly": hourly}
     try:
         creds = json.load(open(f"{HOME}/.claude/.credentials.json"))["claudeAiOauth"]
         # never refresh here: claude code rotates the refresh token and would get logged out
@@ -97,17 +167,20 @@ def claude(cfg):
         u = http_json("https://api.anthropic.com/api/oauth/usage", {
             "Authorization": f"Bearer {creds['accessToken']}", "anthropic-beta": "oauth-2025-04-20"})
         labels = {"five_hour": "5 h", "seven_day": "Week", "seven_day_opus": "Week Opus", "seven_day_sonnet": "Week Sonnet"}
-        windows = [{"label": labels.get(k, k), "pct": v["utilization"],
+        windows = [{"label": labels.get(k, k), "pct": v["utilization"], "tokens": tokens.get(labels.get(k, k)),
                     "resets": parse_iso(v["resets_at"]) if v.get("resets_at") else None}
                    for k, v in u.items() if isinstance(v, dict) and v.get("utilization") is not None]
-        return {"source": "api", "plan": creds.get("subscriptionType"), "windows": windows}
+        hist_append("claude", now, {w["label"]: w["pct"] for w in windows})
+        out.update(source="api", plan=creds.get("subscriptionType"), windows=windows)
     except (OSError, KeyError, ValueError, RuntimeError, urllib.error.URLError) as e:
-        week = now - 7 * 86400
-        files = [p for p in glob.glob(f"{HOME}/.claude/projects/*/*.jsonl") if os.path.getmtime(p) > week]
-        return {"source": "local", "reason": str(e)[:120], "windows": [
-            {"label": "5 h", "tokens": _jsonl_usage(files, now - 5 * 3600)},
-            {"label": "Week", "tokens": _jsonl_usage(files, week)},
-        ]}
+        windows = []
+        for label in ("5 h", "Week"):
+            est = _budget_pct(cfg, label, tokens[label])
+            windows.append({"label": label, "tokens": tokens[label], "pct": est, "estimate": est is not None})
+        out.update(source="local", reason=str(e)[:120], windows=windows)
+    series, last = pct_series("claude", now)
+    out.update(pct_history=series, last_api=last)
+    return out
 
 
 _gemini_project = None
@@ -115,10 +188,12 @@ _gemini_project = None
 
 def gemini(cfg):
     global _gemini_project
+    now = time.time()
     base = "https://cloudcode-pa.googleapis.com/v1internal"
+    out = {}
     try:
         tok = json.load(open(f"{HOME}/.gemini/jetski-standalone-oauth-token"))["token"]
-        if tok.get("expiry") and parse_iso(tok["expiry"]) < time.time():
+        if tok.get("expiry") and parse_iso(tok["expiry"]) < now:
             raise RuntimeError("token expired, open antigravity once to refresh it")
         hdr = {"Authorization": f"Bearer {tok['access_token']}"}
         if _gemini_project is None:
@@ -134,15 +209,24 @@ def gemini(cfg):
         if not models:
             raise RuntimeError("no quota info in response")
         models.sort(key=lambda m: -m["pct"])
-        return {"source": "api", "windows": models[:4]}
+        hist_append("gemini", now, {m["label"]: m["pct"] for m in models})
+        out.update(source="api", windows=models[:4])
     except (OSError, KeyError, ValueError, RuntimeError, urllib.error.URLError) as e:
-        now = time.time()
-        convs = glob.glob(f"{HOME}/.gemini/antigravity/conversations/*")
-        mt = [os.path.getmtime(p) for p in convs]
-        return {"source": "local", "reason": str(e)[:120], "windows": [
+        mt = [os.path.getmtime(p) for p in glob.glob(f"{HOME}/.gemini/antigravity/conversations/*")]
+        out.update(source="local", reason=str(e)[:120], windows=[
             {"label": "5 h", "sessions": sum(t > now - 5 * 3600 for t in mt)},
             {"label": "Week", "sessions": sum(t > now - 7 * 86400 for t in mt)},
-        ]}
+        ])
+    # conversations per day for two weeks: the only usage signal gemini leaves on disk
+    days = [0] * HISTORY_DAYS
+    midnight = time.mktime(time.localtime(now)[:3] + (0, 0, 0, 0, 0, -1))
+    for p in glob.glob(f"{HOME}/.gemini/antigravity/conversations/*"):
+        i = int((midnight + 86400 - os.path.getmtime(p)) // 86400)
+        if 0 <= i < HISTORY_DAYS:
+            days[HISTORY_DAYS - 1 - i] += 1
+    series, last = pct_series("gemini", now)
+    out.update(daily=days, pct_history=series, last_api=last)
+    return out
 
 
 # ── CI + code review ─────────────────────────────────────────────────────────

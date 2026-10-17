@@ -28,6 +28,7 @@
 
   settings = {
     inherit (cfg) lat lon place monitors desktop disabled;
+    budgets.claude = lib.filterAttrs (_: v: v != null) cfg.budgets.claude;
     compact = laptop;
     flakeDir = "${config.home.homeDirectory}/nixos-config";
     textfileDir = "/var/lib/node-exporter-textfile";
@@ -96,9 +97,21 @@ in {
       type = lib.types.listOf lib.types.str;
       default =
         if laptop
-        then ["agenda" "weather" "claude" "ci"]
+        then ["agenda" "weather" "claude" "gemini" "ci"]
         else ["agenda" "weather" "claude" "gemini" "ci" "media" "power"];
       description = "Sections on the wallpaper column, top to bottom. The dashboard always shows everything.";
+    };
+    budgets.claude = {
+      fiveHour = lib.mkOption {
+        type = lib.types.nullOr lib.types.ints.positive;
+        default = null;
+        description = "Tokens you treat as the 5 hour limit. Only used for an estimated percentage when the live limits are unavailable.";
+      };
+      week = lib.mkOption {
+        type = lib.types.nullOr lib.types.ints.positive;
+        default = null;
+        description = "Tokens you treat as the weekly limit, same use as fiveHour.";
+      };
     };
     disabled = lib.mkOption {
       type = lib.types.listOf lib.types.str;

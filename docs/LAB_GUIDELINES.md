@@ -163,3 +163,21 @@ Add a row here when you add an event. Payload keys are the contract between publ
 | `scene.started` | `scene` | `name`, `title` | not shown |
 | `scene.done` | `scene` | `name`, `title`, `announce`, `failed` | title when `announce`; "Scene failed, <title>" when `failed` > 0 |
 | `palette.toggle` | `keymap` | none | opens or closes the palette (handled in `main.rs`, no card) |
+
+## 11. Widget section grammar
+
+Every `deskwidgets` section uses the same few shapes, so new sections look like they belong. Build them from the helpers in `home/scripts/guis/widgets_gui.py`, not from raw labels.
+
+- **Header:** small tracked uppercase label left, freshness right (`Section`).
+- **`kv(label, value, unit)`:** the one row shape. Dim label on the left in a fixed column, value on the right. `stat()` draws the number in the display face (Departure Mono, class `dw-num`) with its unit beside it in the body face. Words and sentences stay in the body face (`num=False`), never pixel type.
+- **`bar(pct)`:** the thin progress bar, accent normally, `dw-mid` over 70 percent, `dw-hot` over 90.
+- **`Spark(values, "bars" | "line")`:** usage over time. Bars highlight the newest `hot_tail` buckets in the accent colour; the line chart is percent over a time span with a soft fill. Add a `dw-cap` caption under every graph saying what the axis is.
+- **Usage sections** (`_usage`): a row per window (label, bar, percent, raw count), then graphs. The raw column keeps its width when empty so bars line up between sections.
+- **Compact versus dashboard:** the wallpaper column is `compact` (fewer rows, one short hint line, small graphs); the dashboard shows resets, the full reason and the percent-over-time line chart.
+- **Preview before you ship a UI change.** Render the column to a PNG without a screenshot tool by building the sections with fake data in a throwaway script, mapping a plain window, and snapshotting the widget with `Gtk.WidgetPaintable` and `render_texture` (the widget must be mapped, so the window shows for a second). Then look at the image.
+
+### Usage data
+
+- `claude` and `gemini` providers keep a history of live limit readings in `~/.cache/deskwidgets/history/<name>.jsonl` (trimmed to 14 days), which feeds the percent-over-time line and the "Last reading" line when the token has expired.
+- Claude tokens per hour come from one pass over `~/.claude/projects/*/*.jsonl` (also the 5 h and week sums), so the graph is backfilled immediately. Gemini only leaves conversation files, so it graphs conversations per day.
+- **Percentages need a live token.** Both providers refuse to refresh tokens themselves (a refresh would log out Claude Code or Antigravity), so open Claude Code or Antigravity once to refresh. Until then you get raw usage plus the last known reading. `lab.widgets.budgets.claude.fiveHour` and `.week` (tokens) turn local usage into an estimated percentage, shown with a `~`.

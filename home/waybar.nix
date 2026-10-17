@@ -72,11 +72,30 @@ in {
         margin-left = edge;
         margin-right = edge;
         modules-left = ["hyprland/workspaces" "hyprland/submap"];
-        modules-center = ["clock" "custom/pomodoro" "clock#date"];
-        modules-right =
-          if laptop
-          then ["mpris" "custom/fleet" "custom/sysinfo" "battery" "backlight" "network" "bluetooth" "pulseaudio" "custom/caffeine" "custom/controlcenter" "custom/thinkdot" "custom/notification" "custom/power" "tray"]
-          else ["mpris" "custom/fleet" "custom/sysinfo" "network" "pulseaudio" "custom/caffeine" "custom/controlcenter" "custom/notification" "custom/power" "tray"];
+        modules-center = ["group/time"];
+        modules-right = ["mpris" "group/status" "group/actions" "tray"];
+
+        # one capsule per cluster instead of one chip per item
+        "group/time" = {
+          orientation = "horizontal";
+          modules = ["clock" "custom/pomodoro" "clock#date"];
+        };
+
+        "group/status" = {
+          orientation = "horizontal";
+          modules =
+            if laptop
+            then ["custom/fleet" "custom/sysinfo" "battery" "backlight" "network" "bluetooth" "pulseaudio"]
+            else ["custom/fleet" "custom/sysinfo" "network" "pulseaudio"];
+        };
+
+        "group/actions" = {
+          orientation = "horizontal";
+          modules =
+            if laptop
+            then ["custom/caffeine" "custom/controlcenter" "custom/thinkdot" "custom/notification" "custom/power"]
+            else ["custom/caffeine" "custom/controlcenter" "custom/notification" "custom/power"];
+        };
 
         "hyprland/workspaces" = {
           disable-scroll = true;
@@ -314,6 +333,17 @@ in {
         color: @on_background;
       }
 
+      /* depth in three layers: bar, capsule, active item */
+      window#waybar { box-shadow: inset 0 1px 0 alpha(@on_background, 0.07); }
+      #workspaces, #time, #status, #actions {
+        background-color: alpha(@on_background, 0.065);
+        border-radius: ${toString radius.lg}px;
+        margin: 4px 3px;
+        padding: 0 3px;
+        box-shadow: inset 0 1px 0 alpha(@on_background, 0.05);
+      }
+      #workspaces { padding: 0 2px; }
+
       .modules-left { margin-left: 6px; }
       .modules-center { margin: 0 4px; }
       .modules-right { margin-right: 6px; }
@@ -323,8 +353,8 @@ in {
       #custom-notification, #custom-thinkdot, #custom-power, #custom-pomodoro, #custom-fleet,
       #custom-homelab, #custom-caffeine, #backlight, #bluetooth, #custom-controlcenter, #battery,
       #custom-update, #idle_inhibitor {
-        padding: 0 10px;
-        margin: 4px 1px;
+        padding: 0 9px;
+        margin: 3px 1px;
         background-color: transparent;
         border-radius: ${toString radius.md}px;
         color: @on_surface;
@@ -332,7 +362,7 @@ in {
       }
 
       #workspaces button { color: @on_surface_variant; }
-      #workspaces button.active { color: @primary; background-color: alpha(@primary, 0.16); }
+      #workspaces button.active { color: @primary; background-color: alpha(@primary, 0.24); }
 
       #workspaces button:hover, #clock:hover, #pulseaudio:hover, #network:hover, #custom-fleet:hover,
       #custom-sysinfo:hover, #mpris:hover, #battery:hover, #backlight:hover, #bluetooth:hover,
@@ -344,6 +374,8 @@ in {
       #clock {
         font-family: "${display}", "${mono}", monospace;
         font-weight: 400;
+        font-size: 14px;
+        color: @on_background;
       }
       #clock.date {
         font-family: "${ui}", "${mono}", sans-serif;

@@ -43,7 +43,8 @@ window.dw-window { background: none; font-family: "%UI%"; }
 .dw-big { font-family: "%DISPLAY%"; font-size: 24pt; font-weight: 400; font-feature-settings: "tnum"; }
 .dw-head { font-size: 9pt; font-weight: 700; letter-spacing: 1px; opacity: 0.6; }
 .dw-dim { opacity: 0.65; }
-.dw-num { font-feature-settings: "tnum"; }
+.dw-num { font-family: "%DISPLAY%"; font-feature-settings: "tnum"; }
+.dw-cap { font-size: 8.5pt; opacity: 0.5; }
 .dw-mono { font-family: "%MONO%"; font-size: 9pt; }
 .dw-ok { color: @success_color; }
 .dw-warn { color: @warning_color; }
@@ -133,6 +134,82 @@ def bar(pct, label=None, extra=""):
     return hbox(name, pb, lbl(f"{pct:.0f}%{extra}", "dw-num", xalign=1.0))
 
 
+LABEL_W = 84
+
+
+def stat(value, unit="", cls=None, num=True):
+    """A number in the display face with its unit beside it in the body face. Words stay in the body face."""
+    b = hbox(spacing=1 if unit == "%" else 4)
+    b.set_halign(Gtk.Align.END)
+    b.set_baseline_position(Gtk.BaselinePosition.CENTER)
+    v = lbl(value, *(["dw-num"] if num else []), *([cls] if cls else []))
+    v.set_valign(Gtk.Align.BASELINE_FILL)
+    b.append(v)
+    if unit:
+        u = lbl(unit, "dw-dim")
+        u.set_valign(Gtk.Align.BASELINE_FILL)
+        b.append(u)
+    return b
+
+
+def kv(label, value, unit="", cls=None, num=True):
+    """The one row shape every section uses: dim label left, value right."""
+    name = lbl(label, "dw-dim")
+    name.set_size_request(LABEL_W, -1)
+    return hbox(name, Gtk.Box(hexpand=True), stat(value, unit, cls, num))
+
+
+class Spark(Gtk.DrawingArea):
+    """Usage over time. `bars`: one bar per bucket, the last `hot_tail` in the accent colour.
+    `line`: [(ts, percent)] over [t0, t1] with a soft fill."""
+
+    def __init__(self, values, kind="bars", height=40, hot_tail=0, span=None, max_bar=None):
+        super().__init__(content_height=height, hexpand=True)
+        self.values, self.kind, self.hot_tail, self.span, self.max_bar = values, kind, hot_tail, span, max_bar
+        self.set_draw_func(self.draw)
+
+    def accent(self):
+        ok, rgba = self.get_style_context().lookup_color("accent_color")
+        if not ok:
+            rgba = self.get_color()
+        return rgba
+
+    def draw(self, area, cr, w, h):
+        fg, hot = area.get_color(), self.accent()
+        if self.kind == "line":
+            self.draw_line(cr, w, h, hot)
+            return
+        vals = self.values
+        top = max(vals) or 1
+        step = w / len(vals)
+        for i, v in enumerate(vals):
+            bh = max(1.0, (h - 2) * v / top)
+            c, alpha = (hot, 0.95) if i >= len(vals) - self.hot_tail else (fg, 0.35 if v else 0.15)
+            cr.set_source_rgba(c.red, c.green, c.blue, alpha)
+            bw = max(1.0, step - (1.0 if step > 3 else 0.0))
+            if self.max_bar and bw > self.max_bar:
+                bw = self.max_bar
+            # bars sit at the right of their slot so the newest one ends at the edge
+            cr.rectangle(i * step + (step - bw) - (0.0 if step <= 3 else 1.0), h - bh, bw, bh)
+            cr.fill()
+
+    def draw_line(self, cr, w, h, hot):
+        t0, t1 = self.span
+        pts = [((t - t0) / (t1 - t0) * w, h - 2 - (h - 4) * min(100, max(0, v)) / 100) for t, v in self.values]
+        cr.set_source_rgba(hot.red, hot.green, hot.blue, 0.14)
+        cr.move_to(pts[0][0], h)
+        for x, y in pts:
+            cr.line_to(x, y)
+        cr.line_to(pts[-1][0], h)
+        cr.close_path()
+        cr.fill()
+        cr.set_source_rgba(hot.red, hot.green, hot.blue, 0.95)
+        cr.set_line_width(1.5)
+        for i, (x, y) in enumerate(pts):
+            cr.line_to(x, y) if i else cr.move_to(x, y)
+        cr.stroke()
+
+
 def ago(ts):
     if not ts:
         return "never"
@@ -149,9 +226,9 @@ def ago(ts):
 def until(ts):
     s = max(0, ts - time.time())
     if s < 3600:
-        return f"{s / 60:.0f} min"
+        return f"{int(s // 60)} min"
     if s < 172800:
-        return f"{s / 3600:.0f} h {s % 3600 / 60:.0f} min"
+        return f"{int(s // 3600)} h {int(s % 3600 // 60)} min"
     return f"{s / 86400:.1f} d"
 
 
@@ -307,22 +384,23 @@ def aqi_text(v):
 
 
 def r_weather(box, d, compact):
-    c = d["current"]
+    c, t = d["current"], d["today"]
     icon_name, text = wmo(c["weather_code"])
     icon = Gtk.Image.new_from_icon_name(icon_name)
-    icon.set_pixel_size(40)
-    t = d["today"]
-    box.append(hbox(icon, vbox(
-        lbl(f"{c['temperature_2m']:.0f}°", "dw-big"),
-        lbl(f"{text}, feels {c['apparent_temperature']:.0f}°", "dw-dim")), spacing=12))
-    box.append(lbl(f"{t['temperature_2m_min']:.0f}° / {t['temperature_2m_max']:.0f}°   wind {c['wind_speed_10m']:.0f} km/h   "
-                   f"humidity {c['relative_humidity_2m']}%", "dw-dim", "dw-num"))
+    icon.set_pixel_size(36)
+    side = vbox(lbl(text, xalign=1.0), lbl(f"feels {c['apparent_temperature']:.0f}°", "dw-dim", xalign=1.0), spacing=0)
+    side.set_hexpand(True)
+    side.set_valign(Gtk.Align.CENTER)
+    box.append(hbox(icon, lbl(f"{c['temperature_2m']:.0f}°", "dw-big"), side, spacing=12))
+    box.append(kv("Range", f"{t['temperature_2m_min']:.0f}° / {t['temperature_2m_max']:.0f}°"))
+    box.append(kv("Wind", f"{c['wind_speed_10m']:.0f}", "km/h"))
+    box.append(kv("Humidity", f"{c['relative_humidity_2m']}", "%"))
     air = d.get("air") or {}
     if air:
-        text, cls = aqi_text(air.get("european_aqi"))
-        row = hbox(lbl(f"Air {text}", cls or "dw-dim"),
-                   lbl(f"PM2.5 {air.get('pm2_5', 0):.0f}  PM10 {air.get('pm10', 0):.0f} µg/m³", "dw-dim", "dw-num"))
-        box.append(row)
+        label, cls = aqi_text(air.get("european_aqi"))
+        box.append(kv("Air", label, "", cls or None, num=False))
+        if not compact:
+            box.append(kv("PM2.5 / PM10", f"{air.get('pm2_5', 0):.0f} / {air.get('pm10', 0):.0f}", "µg/m³"))
     if compact:
         return
     strip = hbox(spacing=18)
@@ -344,32 +422,63 @@ def r_agenda(box, d, compact):
         when = (day or "Today ") + ("all day" if e["allDay"] else time.strftime("%H:%M", st))
         if not e["allDay"] and e["start"] <= time.time() < e["end"]:
             when = "Now"
-        w = lbl(when, "dw-dim", "dw-num")
-        w.set_size_request(118, -1)
+        w = lbl(when, "dw-dim")
+        w.set_size_request(LABEL_W + 30, -1)
         box.append(hbox(w, lbl(e["title"])))
 
 
-def _limits(box, d, compact, unit):
-    if d["source"] == "api":
-        for w in d["windows"]:
-            extra = f"  {until(w['resets'])}" if w.get("resets") and not compact else ""
-            box.append(bar(w["pct"], w["label"], extra))
-        if d.get("plan") and not compact:
-            box.append(lbl(f"Plan: {d['plan']}", "dw-dim"))
-    else:
-        for w in d["windows"]:
-            n = w.get(unit, 0)
-            box.append(hbox(lbl(w["label"], "dw-dim"), lbl(f"{human(n)} {unit}", "dw-num", xalign=1.0)))
-        if not compact:
-            box.append(lbl(f"Local estimate: {d.get('reason', '')}", "dw-dim", wrap=True))
+def _usage(box, d, compact, unit, bars, bars_caption, hot_tail, max_bar=None):
+    """Claude and Gemini share one shape: a row per window (bar, percent, raw count), then graphs over time."""
+    for w in d["windows"]:
+        pct, n = w.get("pct"), w.get(unit)
+        row = hbox(spacing=10)
+        name = lbl(w["label"], "dw-dim")
+        name.set_width_chars(13)
+        name.set_max_width_chars(13)
+        row.append(name)
+        if pct is not None:
+            row.append(bar(pct))
+            tag = "~" if w.get("estimate") else ""
+            pc = stat(f"{tag}{pct:.0f}", "%")
+            pc.set_size_request(54, -1)
+            row.append(pc)
+        else:
+            row.append(Gtk.Box(hexpand=True))
+        # the raw column keeps its width even when empty, so bars line up between sections
+        raw = stat(human(n), unit) if n is not None else Gtk.Box()
+        raw.set_size_request(96, -1)
+        row.append(raw)
+        box.append(row)
+        if w.get("resets") and not compact:
+            box.append(lbl(f"resets in {until(w['resets'])}", "dw-cap"))
+
+    if d["source"] != "api":
+        last = d.get("last_api") or {}
+        if last:
+            newest = max(ts for ts, _ in last.values())
+            line = "   ".join(f"{k} {v:.0f}%" for k, (_, v) in last.items())
+            box.append(lbl(f"Last reading {ago(newest)}: {line}", "dw-cap"))
+        # the column stays short, the full reason lives in the dashboard
+        box.append(lbl(d.get("reason", "") if not compact else "Live limits offline, showing local usage", "dw-cap", wrap=not compact))
+
+    if bars and max(bars) > 0:
+        box.append(Spark(bars, "bars", 30 if compact else 52, hot_tail, max_bar=max_bar))
+        box.append(lbl(f"{bars_caption}, peak {human(max(bars))}", "dw-cap"))
+    if not compact:
+        now = time.time()
+        for label, pts in d.get("pct_history", {}).items():
+            if len(pts) >= 3 and label in ("Week", d["windows"][0]["label"]):
+                box.append(Spark([tuple(p) for p in pts], "line", 44, span=(now - 7 * 86400, now)))
+                box.append(lbl(f"{label} limit used, last 7 days", "dw-cap"))
+                break
 
 
 def r_claude(box, d, compact):
-    _limits(box, d, compact, "tokens")
+    _usage(box, d, compact, "tokens", d.get("hourly"), "Tokens per hour, last 7 days", 5)
 
 
 def r_gemini(box, d, compact):
-    _limits(box, d, compact, "sessions")
+    _usage(box, d, compact, "sessions", d.get("daily"), "Conversations per day, last 14 days", 1, max_bar=10)
 
 
 CI_ICON = {"success": ("emblem-ok-symbolic", "dw-ok"), "failure": ("dialog-error-symbolic", "dw-bad"),
