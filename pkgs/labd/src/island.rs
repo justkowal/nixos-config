@@ -33,7 +33,7 @@ pub struct Card {
     chips: Vec<(String, bool)>,
 }
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 enum Priority {
     Low,
     Normal,
@@ -71,6 +71,15 @@ fn card_for(ev: &Value) -> Option<Card> {
         }
         "brightness.changed" => (Glyph::Brightness, "Brightness".to_owned(), value, 1500),
         "focus.on" => (Glyph::FocusOn, "Focus on".to_owned(), None, 2500),
+        "focus.failed" => {
+            let reason = p["reason"].as_str().unwrap_or("the hub did not answer");
+            (
+                Glyph::FocusOff,
+                format!("Focus unavailable, {reason}"),
+                None,
+                5000,
+            )
+        }
         "focus.off" => (Glyph::FocusOff, "Focus off".to_owned(), None, 2500),
         "room.saved" => (Glyph::Room, text_of("Room saved", "name"), None, 2500),
         "room.restored" => (Glyph::Room, text_of("Room restored", "name"), None, 2500),
@@ -132,10 +141,18 @@ fn card_for(ev: &Value) -> Option<Card> {
             Glyph::Battery,
             format!("Battery {:.0} %", p["value"].as_f64().unwrap_or(0.0)),
             value,
-            if p["critical"].as_bool().unwrap_or(false) { 8000 } else { 5000 },
+            if p["critical"].as_bool().unwrap_or(false) {
+                8000
+            } else {
+                5000
+            },
         ),
         "battery.offline_charge" => {
-            let place = if p["off"].as_bool().unwrap_or(false) { "off" } else { "asleep" };
+            let place = if p["off"].as_bool().unwrap_or(false) {
+                "off"
+            } else {
+                "asleep"
+            };
             (
                 Glyph::Battery,
                 format!(
@@ -149,7 +166,9 @@ fn card_for(ev: &Value) -> Option<Card> {
         }
         "battery.trip" => {
             let text = match p["state"].as_str() {
-                Some("started") if p["scheduled"].as_bool().unwrap_or(false) => "Charging to full for your schedule",
+                Some("started") if p["scheduled"].as_bool().unwrap_or(false) => {
+                    "Charging to full for your schedule"
+                }
                 Some("started") => "Full charge on",
                 _ => "Charge limit restored",
             };
@@ -185,10 +204,7 @@ fn roster_from(ev: &Value) -> Vec<(String, bool)> {
                     if let Some(pct) = d["battery"]["pct"].as_f64() {
                         title.push_str(&format!(" {pct:.0} %"));
                     }
-                    Some((
-                        title,
-                        d["online"].as_bool().unwrap_or(false),
-                    ))
+                    Some((title, d["online"].as_bool().unwrap_or(false)))
                 })
                 .collect()
         })
@@ -397,5 +413,19 @@ impl Island {
         let (win, pill, gap) = (self.win.clone(), self.pill.clone(), self.gap);
         self.motion
             .animate(&self.pill, to, move |p| apply(&win, &pill, gap, p), on_done);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn focus_failure_names_the_reason() {
+        let ev = json!({"name": "focus.failed", "payload": {"reason": "the hub is unreachable"}, "priority": "high", "ttl": 30});
+        let card = card_for(&ev).unwrap();
+        assert_eq!(card.text, "Focus unavailable, the hub is unreachable");
+        assert_eq!(card.priority, Priority::High);
     }
 }

@@ -39,9 +39,28 @@ announce() {
     notify-send -a Focus -i timer-symbolic "$3" "$4"
 }
 
+# say why focus did not start, in the island, instead of dying silently under errexit
+fail() {
+  lab publish focus.failed --source focus --strict --priority high --payload "$(jq -nc --arg r "$1" '{reason: $r}')" 2>/dev/null ||
+    notify-send -a Focus -u critical -i dialog-warning-symbolic "Focus unavailable" "$1"
+  exit 1
+}
+
+# hook PATH: POST to the hub and name the cause when it does not answer
+hook() {
+  local code
+  code=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' -X POST "$HOOKS/$1" 2>/dev/null) || code=000
+  case "$code" in
+    2??) return 0 ;;
+    404) fail "the hub has no focus hooks yet, deploy nixos-rpi4" ;;
+    000) fail "the hub is unreachable" ;;
+    *) fail "the hub answered $code" ;;
+  esac
+}
+
 focus_on() {
   local minutes="${1:-25}"
-  curl -fsS -m 5 -X POST "$HOOKS/focus-on?minutes=$minutes" >/dev/null
+  hook "focus-on?minutes=$minutes"
   rm -f "$CACHE"
   touch "$MARKER"
   if have pomodoro; then
