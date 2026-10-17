@@ -90,6 +90,69 @@ fn web_item(term: &str, template: &str) -> Item {
     }
 }
 
+/// Room names become file names and travel through Taildrop, so keep them to [A-Za-z0-9._-].
+fn room_name(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        let c = if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+            c
+        } else {
+            '-'
+        };
+        if c == '-' && out.ends_with('-') {
+            continue;
+        }
+        out.push(c);
+    }
+    out.trim_matches(|c| matches!(c, '-' | '.' | '_'))
+        .chars()
+        .take(64)
+        .collect()
+}
+
+/// Saving a workspace without the terminal. Plain text offers one row below the web row; typing
+/// `save name` puts the rows first and adds "all workspaces". Returns the rows and whether the prefix was used.
+fn save_items(text: &str, existing: &[&str]) -> (Vec<Item>, bool) {
+    let t = text.trim();
+    // the bare word is the start of the prefix, not a room called "save"
+    if t.eq_ignore_ascii_case("save") {
+        return (Vec::new(), true);
+    }
+    let (source, prefixed) = match t.split_once(char::is_whitespace) {
+        Some((first, rest)) if first.eq_ignore_ascii_case("save") => (rest.trim(), true),
+        _ => (t, false),
+    };
+    let name = room_name(source);
+    if name.is_empty() {
+        return (Vec::new(), prefixed);
+    }
+    let verb = if existing.contains(&name.as_str()) {
+        "Overwrite room"
+    } else {
+        "Save this workspace as room"
+    };
+    let row = |title: String, exec: String| Item {
+        title,
+        group: "Save".into(),
+        exec,
+        confirm: false,
+        glyph: Glyph::Room,
+        icon: None,
+        rank: 3,
+    };
+    let mut rows = vec![row(
+        format!("{verb} \"{name}\""),
+        format!("room save {}", shell_quote(&name)),
+    )];
+    if prefixed {
+        rows.push(row(
+            format!("Save all workspaces as room \"{name}\""),
+            format!("room save {} --all", shell_quote(&name)),
+        ));
+    }
+    (rows, prefixed)
+}
+
 fn static_items(raw: &Value) -> Vec<Item> {
     raw["entries"]
         .as_array()
@@ -187,6 +250,38 @@ fn fuzzy(query: &[char], text: &str) -> Option<i32> {
         prev = Some(i);
     }
     Some(score - (t.len() as i32) / 4)
+}
+
+/// Indices of the rows to show, best first. Empty query lists actions and rooms only; a typed query
+/// ranks by fuzzy score with the save and web rows pinned (below matches, or on top for `save name`).
+fn rank(items: &[Item], query: &[char], prefixed_save: bool) -> Vec<usize> {
+    let mut hits: Vec<(i32, usize)> = items
+        .iter()
+        .enumerate()
+        .filter(|(_, it)| query.is_empty() && it.rank < 2 || !query.is_empty())
+        .filter_map(|(i, it)| {
+            let base = if it.group == "Web" {
+                Some(-1000)
+            } else if it.group == "Save" {
+                let all = i32::from(it.exec.ends_with("--all"));
+                Some(if prefixed_save {
+                    1000 - all
+                } else {
+                    -1100 - all
+                })
+            } else if query.is_empty() {
+                Some(0)
+            } else {
+                fuzzy(query, &it.title)
+            }?;
+            Some((base - i32::from(it.rank) * 4, i))
+        })
+        .collect();
+    if !query.is_empty() {
+        hits.sort_by_key(|h| std::cmp::Reverse(h.0));
+    }
+    hits.truncate(MAX_ROWS);
+    hits.into_iter().map(|(_, i)| i).collect()
 }
 
 pub struct Palette {
@@ -377,6 +472,7 @@ impl Palette {
     }
 
     fn refresh(&self) {
+        let prefixed_save = Cell::new(false);
         let query: Vec<char> = self
             .entry
             .text()
@@ -384,36 +480,27 @@ impl Palette {
             .flat_map(char::to_lowercase)
             .collect();
         {
-            // the web row follows the typed text and always ranks last, so it only wins when nothing else matches
+            // the save and web rows follow the typed text and rank below real matches (save first only
+            // with the `save ` prefix), so plain Enter on a miss searches the web
             let mut items = self.items.borrow_mut();
-            items.retain(|it| it.group != "Web");
+            items.retain(|it| !matches!(it.group.as_str(), "Web" | "Save"));
             let text = self.entry.text();
             let term = text.trim();
             if !term.is_empty() {
+                let rooms: Vec<String> = items
+                    .iter()
+                    .filter(|it| it.group == "Room")
+                    .map(|it| it.title.clone())
+                    .collect();
+                let existing: Vec<&str> = rooms.iter().map(String::as_str).collect();
+                let (rows, prefixed) = save_items(term, &existing);
+                prefixed_save.set(prefixed);
+                items.extend(rows);
                 items.push(web_item(term, &self.search_url.borrow()));
             }
         }
         let items = self.items.borrow();
-        let mut hits: Vec<(i32, usize)> = items
-            .iter()
-            .enumerate()
-            .filter(|(_, it)| query.is_empty() && it.rank < 2 || !query.is_empty())
-            .filter_map(|(i, it)| {
-                let base = if it.group == "Web" {
-                    Some(-1000)
-                } else if query.is_empty() {
-                    Some(0)
-                } else {
-                    fuzzy(&query, &it.title)
-                }?;
-                Some((base - i32::from(it.rank) * 4, i))
-            })
-            .collect();
-        if !query.is_empty() {
-            hits.sort_by_key(|h| std::cmp::Reverse(h.0));
-        }
-        hits.truncate(MAX_ROWS);
-        let shown: Vec<usize> = hits.into_iter().map(|(_, i)| i).collect();
+        let shown = rank(&items, &query, prefixed_save.get());
 
         while let Some(row) = self.list.first_child() {
             self.list.remove(&row);
@@ -584,6 +671,93 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!((items[0].rank, items[1].rank), (0, 2));
         assert_eq!(items[0].exec, "room take x");
+    }
+
+    #[test]
+    fn room_names_stay_filename_safe() {
+        assert_eq!(room_name("  my project! "), "my-project");
+        assert_eq!(room_name("../etc/passwd"), "etc-passwd");
+        assert_eq!(room_name("a   b"), "a-b");
+        assert_eq!(room_name("Łódź"), "d");
+        assert_eq!(room_name("---"), "");
+        assert_eq!(room_name(&"x".repeat(100)).len(), 64);
+    }
+
+    #[test]
+    fn save_rows_follow_the_prefix_and_existing_rooms() {
+        let (rows, prefixed) = save_items("nixos config", &[]);
+        assert!(!prefixed);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].exec, "room save 'nixos-config'");
+        assert!(rows[0].title.starts_with("Save this workspace"));
+
+        let (rows, prefixed) = save_items("Save proj", &["proj"]);
+        assert!(prefixed);
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].title.starts_with("Overwrite room"));
+        assert_eq!(rows[1].exec, "room save 'proj' --all");
+
+        assert!(save_items("save ", &[]).0.is_empty());
+        assert!(save_items("!!!", &[]).0.is_empty());
+    }
+
+    fn item(title: &str, group: &str, rank: u8, exec: &str) -> Item {
+        Item {
+            title: title.into(),
+            group: group.into(),
+            exec: exec.into(),
+            confirm: false,
+            glyph: Glyph::Action,
+            icon: None,
+            rank,
+        }
+    }
+
+    #[test]
+    fn typed_miss_defaults_to_the_web_with_save_below_it() {
+        let items = vec![
+            item("Lock screen", "System", 0, "lock"),
+            item("nixos-config", "Room", 1, "room open x"),
+            item("Search the web for \"zzz\"", "Web", 3, "xdg-open u"),
+            item(
+                "Save this workspace as room \"zzz\"",
+                "Save",
+                3,
+                "room save 'zzz'",
+            ),
+        ];
+        let order = rank(&items, &q("zzz"), false);
+        assert_eq!(order, vec![2, 3]);
+    }
+
+    #[test]
+    fn save_prefix_puts_save_rows_first() {
+        let items = vec![
+            item("Search the web for \"save x\"", "Web", 3, "xdg-open u"),
+            item(
+                "Save this workspace as room \"x\"",
+                "Save",
+                3,
+                "room save 'x'",
+            ),
+            item(
+                "Save all workspaces as room \"x\"",
+                "Save",
+                3,
+                "room save 'x' --all",
+            ),
+        ];
+        assert_eq!(rank(&items, &q("save x"), true), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn empty_query_lists_actions_and_rooms_only() {
+        let items = vec![
+            item("Lock screen", "System", 0, "lock"),
+            item("Firefox", "App", 2, "gio launch f"),
+            item("proj", "Room", 1, "room open proj"),
+        ];
+        assert_eq!(rank(&items, &[], false), vec![0, 2]);
     }
 
     #[test]
