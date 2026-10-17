@@ -2,6 +2,7 @@
 //! `labd --no-ui` runs the bus alone and logs events, for tests and headless hosts.
 
 use labd::bus;
+mod glyphs;
 mod island;
 mod tokens;
 

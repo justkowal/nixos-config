@@ -14,6 +14,7 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use libadwaita as adw;
 use serde_json::Value;
 
+use crate::glyphs::{self, Glyph};
 use crate::tokens::Tokens;
 
 const QUEUE_MAX: usize = 4;
@@ -22,7 +23,7 @@ const SLIDE_PX: f64 = 14.0;
 #[derive(Clone, PartialEq)]
 pub struct Card {
     key: String,
-    icon: &'static str,
+    glyph: Glyph,
     text: String,
     level: Option<f64>,
     hold_ms: u64,
@@ -37,7 +38,6 @@ enum Priority {
 }
 
 /// Event to card. Unknown events return None: the island only shows what it was designed to show.
-/// Icons are Adwaita symbolic names until the Lucide set from the tokens ships.
 fn card_for(ev: &Value) -> Option<Card> {
     let name = ev["name"].as_str()?;
     let p = &ev["payload"];
@@ -45,76 +45,34 @@ fn card_for(ev: &Value) -> Option<Card> {
         Some(v) => format!("{base}, {v}"),
         None => base.to_owned(),
     };
-    let (icon, text, level, hold_ms) = match name {
+    let muted = p["muted"].as_bool().unwrap_or(false);
+    let value = p["value"].as_f64();
+    let (glyph, text, level, hold_ms) = match name {
         "volume.changed" => {
-            let muted = p["muted"].as_bool().unwrap_or(false);
-            let icon = if muted {
-                "audio-volume-muted-symbolic"
-            } else {
-                "audio-volume-high-symbolic"
+            let glyph = match (muted, value.unwrap_or(0.0)) {
+                (true, _) => Glyph::Muted,
+                (_, v) if v < 1.0 => Glyph::Volume(0),
+                (_, v) if v < 50.0 => Glyph::Volume(1),
+                _ => Glyph::Volume(2),
             };
-            (
-                icon,
-                if muted {
-                    "Muted".to_owned()
-                } else {
-                    "Volume".to_owned()
-                },
-                p["value"].as_f64(),
-                1500,
-            )
+            let text = if muted { "Muted" } else { "Volume" };
+            (glyph, text.to_owned(), value, 1500)
         }
         "mic.changed" => {
-            let muted = p["muted"].as_bool().unwrap_or(false);
-            let icon = if muted {
-                "microphone-sensitivity-muted-symbolic"
+            let (glyph, text) = if muted {
+                (Glyph::MicOff, "Microphone muted")
             } else {
-                "microphone-sensitivity-high-symbolic"
+                (Glyph::Mic, "Microphone active")
             };
-            (
-                icon,
-                if muted {
-                    "Microphone muted"
-                } else {
-                    "Microphone active"
-                }
-                .to_owned(),
-                None,
-                1800,
-            )
+            (glyph, text.to_owned(), None, 1800)
         }
-        "brightness.changed" => (
-            "display-brightness-symbolic",
-            "Brightness".to_owned(),
-            p["value"].as_f64(),
-            1500,
-        ),
-        "focus.on" => (
-            "weather-clear-night-symbolic",
-            "Focus on".to_owned(),
-            None,
-            2500,
-        ),
-        "focus.off" => (
-            "weather-clear-night-symbolic",
-            "Focus off".to_owned(),
-            None,
-            2500,
-        ),
-        "room.saved" => (
-            "view-grid-symbolic",
-            text_of("Room saved", "name"),
-            None,
-            2500,
-        ),
-        "room.restored" => (
-            "view-grid-symbolic",
-            text_of("Room restored", "name"),
-            None,
-            2500,
-        ),
+        "brightness.changed" => (Glyph::Brightness, "Brightness".to_owned(), value, 1500),
+        "focus.on" => (Glyph::FocusOn, "Focus on".to_owned(), None, 2500),
+        "focus.off" => (Glyph::FocusOff, "Focus off".to_owned(), None, 2500),
+        "room.saved" => (Glyph::Room, text_of("Room saved", "name"), None, 2500),
+        "room.restored" => (Glyph::Room, text_of("Room restored", "name"), None, 2500),
         "handoff.arrived" => (
-            "emblem-synchronizing-symbolic",
+            Glyph::Handoff,
             text_of("Handoff complete", "peer"),
             None,
             3500,
@@ -129,7 +87,7 @@ fn card_for(ev: &Value) -> Option<Card> {
     let ttl_ms = (ev["ttl"].as_f64().unwrap_or(30.0) * 1000.0) as u64;
     Some(Card {
         key: name.to_owned(),
-        icon,
+        glyph,
         text,
         level: level.map(|v| (v / 100.0).clamp(0.0, 1.0)),
         hold_ms: hold_ms.min(ttl_ms),
@@ -141,7 +99,8 @@ pub struct Island {
     tokens: Tokens,
     win: gtk::Window,
     pill: gtk::Box,
-    icon: gtk::Image,
+    icon: gtk::DrawingArea,
+    glyph: Rc<Cell<Glyph>>,
     label: gtk::Label,
     bar: gtk::ProgressBar,
     current: RefCell<Option<Card>>,
@@ -166,7 +125,24 @@ impl Island {
         win.set_keyboard_mode(KeyboardMode::None);
         win.set_anchor(Edge::Top, true);
 
-        let icon = gtk::Image::builder().pixel_size(20).build();
+        let glyph = Rc::new(Cell::new(Glyph::Room));
+        let icon = gtk::DrawingArea::builder()
+            .content_width(22)
+            .content_height(22)
+            .valign(gtk::Align::Center)
+            .build();
+        let drawn = glyph.clone();
+        icon.set_draw_func(move |area, cr, w, h| {
+            let c = area.color();
+            cr.set_source_rgba(
+                f64::from(c.red()),
+                f64::from(c.green()),
+                f64::from(c.blue()),
+                f64::from(c.alpha()),
+            );
+            cr.scale(f64::from(w) / glyphs::SIZE, f64::from(h) / glyphs::SIZE);
+            glyphs::draw(cr, drawn.get());
+        });
         let label = gtk::Label::new(None);
         let bar = gtk::ProgressBar::builder()
             .valign(gtk::Align::Center)
@@ -194,6 +170,7 @@ impl Island {
             win,
             pill,
             icon,
+            glyph,
             label,
             bar,
             current: RefCell::new(None),
@@ -232,7 +209,8 @@ impl Island {
     }
 
     fn show(self: &Rc<Self>, card: Card) {
-        self.icon.set_icon_name(Some(card.icon));
+        self.glyph.set(card.glyph);
+        self.icon.queue_draw();
         self.label.set_text(&card.text);
         self.bar.set_visible(card.level.is_some());
         if let Some(level) = card.level {
