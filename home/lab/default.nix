@@ -11,6 +11,7 @@
     ./led.nix
     ./roster.nix
     ./phone.nix
+    ./bar.nix
     ./shell.nix
   ];
 }

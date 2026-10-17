@@ -1,6 +1,7 @@
 //! labd: owns the Kowal Lab state bus, draws the island and the command palette.
 //! `labd --no-ui` runs the bus alone and logs events, for tests and headless hosts.
 
+mod bar;
 mod engine;
 mod glyphs;
 mod help;
@@ -8,6 +9,7 @@ mod island;
 mod motion;
 mod palette;
 mod tokens;
+mod tray;
 
 use std::cell::RefCell;
 
@@ -53,12 +55,16 @@ fn main() -> glib::ExitCode {
 
         let island = island::Island::new(app, &tokens, motion::Motion::new(&tokens));
         let help = help::Help::new(app);
+        let bar = bar::Bar::new(app);
         let engine = engine::Engine::new(&tokens);
         let palette = palette::Palette::new(app, &tokens, motion::Motion::new(&tokens));
         if let Some(rx) = rx.borrow_mut().take() {
             glib::spawn_future_local(async move {
                 while let Ok(ev) = rx.recv().await {
                     engine.handle(&ev);
+                    if let Some(bar) = &bar {
+                        bar.on_event(&ev);
+                    }
                     match ev["name"].as_str() {
                         Some("palette.toggle") => palette.toggle(),
                         Some("help.toggle") => help.toggle(ev["payload"]["page"].as_str()),

@@ -30,6 +30,17 @@ pub enum Glyph {
     Dot,
     Ring,
     Battery,
+    /// 0 to 4 segments, charging draws a bolt
+    BatteryLevel(u8, bool),
+    /// 0 to 3 arcs
+    Wifi(u8),
+    WifiOff,
+    Ethernet,
+    Bluetooth,
+    Bell,
+    BellDot,
+    BellOff,
+    Sliders,
 }
 
 pub const SIZE: f64 = 24.0;
@@ -170,6 +181,95 @@ pub fn draw(cr: &Context, glyph: Glyph) {
         Glyph::Ring => {
             cr.arc(12.0, 12.0, 6.5, 0.0, 2.0 * PI);
         }
+        Glyph::BatteryLevel(level, charging) => {
+            cr.rectangle(2.0, 7.0, 17.0, 10.0);
+            line(cr, &[(21.5, 10.5), (21.5, 13.5)]);
+            let _ = cr.stroke();
+            for i in 0..level.min(4) {
+                cr.rectangle(4.0 + f64::from(i) * 3.6, 9.0, 3.0, 6.0);
+            }
+            let _ = cr.fill();
+            if charging {
+                line(
+                    cr,
+                    &[
+                        (12.5, 9.0),
+                        (8.5, 13.5),
+                        (12.0, 13.5),
+                        (11.0, 18.5),
+                        (15.5, 12.5),
+                        (12.0, 12.5),
+                    ],
+                );
+                cr.close_path();
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+            }
+            return;
+        }
+        Glyph::Wifi(strength) => {
+            for (i, r) in [5.0, 9.0, 13.0].iter().enumerate() {
+                if usize::from(strength) > i {
+                    cr.new_sub_path();
+                    cr.arc(12.0, 19.0, *r, -PI * 0.78, -PI * 0.22);
+                }
+            }
+            let _ = cr.stroke();
+            cr.arc(12.0, 19.0, 1.4, 0.0, 2.0 * PI);
+            let _ = cr.fill();
+            return;
+        }
+        Glyph::WifiOff => {
+            cr.arc(12.0, 19.0, 5.0, -PI * 0.78, -PI * 0.22);
+            line(cr, &[(4.0, 4.0), (20.0, 20.0)]);
+        }
+        Glyph::Ethernet => {
+            cr.rectangle(5.0, 5.0, 14.0, 10.0);
+            line(cr, &[(9.0, 15.0), (9.0, 19.0)]);
+            line(cr, &[(12.0, 15.0), (12.0, 20.0)]);
+            line(cr, &[(15.0, 15.0), (15.0, 19.0)]);
+        }
+        Glyph::Bluetooth => {
+            line(
+                cr,
+                &[
+                    (7.0, 7.5),
+                    (17.0, 16.5),
+                    (12.0, 21.0),
+                    (12.0, 3.0),
+                    (17.0, 7.5),
+                    (7.0, 16.5),
+                ],
+            );
+        }
+        Glyph::Bell | Glyph::BellDot | Glyph::BellOff => {
+            cr.move_to(6.0, 17.0);
+            cr.line_to(6.0, 10.5);
+            cr.arc(12.0, 10.5, 6.0, PI, 0.0);
+            cr.line_to(18.0, 17.0);
+            cr.close_path();
+            cr.new_sub_path();
+            cr.arc(12.0, 19.5, 1.8, 0.0, PI);
+            if glyph == Glyph::BellOff {
+                line(cr, &[(3.5, 3.5), (20.5, 20.5)]);
+            }
+            let _ = cr.stroke();
+            if glyph == Glyph::BellDot {
+                cr.arc(18.0, 5.5, 2.6, 0.0, 2.0 * PI);
+                let _ = cr.fill();
+            }
+            return;
+        }
+        Glyph::Sliders => {
+            line(cr, &[(4.0, 7.0), (20.0, 7.0)]);
+            line(cr, &[(4.0, 12.0), (20.0, 12.0)]);
+            line(cr, &[(4.0, 17.0), (20.0, 17.0)]);
+            cr.new_sub_path();
+            cr.arc(9.0, 7.0, 2.2, 0.0, 2.0 * PI);
+            cr.new_sub_path();
+            cr.arc(15.0, 12.0, 2.2, 0.0, 2.0 * PI);
+            cr.new_sub_path();
+            cr.arc(9.0, 17.0, 2.2, 0.0, 2.0 * PI);
+        }
         Glyph::Handoff => {
             line(cr, &[(4.0, 8.0), (20.0, 8.0)]);
             line(cr, &[(16.0, 4.0), (20.0, 8.0), (16.0, 12.0)]);
@@ -235,6 +335,17 @@ mod tests {
             Glyph::Dot,
             Glyph::Ring,
             Glyph::Battery,
+            Glyph::BatteryLevel(3, false),
+            Glyph::BatteryLevel(2, true),
+            Glyph::Wifi(3),
+            Glyph::Wifi(1),
+            Glyph::WifiOff,
+            Glyph::Ethernet,
+            Glyph::Bluetooth,
+            Glyph::Bell,
+            Glyph::BellDot,
+            Glyph::BellOff,
+            Glyph::Sliders,
         ];
         let cell = 96;
         let surface = ImageSurface::create(Format::ARgb32, cell * all.len() as i32, cell).unwrap();

@@ -142,6 +142,8 @@ Visual changes need a screenshot check: trigger the state, capture with `grim`, 
 - `deskwidgets` (Python) still draws the dashboard and wallpaper column. It is a bus client candidate, not the bus owner.
 - Waybar and SwayNC stay as working fallbacks until the owner has verified the replacements on real hardware. Do not remove them or their Nix modules, even after the replacements ship. They are restyled from the tokens (`home/waybar.nix`: one item shape, accent for state only, shared screen edge from `space`, tray `icon-size` and `spacing`), and `deskwidgets` reads `tokens.json` for fonts and radii, uses the display face for the clock and big numbers, an accent colon in the clock, and the same screen edge plus one inset. Both are off the lint baseline; what remains in `ci/token-baseline.txt` are the GTK tool windows (control center, fleet manager and similar) and `home/ai.nix`.
 - The phone app is built (`pkgs/labd/src/phone.rs`, assets in `pkgs/labd/assets/phone`, module `home/lab/phone.nix`, off by default). It is served by labd itself on the machine's tailnet address only (port 8765, wildcard addresses are refused), needs a bearer token (`~/.config/lab/phone-token`, 0600, created on first start, shown by `lab phone`), exposes only `GET /api/state` and `POST /api/scene/<name>` for scenes that exist in `scenes.json`, caps request size and time, delays failed logins, and sends no CORS headers. It is not served through the rpi4 ingress: that would have needed a listener on the computers anyway, and a bare tailnet address cannot get a certificate, so it is plain http inside the tailnet. `tailscale/policy.hujson` allows tcp 8765 for `tag:roaming`.
+- The labd bar is built (`pkgs/labd/src/bar.rs`, `tray.rs`, `hypr.rs`, module `home/lab/bar.nix`, off by default). It draws capsules from `~/.config/lab/bar.json`: workspaces from the Hyprland socket, a pixel clock, status modules and a StatusNotifier tray (labd owns `org.kde.StatusNotifierWatcher`, so stop Waybar first or it wins the name). `lab.bar.default = "labd"` stops Waybar autostarting; either way the palette entries "Bar: use the Lab bar" and "Bar: use Waybar" switch live through `bar.show` and `bar.hide`. Waybar stays as the fallback.
+- The lock screen (`home/hyprland.nix`), the greeter (`modules/lab-greeter.nix`) and the opt-in boot splash (`modules/lab-splash.nix`, `lab.boot.splash.enable`) read the same tokens and Matugen colours.
 - The OSD wrappers `home/scripts/volume-osd.sh` and `home/scripts/brightness-osd.sh` are legacy. Do not add to them.
 - Matugen templates in `home/matugen/templates/` are the colour source and stay that way.
 
@@ -170,6 +172,7 @@ Add a row here when you add an event. Payload keys are the contract between publ
 | `scene.started` | `scene` | `name`, `title` | not shown |
 | `scene.done` | `scene` | `name`, `title`, `announce`, `failed` | title when `announce`; "Scene failed, <title>" when `failed` > 0 |
 | `palette.toggle` | `keymap` | none | opens or closes the palette (handled in `main.rs`, no card) |
+| `bar.show`, `bar.hide`, `bar.toggle` | `palette` | none | shows or hides the labd bar window (handled in `bar.rs`, no card) |
 
 ### Continuity (device roster and room transfer)
 

@@ -9,6 +9,7 @@ pub struct Tokens {
     pub ui_font: String,
     pub display_font: String,
     pub radius_md: f64,
+    pub radius_lg: f64,
     pub radius_xl: f64,
     pub alpha_surface: f64,
     pub gap: i32,
@@ -50,6 +51,7 @@ impl Tokens {
                 .unwrap_or("Departure Mono")
                 .to_owned(),
             radius_md: num(&["radius", "md"], 12.0),
+            radius_lg: num(&["radius", "lg"], 18.0),
             radius_xl: num(&["radius", "xl"], 24.0),
             alpha_surface: num(&["material", "alpha", "surface"], 0.92),
             gap: raw["space"][3].as_f64().unwrap_or(16.0) as i32,
@@ -103,6 +105,22 @@ impl Tokens {
              .palette row:selected {{ background-color: alpha(@accent_bg_color, 0.22); color: @window_fg_color; }}\n\
              .palette .dim {{ opacity: 0.55; font-size: {small}px; }}\n\
              .palette .empty {{ opacity: 0.55; padding: 18px 12px; }}\n\
+             window.labd-bar {{ background: none; }}\n\
+             .lab-bar {{ background-color: alpha(@window_bg_color, {alpha}); color: @window_fg_color; \
+               font-family: \"{font}\"; font-size: {size}px; font-weight: 500; border-radius: {lg}px; \
+               border: 1px solid alpha(@window_fg_color, 0.08); box-shadow: inset 0 1px 0 alpha(@window_fg_color, 0.07); padding: 0 3px; }}\n\
+             .lab-bar .cap {{ background-color: alpha(@window_fg_color, 0.065); border-radius: {lg}px; margin: 4px 3px; \
+               padding: 0 3px; box-shadow: inset 0 1px 0 alpha(@window_fg_color, 0.05); }}\n\
+             .lab-bar .pill {{ padding: 0 9px; margin: 3px 1px; border-radius: {md}px; min-height: 0; }}\n\
+             .lab-bar .pill:hover {{ background-color: alpha(@window_fg_color, 0.08); }}\n\
+             .lab-bar .pill.accent {{ color: @accent_color; }}\n\
+             .lab-bar .ws {{ padding: 0 10px; margin: 3px 1px; border-radius: {md}px; min-height: 0; min-width: 0; \
+               background: none; box-shadow: none; color: alpha(@window_fg_color, 0.6); font-weight: 500; }}\n\
+             .lab-bar .ws:hover {{ background-color: alpha(@window_fg_color, 0.08); color: @window_fg_color; }}\n\
+             .lab-bar .ws.active {{ background-color: alpha(@accent_color, 0.24); color: @accent_color; }}\n\
+             .lab-bar .bar-clock {{ font-family: \"{display}\"; font-size: {clock}px; font-weight: 400; }}\n\
+             .lab-bar .bar-date {{ opacity: 0.6; }}\n\
+             .lab-bar .bar-num {{ font-family: \"{display}\"; font-size: {small}px; }}\n\
              .help-page {{ padding: 18px 24px; }}\n\
              .help-list {{ background: none; }}\n\
              .help-row {{ padding: 6px 4px; }}\n\
@@ -122,6 +140,8 @@ impl Tokens {
             small = self.body_px * 0.9,
             xl = self.radius_xl,
             md = self.radius_md,
+            lg = self.radius_lg,
+            clock = self.body_px * 1.1,
             sm = self.radius_md * 0.6,
             display = self.display_font,
             big2 = self.body_px * 1.15,
