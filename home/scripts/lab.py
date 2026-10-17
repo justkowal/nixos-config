@@ -52,6 +52,40 @@ def cmd_scene(a):
     return 1 if failed else 0
 
 
+def cmd_phone(a):
+    """URL and token for the phone app. The token is a secret: it is printed here or copied, never published."""
+    try:
+        cfg = load_conf("phone.json")
+    except OSError:
+        print("lab: the phone app is off, set lab.phone.enable = true and switch", file=sys.stderr)
+        return 1
+    token_file = os.path.join(CONF, "phone-token")
+    try:
+        with open(token_file) as f:
+            token = f.read().strip()
+    except OSError:
+        print("lab: no token yet, labd creates it on its first start with the phone app enabled", file=sys.stderr)
+        return 1
+    host = ""
+    try:
+        status = json.loads(subprocess.run([os.environ.get("TAILSCALE", "tailscale"), "status", "--json"],
+                                           capture_output=True, text=True, timeout=10).stdout)
+        host = status["Self"]["DNSName"].rstrip(".")
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        pass
+    url = f"http://{host or 'this-machine'}:{cfg.get('port', 8765)}"
+    if a.copy:
+        if not shutil.which("wl-copy"):
+            print("lab: wl-copy is not installed", file=sys.stderr)
+            return 1
+        subprocess.run(["wl-copy"], input=token, text=True)
+        if shutil.which("notify-send"):
+            subprocess.run(["notify-send", "-a", "Kowal Lab", "Phone app", f"Token copied. Open {url} on the phone and paste it."])
+        return 0
+    print(f"URL    {url}\nToken  {token}")
+    return 0
+
+
 def cmd_status(a):
     state = lab_bus.request({"op": "state"})["state"]
     if a.json:
@@ -166,6 +200,9 @@ def main():
     p = sub.add_parser("scene", help="run a scene, or list them")
     p.add_argument("name", nargs="?")
     p.set_defaults(fn=cmd_scene)
+    p = sub.add_parser("phone", help="URL and token for the phone app")
+    p.add_argument("--copy", action="store_true", help="copy the token to the clipboard instead of printing it")
+    p.set_defaults(fn=cmd_phone)
     p = sub.add_parser("status", help="last event per name")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_status)

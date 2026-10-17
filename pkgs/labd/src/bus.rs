@@ -98,7 +98,7 @@ impl Bus {
         let _ = self.tx.send_blocking(ev);
     }
 
-    fn snapshot(&self) -> Value {
+    pub fn snapshot(&self) -> Value {
         json!(*self.state.lock().unwrap())
     }
 

@@ -26,6 +26,9 @@ fn main() -> glib::ExitCode {
         return glib::ExitCode::FAILURE;
     }
 
+    // off unless phone.json enables it, and then only on the tailnet address
+    labd::phone::start_from_config(std::sync::Arc::clone(&bus));
+
     if std::env::args().any(|a| a == "--no-ui") {
         while let Ok(ev) = rx.recv_blocking() {
             eprintln!("{ev}");

@@ -10,6 +10,7 @@
     ./battery.nix
     ./led.nix
     ./roster.nix
+    ./phone.nix
     ./shell.nix
   ];
 }

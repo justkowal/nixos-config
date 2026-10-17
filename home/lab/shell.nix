@@ -36,7 +36,10 @@ in {
       Service = {
         ExecStart = lib.getExe labd;
         # the palette runs room and the user's tools
-        Environment = ["PATH=/etc/profiles/per-user/${config.home.username}/bin:/run/current-system/sw/bin"];
+        Environment = [
+          "PATH=/etc/profiles/per-user/${config.home.username}/bin:/run/current-system/sw/bin"
+          "TAILSCALE=/run/current-system/sw/bin/tailscale"
+        ];
         Restart = "on-failure";
         RestartSec = 2;
       };

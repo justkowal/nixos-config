@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101010">
+<title>Kowal Lab</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Kowal Lab</h1>
+    <p id="host" class="dim"></p>
+  </header>
+  <section id="unlock" hidden>
+    <h2>Connect</h2>
+    <p class="dim">Paste the token from <span class="num">lab phone</span> on your computer. It stays on this phone.</p>
+    <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Token">
+    <button id="save" class="primary">Connect</button>
+  </section>
+  <section id="devices-section" hidden>
+    <h2>Devices</h2>
+    <ul id="devices"></ul>
+  </section>
+  <section id="scenes-section" hidden>
+    <h2>Scenes</h2>
+    <div id="scenes"></div>
+  </section>
+  <section id="activity-section" hidden>
+    <h2>Activity</h2>
+    <ul id="activity"></ul>
+  </section>
+  <p id="status" class="dim" role="status"></p>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
