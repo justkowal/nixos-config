@@ -8,7 +8,9 @@ scan() {
   find home hosts/rpi4/scripts -type f \( -name '*.nix' -o -name '*.py' -o -name '*.sh' -o -name '*.css' -o -name '*.rasi' \) \
     ! -path 'home/matugen/*' | sort |
     while IFS= read -r f; do
-      grep -qE '#[0-9a-fA-F]{6}\b|border-radius:[[:space:]]*[0-9]+px|font-family' "$f" && echo "$f"
+      if grep -qE '#[0-9a-fA-F]{6}\b|border-radius:[[:space:]]*[0-9]+px|font-family:[[:space:]]*["'"'"']?[A-Za-z]' "$f"; then
+        echo "$f"
+      fi
     done
 }
 

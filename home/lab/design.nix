@@ -1,5 +1,6 @@
 {
   config,
+  pkgs,
   lib,
   ...
 }: let
@@ -24,11 +25,15 @@ in {
   };
 
   config = {
+    # the fonts the tokens name must exist, or every surface silently falls back to DejaVu
+    fonts.fontconfig.enable = true;
+    home.packages = [pkgs.inter pkgs.departure-mono];
+
     lab.design.tokens = {
       type = {
-        ui = "Outfit";
-        # swap for a dot-matrix face once one is picked; numerals only
-        display = "JetBrainsMono Nerd Font";
+        ui = "Inter";
+        # pixel mono for clock digits and big numbers, the Nothing-style display face
+        display = "Departure Mono";
         mono = "JetBrainsMono Nerd Font";
         sizes = {
           caption = 9;

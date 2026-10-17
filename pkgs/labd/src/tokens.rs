@@ -42,7 +42,7 @@ impl Tokens {
         Tokens {
             ui_font: path(&raw, &["type", "ui"])
                 .as_str()
-                .unwrap_or("Outfit")
+                .unwrap_or("Inter")
                 .to_owned(),
             radius_md: num(&["radius", "md"], 12.0),
             radius_xl: num(&["radius", "xl"], 24.0),

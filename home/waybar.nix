@@ -5,6 +5,14 @@
   laptop ? false,
   ...
 }: let
+  t = config.lab.design.tokens;
+  inherit (t) radius;
+  ui = t.type.ui;
+  mono = t.type.mono;
+  display = t.type.display;
+  alpha = t.material.alpha.surface;
+  edge = builtins.elemAt t.space (if laptop then 1 else 2);
+
   sys-info = pkgs.writeShellApplication {
     name = "sys-info";
     runtimeInputs = with pkgs; [jq findutils gnugrep gawk coreutils];
@@ -60,18 +68,9 @@ in {
           if laptop
           then 32
           else 36;
-        margin-top =
-          if laptop
-          then 6
-          else 8;
-        margin-left =
-          if laptop
-          then 8
-          else 12;
-        margin-right =
-          if laptop
-          then 8
-          else 12;
+        margin-top = edge;
+        margin-left = edge;
+        margin-right = edge;
         modules-left = ["hyprland/workspaces" "hyprland/submap"];
         modules-center = ["clock" "custom/pomodoro" "clock#date"];
         modules-right =
@@ -86,6 +85,11 @@ in {
         };
 
         "clock" = {format = "{:%H:%M}";};
+
+        tray = {
+          icon-size = 16;
+          spacing = 10;
+        };
 
         "clock#date" = {
           format = "{:%d.%m.%Y}";
@@ -296,161 +300,90 @@ in {
       @import url("colors.css");
 
       * {
-        font-family: "Outfit", "JetBrainsMono Nerd Font", sans-serif;
-        font-size: ${
-        if laptop
-        then "12px"
-        else "13px"
-      };
-        font-weight: 600;
+        font-family: "${ui}", "${mono}", sans-serif;
+        font-size: ${if laptop then "12px" else "13px"};
+        font-weight: 500;
         border: none;
         border-radius: 0;
       }
 
       window#waybar {
-        background-color: alpha(@background, 0.85);
-        border: 1px solid alpha(@outline, 0.25);
-        border-radius: 15px;
+        background-color: alpha(@background, ${toString alpha});
+        border: 1px solid alpha(@on_background, 0.08);
+        border-radius: ${toString radius.lg}px;
         color: @on_background;
-        transition-property: background-color;
-        transition-duration: .2s;
-        padding: 0;
       }
 
       .modules-left { margin-left: 6px; }
       .modules-center { margin: 0 4px; }
       .modules-right { margin-right: 6px; }
 
-      #workspaces button {
+      /* One item shape: no chip fill, a soft hover. Accent only marks state. */
+      #workspaces button, #clock, #pulseaudio, #custom-sysinfo, #memory, #mpris, #network, #disk,
+      #custom-notification, #custom-thinkdot, #custom-power, #custom-pomodoro, #custom-fleet,
+      #custom-homelab, #custom-caffeine, #backlight, #bluetooth, #custom-controlcenter, #battery,
+      #custom-update, #idle_inhibitor {
         padding: 0 10px;
+        margin: 4px 1px;
+        background-color: transparent;
+        border-radius: ${toString radius.md}px;
+        color: @on_surface;
+        transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      #workspaces button { color: @on_surface_variant; }
+      #workspaces button.active { color: @primary; background-color: alpha(@primary, 0.16); }
+
+      #workspaces button:hover, #clock:hover, #pulseaudio:hover, #network:hover, #custom-fleet:hover,
+      #custom-sysinfo:hover, #mpris:hover, #battery:hover, #backlight:hover, #bluetooth:hover,
+      #custom-controlcenter:hover, #custom-notification:hover, #custom-caffeine:hover {
+        background-color: alpha(@on_background, 0.08);
+        color: @on_background;
+      }
+
+      #clock {
+        font-family: "${display}", "${mono}", monospace;
+        font-weight: 400;
+      }
+      #clock.date {
+        font-family: "${ui}", "${mono}", sans-serif;
+        font-weight: 500;
         color: @on_surface_variant;
-        background-color: transparent;
-        border-radius: 10px;
-        margin: 3px 2px;
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
-      #workspaces button.active {
-        color: @primary;
-        background-color: alpha(@primary_container, 0.65);
-      }
-
-      #workspaces button:hover {
-        background-color: alpha(@surface_variant, 0.50);
-        color: @on_surface;
-      }
-
-      /* Unified Apple Pill Design for ALL status items and action buttons */
-      #clock, #clock.date, #pulseaudio, #custom-sysinfo, #memory, #mpris, #network, #disk, #custom-notification, #custom-thinkdot, #custom-power, #custom-pomodoro, #custom-fleet, #custom-homelab, #backlight, #bluetooth, #custom-controlcenter, #battery, #custom-update, #idle_inhibitor {
-        padding: 0 12px;
-        margin: 3px 2px;
-        background-color: alpha(@surface_variant, 0.45);
-        border-radius: 10px;
-        color: @on_surface;
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      }
-
-
-
-      /* Distinctive Apple Interactive Action Pills */
-      #custom-controlcenter {
-        color: @primary;
+      #custom-controlcenter, #custom-notification, #custom-power, #custom-thinkdot {
         font-size: 15px;
-        padding: 0 10px;
+        padding: 0 8px;
+        color: @on_surface_variant;
       }
-      #custom-controlcenter:hover {
-        background-color: alpha(@primary_container, 0.65);
-        color: @primary;
-      }
+      #custom-power:hover { color: @error; background-color: alpha(@error, 0.12); }
 
-      #custom-notification {
-        color: @primary;
-        font-size: 15px;
-        padding: 0 10px;
-      }
-      #custom-notification:hover {
-        background-color: alpha(@primary_container, 0.65);
-        color: @primary;
-      }
-
-      #custom-power {
-        color: @error;
-        font-size: 15px;
-        padding: 0 10px;
-      }
-      #custom-power:hover {
-        background-color: alpha(@error_container, 0.65);
-      }
-
-      /* Trailing action cluster: transparent until hovered (menu-bar-extra style) */
-      #custom-controlcenter, #custom-thinkdot, #custom-notification, #custom-power {
-        background-color: transparent;
-        margin: 3px 1px;
-      }
-
-      #pulseaudio:hover, #network:hover, #custom-fleet:hover, #custom-sysinfo:hover, #clock:hover, #clock.date:hover {
-        background-color: alpha(@primary_container, 0.50);
-        color: @primary;
-      }
-
-      #custom-fleet, #custom-homelab {
-        color: @primary;
-        font-weight: bold;
-      }
-      #custom-fleet.online, #custom-homelab.online { color: @primary; }
+      #custom-fleet, #custom-homelab { font-weight: 700; }
       #custom-fleet.partial { color: @tertiary; }
       #custom-fleet.warning, #custom-homelab.offline { color: @error; }
 
-      #battery { color: @primary; }
       #battery.warning { color: @tertiary; }
       #battery.critical { color: @error; }
 
-      #pulseaudio { color: @secondary; }
-      #network { color: @secondary; }
-      #backlight { color: @tertiary; }
-      #bluetooth { color: @primary; }
-      #custom-sysinfo { color: @primary; }
       #custom-caffeine { color: @on_surface_variant; }
-      #custom-caffeine.active { color: #34C759; }
+      #custom-caffeine.active { color: @primary; }
 
-      #clock {
-        color: @on_background;
-        font-size: 13px;
-        font-weight: 700;
-      }
-
-      #mpris { color: @secondary; }
       #mpris.playing { color: @primary; }
       #mpris.paused { color: @on_surface_variant; }
 
       #submap {
-        padding: 0 12px;
-        margin: 3px 2px;
-        background-color: alpha(@primary_container, 0.70);
+        padding: 0 10px;
+        margin: 4px 2px;
+        background-color: alpha(@primary, 0.16);
         color: @primary;
-        border: 1px solid alpha(@primary, 0.50);
-        border-radius: 10px;
+        border-radius: ${toString radius.md}px;
       }
 
-      #tray {
-        margin: 0;
-        padding: 0 4px;
-        background-color: transparent;
-      }
+      #tray { margin: 0 4px 0 2px; padding: 0 4px; background-color: transparent; }
+      #tray > .passive { -gtk-icon-effect: dim; }
+      #tray > .needs-attention { -gtk-icon-effect: highlight; }
 
-      #tray > .passive {
-        -gtk-icon-effect: dim;
-      }
-
-      #tray > .needs-attention {
-        -gtk-icon-effect: highlight;
-      }
-
-      .empty {
-        padding: 0;
-        margin: 0;
-        background-color: transparent;
-      }
+      .empty { padding: 0; margin: 0; background-color: transparent; }
     '';
   };
 
@@ -497,22 +430,22 @@ in {
       @import "colors.css";
 
       * {
-        font-family: "Outfit", "JetBrainsMono Nerd Font", sans-serif;
+        font-family: "${ui}", "${mono}", sans-serif;
         font-size: 13px;
       }
 
       .control-center {
-        background-color: alpha(@background, 0.88);
-        border: 1px solid alpha(@outline, 0.35);
-        border-radius: 18px;
+        background-color: alpha(@background, ${toString alpha});
+        border: 1px solid alpha(@on_background, 0.08);
+        border-radius: ${toString radius.xl}px;
         padding: 14px;
         margin: 10px 14px 16px 14px;
       }
 
       .notification {
         background-color: alpha(@surface_variant, 0.85);
-        border: 1px solid alpha(@outline, 0.75);
-        border-radius: 14px;
+        border: 1px solid alpha(@on_background, 0.08);
+        border-radius: ${toString radius.lg}px;
         color: @on_background;
         padding: 10px;
         margin: 6px;

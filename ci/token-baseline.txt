@@ -5,5 +5,3 @@ home/scripts/guis/fleet_manager_gui.py
 home/scripts/guis/lan_mouse_gui.py
 home/scripts/guis/tablet_display_gui.py
 home/scripts/guis/timemachine_gui.py
-home/scripts/guis/widgets_gui.py
-home/waybar.nix

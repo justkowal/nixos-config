@@ -30,35 +30,66 @@ APP_ID = "lab.justkowal.Widgets"
 CACHE = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "deskwidgets")
 
 CSS = """
-window.dw-window { background: none; }
+window.dw-window { background: none; font-family: "%UI%"; }
 .dw-desk { padding: 8px 4px; }
 .dw-desk label { color: white; text-shadow: 0 1px 3px rgba(0,0,0,0.75); }
 .dw-desk .dw-dim { color: rgba(255,255,255,0.72); }
 .dw-desk progressbar trough { background: rgba(255,255,255,0.18); }
-.dw-clock { font-size: 64pt; font-weight: 200; font-feature-settings: "tnum"; letter-spacing: -2px; }
+.dw-clock { font-family: "%DISPLAY%"; font-size: 64pt; font-weight: 400; font-feature-settings: "tnum"; }
+.dw-colon { color: @accent_color; }
+.dw-desk .dw-colon { color: @accent_color; text-shadow: none; }
 .dw-desk .dw-clock { font-size: 72pt; }
 .dw-date { font-size: 13pt; font-weight: 500; }
-.dw-big { font-size: 26pt; font-weight: 300; font-feature-settings: "tnum"; }
+.dw-big { font-family: "%DISPLAY%"; font-size: 24pt; font-weight: 400; font-feature-settings: "tnum"; }
 .dw-head { font-size: 9pt; font-weight: 700; letter-spacing: 1px; opacity: 0.6; }
 .dw-dim { opacity: 0.65; }
 .dw-num { font-feature-settings: "tnum"; }
-.dw-mono { font-family: monospace; font-size: 9pt; }
+.dw-mono { font-family: "%MONO%"; font-size: 9pt; }
 .dw-ok { color: @success_color; }
 .dw-warn { color: @warning_color; }
 .dw-bad { color: @error_color; }
 .dw-stale { opacity: 0.45; }
 .dw-scrim { background: alpha(black, 0.45); }
-.dw-sheet { background: alpha(@window_bg_color, 0.92); border-radius: 18px; padding: 28px 32px; }
+.dw-sheet { background: alpha(@window_bg_color, 0.92); border-radius: %XL%px; padding: 28px 32px; }
 .dw-section { padding: 14px 0; border-top: 1px solid alpha(@window_fg_color, 0.08); }
 .dw-section.dw-first { border-top: none; padding-top: 0; }
 .dw-col { min-width: 330px; }
-progressbar.dw-thin trough, progressbar.dw-thin progress { min-height: 4px; border-radius: 2px; }
+progressbar.dw-thin trough, progressbar.dw-thin progress { min-height: 4px; border-radius: %BAR%px; }
 progressbar.dw-hot progress { background: @error_color; }
 progressbar.dw-mid progress { background: @warning_color; }
-.dw-art { border-radius: 8px; }
+.dw-art { border-radius: %SM%px; }
 .dw-row { padding: 3px 0; }
 button.dw-link { padding: 2px 4px; min-height: 0; }
 """
+
+
+def load_tokens():
+    """~/.config/lab/tokens.json (home/lab/design.nix). Defaults match it so the column still looks right unswitched."""
+    t = {"type": {"ui": "Inter", "display": "Departure Mono", "mono": "JetBrainsMono Nerd Font"},
+         "radius": {"sm": 8, "md": 12, "lg": 18, "xl": 24}, "space": [4, 8, 12, 16, 24, 32]}
+    path = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "lab", "tokens.json")
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+        for key in ("type", "radius"):
+            t[key].update(raw.get(key, {}))
+        t["space"] = raw.get("space", t["space"])
+    except (OSError, ValueError):
+        pass
+    return t
+
+
+TOKENS = load_tokens()
+
+
+def build_css():
+    t = TOKENS
+    subs = {"%UI%": t["type"]["ui"], "%DISPLAY%": t["type"]["display"], "%MONO%": t["type"]["mono"],
+            "%XL%": t["radius"]["xl"], "%SM%": t["radius"]["sm"], "%BAR%": max(2, t["radius"]["sm"] // 4)}
+    css = CSS
+    for k, v in subs.items():
+        css = css.replace(k, str(v))
+    return css
 
 
 def lbl(text, *classes, xalign=0.0, wrap=False, ellipsize=True, markup=False):
@@ -549,7 +580,10 @@ class Section(Gtk.Box):
 class Clock(Gtk.Box):
     def __init__(self):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.time = lbl("", "dw-clock", "dw-num")
+        self.hh = lbl("", "dw-clock", "dw-num")
+        self.colon = lbl(":", "dw-clock", "dw-colon")
+        self.mm = lbl("", "dw-clock", "dw-num")
+        self.time = hbox(self.hh, self.colon, self.mm, spacing=0)
         self.date = lbl("", "dw-date")
         self.append(self.time)
         self.append(self.date)
@@ -557,7 +591,8 @@ class Clock(Gtk.Box):
         GLib.timeout_add_seconds(1, self.tick)
 
     def tick(self):
-        self.time.set_text(time.strftime("%H:%M"))
+        self.hh.set_text(time.strftime("%H"))
+        self.mm.set_text(time.strftime("%M"))
         self.date.set_text(time.strftime("%A, %-d %B"))
         return True
 
@@ -633,15 +668,18 @@ class DesktopLayer:
         LS.set_monitor(win, monitor)
         LS.set_anchor(win, LS.Edge.TOP, True)
         LS.set_anchor(win, LS.Edge.RIGHT, True)
-        LS.set_margin(win, LS.Edge.TOP, 24)
-        LS.set_margin(win, LS.Edge.RIGHT, 36)
-        LS.set_keyboard_mode(win, LS.KeyboardMode.NONE)
         compact = cfg["compact"]
+        # same edge as the bar and the island, plus one inset step
+        space = TOKENS["space"]
+        edge = space[1] if compact else space[2]
+        LS.set_margin(win, LS.Edge.TOP, space[3])
+        LS.set_margin(win, LS.Edge.RIGHT, edge + space[3])
+        LS.set_keyboard_mode(win, LS.KeyboardMode.NONE)
         col = vbox(spacing=0)
         col.add_css_class("dw-desk")
         col.set_size_request(300 if compact else 380, -1)
         clock = Clock()
-        clock.time.set_xalign(1.0)
+        clock.time.set_halign(Gtk.Align.END)
         clock.date.set_xalign(1.0)
         col.append(clock)
         names = cfg["desktop"]
@@ -746,7 +784,7 @@ class App(Adw.Application):
         Adw.Application.do_startup(self)
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_DARK)
         css = Gtk.CssProvider()
-        css.load_from_string(CSS)
+        css.load_from_string(build_css())
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
         self.store = Store()
         self.sched = Scheduler(self.store, self.cfg)
