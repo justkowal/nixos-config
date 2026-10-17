@@ -3,6 +3,7 @@
 
 mod engine;
 mod glyphs;
+mod help;
 mod island;
 mod motion;
 mod palette;
@@ -48,6 +49,7 @@ fn main() -> glib::ExitCode {
         adw::StyleManager::default().set_color_scheme(adw::ColorScheme::PreferDark);
 
         let island = island::Island::new(app, &tokens, motion::Motion::new(&tokens));
+        let help = help::Help::new(app);
         let engine = engine::Engine::new(&tokens);
         let palette = palette::Palette::new(app, &tokens, motion::Motion::new(&tokens));
         if let Some(rx) = rx.borrow_mut().take() {
@@ -56,6 +58,7 @@ fn main() -> glib::ExitCode {
                     engine.handle(&ev);
                     match ev["name"].as_str() {
                         Some("palette.toggle") => palette.toggle(),
+                        Some("help.toggle") => help.toggle(),
                         _ => island.on_event(&ev),
                     }
                 }

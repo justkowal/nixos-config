@@ -293,141 +293,20 @@ class DatabaseManager:
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
             conn.commit()
 
-    def start_cycle(self, session_type: str, start_pct: float, start_time: float) -> int:
+    def get_cycle_samples(self, cycle_id: int) -> List[Tuple[float, float, float]]:
         with self._get_connection() as conn:
-            cur = conn.execute("""
-                INSERT INTO cycles (
-                    session_type, start_time, end_time, duration_min,
-                    start_pct, end_pct, gain_pct, wear_cycles,
-                    energy_wh, energy_mah, avg_power_w, max_power_w,
-                    avg_temp_c, max_temp_c, min_voltage_v, max_voltage_v,
-                    pd_standard, top_apps_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                session_type, start_time, start_time, 0.0,
-                start_pct, start_pct, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0,
-                None, "[]"
-            ))
-            conn.commit()
-            return cur.lastrowid
+            rows = conn.execute(
+                "SELECT timestamp, capacity_pct, power_w FROM telemetry WHERE cycle_id = ? ORDER BY timestamp ASC",
+                (cycle_id,)
+            ).fetchall()
+        samples = [(float(r["timestamp"]), float(r["capacity_pct"]), float(r["power_w"])) for r in rows]
+        if len(samples) > 350:
+            samples = samples[::max(1, len(samples) // 300)]
+        return samples
 
-    def get_or_resume_active_session(self, session_type: str, current_pct: float, now_t: float) -> Tuple[int, float, float, List[Tuple[float, float, float]]]:
-        """
-        Retrieves the ongoing active session of matching session_type.
-        Loads all existing telemetry samples so the live graph immediately displays
-        the full progression from the beginning of the charging/discharging session up to Now.
-        """
-        opposite_type = "discharge" if session_type == "charge" else "charge"
+    def set_top_apps(self, cycle_id: int, top_apps: List[Dict[str, Any]]):
         with self._get_connection() as conn:
-            # 1. Determine when the previous opposite session ended
-            last_opp = conn.execute(
-                "SELECT end_time FROM cycles WHERE session_type = ? ORDER BY id DESC LIMIT 1",
-                (opposite_type,)
-            ).fetchone()
-            cutoff = float(last_opp["end_time"]) if last_opp and last_opp["end_time"] else 0.0
-
-            # 2. Find any unfinalized cycle or cycle started after cutoff
-            cand = conn.execute("""
-                SELECT * FROM cycles
-                WHERE session_type = ? AND start_time >= ?
-                ORDER BY id ASC
-                LIMIT 1
-            """, (session_type, cutoff - 30.0)).fetchone()
-
-            if cand:
-                cid = cand["id"]
-                start_time = float(cand["start_time"])
-                start_pct = float(cand["start_pct"])
-
-                # Fetch all telemetry points for this contiguous session
-                t_rows = conn.execute("""
-                    SELECT timestamp, capacity_pct, power_w
-                    FROM telemetry
-                    WHERE cycle_id = ?
-                    ORDER BY timestamp ASC
-                """, (cid,)).fetchall()
-
-                samples = [(float(r["timestamp"]), float(r["capacity_pct"]), float(r["power_w"])) for r in t_rows]
-                # Downsample if very large to prevent memory overhead while keeping dense curve
-                if len(samples) > 350:
-                    step = max(1, len(samples) // 300)
-                    samples = samples[::step]
-
-                if not samples:
-                    samples = [(start_time, start_pct, 0.0)]
-                elif samples[0][0] > (start_time + 4.0):
-                    samples.insert(0, (start_time, start_pct, samples[0][2]))
-
-                return cid, start_time, start_pct, samples
-
-            # 3. If no active session found, create a new cycle
-            cur = conn.execute("""
-                INSERT INTO cycles (
-                    session_type, start_time, end_time, duration_min,
-                    start_pct, end_pct, gain_pct, wear_cycles,
-                    energy_wh, energy_mah, avg_power_w, max_power_w,
-                    avg_temp_c, max_temp_c, min_voltage_v, max_voltage_v,
-                    pd_standard, top_apps_json
-                ) VALUES (?, ?, ?, 0.0, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, NULL, '[]')
-            """, (session_type, now_t, now_t, current_pct, current_pct))
-            conn.commit()
-            new_cid = cur.lastrowid
-            return new_cid, now_t, current_pct, [(now_t, current_pct, 0.0)]
-
-    def record_telemetry(self, cycle_id: int, timestamp: float, pct: float, watts: float, ma: float, volts: float, temp: float):
-        with self._get_connection() as conn:
-            # Throttle samples within 2.0s to avoid redundant entries between daemon and GUI
-            last = conn.execute("SELECT timestamp FROM telemetry WHERE cycle_id = ? ORDER BY timestamp DESC LIMIT 1", (cycle_id,)).fetchone()
-            if last and (timestamp - last["timestamp"]) < 2.0:
-                return
-            conn.execute("""
-                INSERT INTO telemetry (cycle_id, timestamp, capacity_pct, power_w, current_ma, voltage_v, temp_c)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (cycle_id, timestamp, pct, watts, ma, volts, temp))
-            conn.commit()
-
-    def finalize_cycle(self, cycle_id: int, end_pct: float, end_time: float, wear: float, pd_standard: Optional[str], top_apps: List[Dict[str, Any]]):
-        with self._get_connection() as conn:
-            row = conn.execute("SELECT * FROM cycles WHERE id = ?", (cycle_id,)).fetchone()
-            if not row:
-                return
-            start_time = row["start_time"]
-            start_pct = row["start_pct"]
-            gain_pct = round(end_pct - start_pct, 1)
-            duration_min = round(max(0.1, (end_time - start_time) / 60.0), 1)
-
-            t_rows = conn.execute("""
-                SELECT AVG(power_w) as avg_p, MAX(power_w) as max_p,
-                       AVG(temp_c) as avg_t, MAX(temp_c) as max_t,
-                       MIN(voltage_v) as min_v, MAX(voltage_v) as max_v
-                FROM telemetry WHERE cycle_id = ?
-            """, (cycle_id,)).fetchone()
-
-            avg_p = round(t_rows["avg_p"] or 0.0, 2)
-            max_p = round(t_rows["max_p"] or 0.0, 2)
-            avg_t = round(t_rows["avg_t"] or 0.0, 1)
-            max_t = round(t_rows["max_t"] or 0.0, 1)
-            min_v = round(t_rows["min_v"] or 0.0, 2)
-            max_v = round(t_rows["max_v"] or 0.0, 2)
-
-            energy_wh = round(avg_p * (duration_min / 60.0), 2)
-            energy_mah = round((energy_wh / max(min_v, 11.0)) * 1000.0, 1) if min_v > 0 else 0.0
-
-            conn.execute("""
-                UPDATE cycles SET
-                    end_time = ?, duration_min = ?, end_pct = ?, gain_pct = ?, wear_cycles = ?,
-                    energy_wh = ?, energy_mah = ?, avg_power_w = ?, max_power_w = ?,
-                    avg_temp_c = ?, max_temp_c = ?, min_voltage_v = ?, max_voltage_v = ?,
-                    pd_standard = ?, top_apps_json = ?
-                WHERE id = ?
-            """, (
-                end_time, duration_min, end_pct, gain_pct, wear,
-                energy_wh, energy_mah, avg_p, max_p,
-                avg_t, max_t, min_v, max_v,
-                pd_standard, json.dumps(top_apps), cycle_id
-            ))
+            conn.execute("UPDATE cycles SET top_apps_json = ? WHERE id = ?", (json.dumps(top_apps), cycle_id))
             conn.commit()
 
     def get_cycles(self, limit: int = 50) -> List[Dict[str, Any]]:
@@ -445,33 +324,10 @@ class DatabaseManager:
             rows = conn.execute("SELECT * FROM telemetry WHERE cycle_id = ? ORDER BY timestamp ASC", (cycle_id,)).fetchall()
             return [dict(r) for r in rows]
 
-    def record_degradation(self, health_pct: float, cap_wh: float, design_wh: float, cycle_count: int):
-        with self._get_connection() as conn:
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            last = conn.execute("SELECT * FROM degradation ORDER BY id DESC LIMIT 1").fetchone()
-            if last and last["date_str"] == date_str and abs(last["health_pct"] - health_pct) < 0.2:
-                return
-            conn.execute("""
-                INSERT INTO degradation (timestamp, date_str, health_pct, capacity_wh, design_wh, cycle_count)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (time.time(), date_str, health_pct, cap_wh, design_wh, cycle_count))
-            conn.commit()
-
     def get_degradation(self) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
             rows = conn.execute("SELECT * FROM degradation ORDER BY id ASC LIMIT 100").fetchall()
             return [dict(r) for r in rows]
-
-    def update_hourly_baseline(self, hour_of_week: int, watts: float):
-        with self._get_connection() as conn:
-            row = conn.execute("SELECT avg_watts, sample_count FROM hourly_baseline WHERE hour_of_week = ?", (hour_of_week,)).fetchone()
-            if row:
-                cnt = row["sample_count"] + 1
-                new_avg = (row["avg_watts"] * row["sample_count"] + watts) / cnt
-                conn.execute("UPDATE hourly_baseline SET avg_watts = ?, sample_count = ? WHERE hour_of_week = ?", (new_avg, cnt, hour_of_week))
-            else:
-                conn.execute("INSERT INTO hourly_baseline (hour_of_week, avg_watts, sample_count) VALUES (?, ?, 1)", (hour_of_week, watts))
-            conn.commit()
 
     def get_hourly_baseline(self, hour_of_week: int) -> Optional[float]:
         with self._get_connection() as conn:
@@ -564,189 +420,15 @@ def get_negotiated_pd_info() -> Dict[str, Any]:
     return pd_info
 
 
-# ── Charging Power and Inactivity Management ──
-class ChargingPowerManager:
-    """
-    Manages sleep inhibition and automated post-charge inactivity handling:
-      1. While laptop is charging: inhibits sleep/idle/lid-suspend (same state as caffeine)
-         to ensure continuous logging of charge cycle telemetry without interruption.
-      2. Once fully charged (status == 'Full' or capacity >= 95% with power tapering or stops charging):
-         releases charging sleep inhibitor.
-      3. If laptop remains inactive after getting charged (locked, lid-closed, or idle for >= 180s):
-         - If local time is midnight to 5:00 AM (0 <= hour < 5): shuts down completely (systemctl poweroff)
-         - Otherwise (5:00 AM to 23:59): puts laptop to sleep (systemctl suspend)
-      4. If manual caffeine mode is active (via $mod ALT, C / caffeine.active), respects user override
-         and never forces suspend or poweroff.
-    """
-    def __init__(self):
-        self.inhibit_proc: Optional[subprocess.Popen] = None
-        self.charge_finished_time: Optional[float] = None
-        self.was_charging: bool = False
-        self.runtime_dir = f"/run/user/{os.getuid()}"
-        self.caffeine_active_file = os.path.join(self.runtime_dir, "caffeine.active")
-        self.pid_file = os.path.join(self.runtime_dir, "accubattery_charging.pid")
+DAEMON_STATE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "accubattery/state.json")
 
-    def is_manual_caffeine_active(self) -> bool:
-        return os.path.exists(self.caffeine_active_file)
 
-    def is_system_inactive(self) -> bool:
-        # 1. Lid switch state
-        for p in glob.glob("/proc/acpi/button/lid/*/state"):
-            try:
-                if "closed" in open(p).read().lower():
-                    return True
-            except Exception:
-                pass
-
-        # 2. Lock screen process (hyprlock active)
-        try:
-            res = subprocess.run(["pidof", "hyprlock"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if res.returncode == 0:
-                return True
-        except Exception:
-            pass
-
-        # 3. DPMS display status (all displays off)
-        try:
-            res = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True, timeout=1.0)
-            if res.returncode == 0 and res.stdout.strip():
-                monitors = json.loads(res.stdout)
-                if monitors and all(not m.get("dpmsStatus", True) for m in monitors):
-                    return True
-        except Exception:
-            pass
-
-        # 4. loginctl session idle/lock hints
-        try:
-            uid_str = str(os.getuid())
-            l_res = subprocess.run(["loginctl", "list-sessions", "--no-legend"], capture_output=True, text=True, timeout=1.0)
-            for line in l_res.stdout.splitlines():
-                parts = line.split()
-                if len(parts) >= 2 and parts[1] == uid_str:
-                    sess_id = parts[0]
-                    s_res = subprocess.run(
-                        ["loginctl", "show-session", sess_id, "-p", "LockedHint", "-p", "IdleHint"],
-                        capture_output=True, text=True, timeout=1.0
-                    )
-                    for s_line in s_res.stdout.splitlines():
-                        if "LockedHint=yes" in s_line or "IdleHint=yes" in s_line:
-                            return True
-        except Exception:
-            pass
-
-        return False
-
-    def is_external_inhibitor_alive(self) -> bool:
-        if os.path.exists(self.pid_file):
-            try:
-                pid = int(open(self.pid_file).read().strip())
-                os.kill(pid, 0)
-                return True
-            except Exception:
-                try:
-                    os.remove(self.pid_file)
-                except Exception:
-                    pass
-        return False
-
-    def cleanup(self):
-        if self.inhibit_proc:
-            try:
-                self.inhibit_proc.terminate()
-                self.inhibit_proc.wait(timeout=1.0)
-            except Exception:
-                pass
-            self.inhibit_proc = None
-
-        if os.path.exists(self.pid_file):
-            try:
-                pid = int(open(self.pid_file).read().strip())
-                if pid == os.getpid() or (self.inhibit_proc and pid == self.inhibit_proc.pid):
-                    os.remove(self.pid_file)
-            except Exception:
-                pass
-
-    def update(self, is_charging: bool, status: str, cap: int, watts: float) -> dict:
-        info = {
-            "mode": "standard",
-            "countdown_remaining": 0,
-            "action": "suspend"
-        }
-
-        if is_charging:
-            self.was_charging = True
-            self.charge_finished_time = None
-            info["mode"] = "charging_awake"
-
-            # Check if an inhibitor is already running either in this process, external daemon, or manual caffeine
-            if not self.inhibit_proc and not self.is_external_inhibitor_alive() and not self.is_manual_caffeine_active():
-                try:
-                    self.inhibit_proc = subprocess.Popen([
-                        "systemd-inhibit",
-                        "--what=sleep:handle-lid-switch:idle",
-                        "--who=AccuBattery Charging",
-                        "--why=Logging charge cycle telemetry",
-                        "--mode=block",
-                        "sleep", "infinity"
-                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    with open(self.pid_file, "w") as f:
-                        f.write(str(self.inhibit_proc.pid))
-                except Exception:
-                    self.inhibit_proc = None
-        else:
-            # Not charging: release inhibitor if we hold it
-            self.cleanup()
-            if os.path.exists(self.pid_file):
-                try:
-                    pid = int(open(self.pid_file).read().strip())
-                    os.kill(pid, 15)
-                    os.remove(self.pid_file)
-                except Exception:
-                    pass
-
-            is_full_or_charged = (status in ["Full", "Not charging"] or (cap >= 95 and watts < 1.0) or (self.was_charging and cap >= 80))
-            if self.was_charging and is_full_or_charged:
-                if self.charge_finished_time is None:
-                    self.charge_finished_time = time.time()
-            elif not is_full_or_charged:
-                self.charge_finished_time = None
-
-        if self.charge_finished_time is not None:
-            if self.is_manual_caffeine_active():
-                info["mode"] = "caffeine_manual"
-                return info
-
-            if not self.is_system_inactive():
-                self.charge_finished_time = None
-                info["mode"] = "charged_active"
-                return info
-
-            elapsed = time.time() - self.charge_finished_time
-            current_hour = datetime.now().hour
-            is_midnight_window = (0 <= current_hour < 5)
-            action = "poweroff" if is_midnight_window else "suspend"
-            rem = max(0, int(180.0 - elapsed))
-
-            info["mode"] = "countdown"
-            info["countdown_remaining"] = rem
-            info["action"] = action
-
-            if elapsed >= 180.0:
-                self.charge_finished_time = None
-                self.was_charging = False
-
-                if is_midnight_window:
-                    try:
-                        subprocess.run(["systemctl", "poweroff"])
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        subprocess.run(["systemctl", "suspend"])
-                    except Exception:
-                        pass
-
-        return info
+def read_daemon_state() -> Optional[Dict[str, Any]]:
+    try:
+        with open(DAEMON_STATE) as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 
 def calculate_accubattery_wear(start_pct: float, end_pct: float) -> float:
@@ -1695,9 +1377,6 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
         main_box.append(header)
         main_box.append(self.view_stack)
         self.view_stack.set_vexpand(True)
-        self.power_mgr = ChargingPowerManager()
-        self._power_info: Dict[str, Any] = {"mode": "standard"}
-        self._power_busy = False
 
         self.page_charging = self.build_charging_tab()
         self.page_discharging = self.build_discharging_tab()
@@ -1709,8 +1388,6 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
         self.refresh_all()
 
     def do_close_request(self) -> bool:
-        if hasattr(self, "power_mgr"):
-            self.power_mgr.cleanup()
         return super().do_close_request()
 
     def set_tab_state(self, tab_name: str, sensitive: bool):
@@ -2139,31 +1816,23 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
 
             self.prognosis_engine.update_power(watts)
 
+            # ── 3. Active cycle: accubatteryd owns session detection, we only follow it ──
             now_t = time.time()
-            dt_now = datetime.fromtimestamp(now_t)
-            hour_of_week = dt_now.weekday() * 24 + dt_now.hour
-            self.db.update_hourly_baseline(hour_of_week, watts)
-
-            # ── 3. Active Cycle Management and Persistence ──
-            current_stype = "charge" if is_charging else "discharge"
-            if self.active_cycle_id is None or (self.last_status != "Unknown" and ((self.last_status == "Charging") != is_charging)):
-                if self.active_cycle_id is not None and ((self.last_status == "Charging") != is_charging):
-                    wear = calculate_accubattery_wear(self.cycle_start_pct or cap, float(cap))
-                    top_apps = self._get_cycle_top_apps()
-                    self.db.finalize_cycle(
-                        self.active_cycle_id, float(cap), now_t, wear,
-                        pd_info["spec"] if self.last_status == "Charging" else None,
-                        top_apps
-                    )
+            daemon_state = read_daemon_state()
+            cid = (daemon_state or {}).get("cycle_id")
+            if cid != self.active_cycle_id:
+                if self.active_cycle_id is not None:
+                    self.db.set_top_apps(self.active_cycle_id, self._get_cycle_top_apps())
                     self.render_history_entries()
-
-                self.active_cycle_id, self.cycle_start_time, self.cycle_start_pct, self.cycle_history_samples = \
-                    self.db.get_or_resume_active_session(current_stype, float(cap), now_t)
+                self.active_cycle_id = cid
+                self.cycle_start_time = daemon_state.get("start_time") if cid else None
+                self.cycle_start_pct = daemon_state.get("start_pct") if cid else None
+                self.cycle_history_samples = self.db.get_cycle_samples(cid) if cid else []
                 self.cycle_app_energy = {}
                 self.cycle_app_cpu_sum = {}
 
             if self.active_cycle_id:
-                self.db.record_telemetry(self.active_cycle_id, now_t, float(cap), watts, amps_ma, volts, temp_c)
+                self.db.set_top_apps(self.active_cycle_id, self._get_cycle_top_apps())
                 if not self.cycle_history_samples or (now_t - self.cycle_history_samples[-1][0]) >= 1.5:
                     self.cycle_history_samples.append((now_t, float(cap), watts))
                     if len(self.cycle_history_samples) > 500:
@@ -2199,10 +1868,6 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
                 if cap <= 80: wear_text += " (Optimal Longevity)"
                 else: wear_text += " (High Voltage Stress)"
                 set_badge(self.lbl_wear_badge, wear_text, "apple-status-green" if cap <= 80 else "apple-status-orange")
-
-                alarm_target = self.db.get_setting("alarm_target", 80)
-                if self.db.get_setting("alarm_enabled", True) and cap >= alarm_target:
-                    self.trigger_charge_alarm(cap, alarm_target)
             else:
                 set_badge(self.lbl_charge_speed, "Disconnected (0 W)", "apple-status-accent")
                 set_badge(self.lbl_phase_badge, "Idle / Not Charging", "apple-status-accent")
@@ -2216,17 +1881,13 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
             set_badge(self.lbl_cap_compare, f"{wh_full:.1f} / {wh_design:.1f} Wh", "apple-status-accent")
             set_badge(self.lbl_cycles, f"{cycles} cycles", "apple-status-accent")
 
-            self.db.record_degradation(round(health_pct, 1), round(wh_full, 2), round(wh_design, 2), int(cycles) if cycles.isdigit() else 0)
             self.degradation_graph.set_records(self.db.get_degradation())
 
             self.refresh_abm_status()
             self.last_status = status
 
             # ── 7. Charging Power Management (Caffeine while charging, auto-sleep/midnight-poweroff) ──
-            if not self._power_busy:
-                self._power_busy = True
-                threading.Thread(target=self._power_worker, args=(is_charging, status, cap, watts), daemon=True).start()
-            power_info = self._power_info
+            power_info = (daemon_state or {}).get("power", {})
             mode = power_info.get("mode", "standard")
             if mode == "charging_awake":
                 set_badge(self.lbl_auto_power, "Caffeine Awake", "apple-status-green")
@@ -2254,16 +1915,6 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
 
         except Exception:
             traceback.print_exc()
-
-    def _power_worker(self, *args):
-        # ChargingPowerManager shells out to hyprctl/loginctl every tick; keep it off the gtk loop.
-        # the ui shows the previous tick's result, which is fine at a 2 s cadence
-        try:
-            self._power_info = self.power_mgr.update(*args)
-        except Exception:
-            traceback.print_exc()
-        finally:
-            self._power_busy = False
 
     # ── Cumulative Per-App Drain Tracking ──
     def _update_cycle_app_drain(self, system_watts: float):
@@ -2543,69 +2194,6 @@ class AccuBatteryWindow(Adw.ApplicationWindow):
         self.lbl_alarm_val.set_text(f"{val}%")
         self.db.set_setting("alarm_target", val)
 
-    def trigger_charge_alarm(self, current_pct: int, target_pct: int):
-        now = time.time()
-        if hasattr(self, "_last_alarm_time") and (now - self._last_alarm_time) < 600:
-            return
-        self._last_alarm_time = now
-
-        if shutil.which("swayosd-client"):
-            subprocess.Popen(["swayosd-client", "--custom-message", f"Target Charge Reached: {current_pct}%", "--custom-icon", "battery-good"])
-
-
-# ── Daemon Mode (Background Logger and SQLite Telemetry) ──
-def run_daemon_loop():
-    bat_dir = "/sys/class/power_supply/BAT0"
-    if not os.path.exists(bat_dir):
-        bat_dir = "/sys/class/power_supply/BAT1"
-    if not os.path.exists(bat_dir):
-        sys.exit(0)
-
-    db = DatabaseManager()
-    power_mgr = ChargingPowerManager()
-    active_cid = None
-    start_pct = None
-    start_time = None
-    last_status = "Unknown"
-
-    while True:
-        try:
-            cap = int(open(f"{bat_dir}/capacity").read().strip())
-            status = open(f"{bat_dir}/status").read().strip()
-            pnow = int(open(f"{bat_dir}/power_now").read().strip()) if os.path.exists(f"{bat_dir}/power_now") else 0
-            vnow = int(open(f"{bat_dir}/voltage_now").read().strip()) if os.path.exists(f"{bat_dir}/voltage_now") else 0
-            watts = pnow / 1_000_000.0
-            volts = vnow / 1_000_000.0
-            amps_ma = (pnow / (vnow / 1000.0)) if vnow > 0 else 0.0
-            temp_c = get_system_temperature()
-            now_t = time.time()
-
-            is_charging = (status == "Charging")
-            current_stype = "charge" if is_charging else "discharge"
-
-            # Inhibit sleep while charging; auto-sleep or midnight-poweroff post-charge
-            power_mgr.update(is_charging, status, cap, watts)
-
-            if active_cid is None or (last_status != "Unknown" and ((last_status == "Charging") != is_charging)):
-                if active_cid is not None and ((last_status == "Charging") != is_charging):
-                    wear = calculate_accubattery_wear(start_pct or cap, float(cap))
-                    db.finalize_cycle(active_cid, float(cap), now_t, wear, "USB-PD Standard" if last_status == "Charging" else None, [])
-                active_cid, start_time, start_pct, _ = db.get_or_resume_active_session(current_stype, float(cap), now_t)
-
-            if active_cid:
-                db.record_telemetry(active_cid, now_t, float(cap), watts, amps_ma, volts, temp_c)
-
-            if is_charging:
-                alarm_target = db.get_setting("alarm_target", 80)
-                if db.get_setting("alarm_enabled", True) and cap >= alarm_target:
-                    if shutil.which("swayosd-client"):
-                        subprocess.run(["swayosd-client", "--custom-message", f"Target Charge Reached: {cap}%", "--custom-icon", "battery-good"])
-
-            last_status = status
-        except Exception:
-            pass
-        time.sleep(10)
-
 
 class AccuBatteryApp(Adw.Application):
     def __init__(self):
@@ -2617,8 +2205,4 @@ class AccuBatteryApp(Adw.Application):
 
 
 if __name__ == "__main__":
-    if "--daemon" in sys.argv:
-        run_daemon_loop()
-    else:
-        app = AccuBatteryApp()
-        sys.exit(app.run(sys.argv))
+    sys.exit(AccuBatteryApp().run(sys.argv))

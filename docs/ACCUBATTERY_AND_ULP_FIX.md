@@ -194,3 +194,21 @@ sudo nixos-rebuild switch --flake /etc/nixos#thinkpad-t14s-gen1-amd
 * App Launcher / Spotlight: Type **`AccuBattery`**
 * Terminal: **`accubattery-gui`** or **`batmon --gui`**
 * Control Center: Open Control Center (**`Super + C`**) $\rightarrow$ Battery $\rightarrow$ **Open AccuBattery Studio**
+
+---
+
+## 3. Session engine (Rust, `pkgs/accubattery`)
+
+`accubattery daemon` (user service `accubattery-daemon`) is the only writer of `~/.local/share/accubattery/history.db`. The GTK window in `accubattery_gui.py` follows the active cycle through `$XDG_RUNTIME_DIR/accubattery/state.json` and only writes per-app drain.
+
+Detection rules (`src/engine.rs`, unit tested):
+* Sessions are Charging or Discharging only. `Full` and `Not charging` (charge limit hold) close the session instead of starting a fake discharge.
+* A status change needs 2 consecutive polls, so USB-PD renegotiation blips do not split sessions. The session boundary is the first sample that showed the change.
+* A gap longer than 60 s between polls is classified by `boot_id`: same boot is suspend, different boot is power off.
+  * Suspend that continues in the same direction keeps one session.
+  * Otherwise the open session is closed at the last sample and, if the gauge moved by at least 0.5 %, an extra row is stored from the energy delta: `sleep_charge`, `sleep_drain`, `off_charge`, `off_drain` (column `kind`, `gap_s` holds the gap length). Charge duration is estimated from the last healthy charge rate, so a laptop that charged for an hour and sat full overnight is not reported as an 8 hour charge.
+* Energy is the `energy_now` delta, not average power times time, so gaps cannot inflate it. Percent uses `energy_now / energy_full`, giving sub percent resolution.
+* Sessions under 2 minutes and 1 % are dropped. The target alarm fires once per charge session.
+* Sleep inhibit while charging and the post-charge suspend or night poweroff policy live in `src/power.rs`.
+
+`accubattery status` prints the live state as JSON.

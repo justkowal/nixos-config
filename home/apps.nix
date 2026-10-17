@@ -139,6 +139,8 @@ let
     '';
   };
 
+  accubattery = pkgs.callPackage ../pkgs/accubattery {};
+
   batmon = pkgs.writeShellApplication {
     name = "batmon";
     runtimeInputs = with pkgs; [coreutils gnugrep gawk upower];
@@ -149,6 +151,7 @@ in {
   home.packages = [
     batmon
     accubattery-gui
+    accubattery
     control-center-gui
     lan-mouse-gui
     fleet-manager-gui
@@ -525,12 +528,13 @@ in {
 
   systemd.user.services.accubattery-daemon = {
     Unit = {
-      Description = "AccuBattery Background Telemetry Logger & Charge Alarm";
+      Description = "AccuBattery session detector, telemetry logger and charge alarm";
       PartOf = [ "graphical-session.target" ];
       After = [ "graphical-session.target" ];
     };
     Service = {
-      ExecStart = "${accubattery-gui}/bin/accubattery-gui --daemon";
+      ExecStart = "${accubattery}/bin/accubattery daemon";
+      Environment = "PATH=${lib.makeBinPath (with pkgs; [coreutils procps systemd swayosd hyprland])}";
       Restart = "on-failure";
       RestartSec = 10;
     };

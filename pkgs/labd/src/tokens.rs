@@ -7,6 +7,7 @@ use serde_json::Value;
 
 pub struct Tokens {
     pub ui_font: String,
+    pub display_font: String,
     pub radius_md: f64,
     pub radius_xl: f64,
     pub alpha_surface: f64,
@@ -43,6 +44,10 @@ impl Tokens {
             ui_font: path(&raw, &["type", "ui"])
                 .as_str()
                 .unwrap_or("Inter")
+                .to_owned(),
+            display_font: path(&raw, &["type", "display"])
+                .as_str()
+                .unwrap_or("Departure Mono")
                 .to_owned(),
             radius_md: num(&["radius", "md"], 12.0),
             radius_xl: num(&["radius", "xl"], 24.0),
@@ -97,7 +102,17 @@ impl Tokens {
              .palette row {{ border-radius: {md}px; padding: 8px 12px; margin: 1px 0; background: none; }}\n\
              .palette row:selected {{ background-color: alpha(@accent_bg_color, 0.22); color: @window_fg_color; }}\n\
              .palette .dim {{ opacity: 0.55; font-size: {small}px; }}\n\
-             .palette .empty {{ opacity: 0.55; padding: 18px 12px; }}\n",
+             .palette .empty {{ opacity: 0.55; padding: 18px 12px; }}\n\
+             .help-page {{ padding: 18px 24px; }}\n\
+             .help-list {{ background: none; }}\n\
+             .help-row {{ padding: 6px 4px; }}\n\
+             .help-group {{ font-size: {small}px; font-weight: 700; letter-spacing: 1px; opacity: 0.55; padding: 16px 4px 4px 4px; }}\n\
+             .kbd {{ font-family: \"{display}\"; background-color: alpha(@window_fg_color, 0.10); \
+               border-radius: {sm}px; padding: 1px 8px; font-size: {small}px; }}\n\
+             .help-card {{ background-color: alpha(@window_fg_color, 0.05); border-radius: {md}px; padding: 14px 16px; }}\n\
+             .help-title {{ font-weight: 700; font-size: {big2}px; }}\n\
+             .help-ok {{ opacity: 0.9; }}\n\
+             .help-fail {{ color: @error_color; font-weight: 700; }}\n",
             alpha = self.alpha_surface,
             font = self.ui_font,
             size = self.body_px,
@@ -105,6 +120,9 @@ impl Tokens {
             small = self.body_px * 0.9,
             xl = self.radius_xl,
             md = self.radius_md,
+            sm = self.radius_md * 0.6,
+            display = self.display_font,
+            big2 = self.body_px * 1.15,
         )
     }
 }
