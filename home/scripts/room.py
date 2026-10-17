@@ -23,6 +23,7 @@ STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "
 INBOX = STATE / "inbox"
 PEER = os.environ.get("ROOM_PEER", "")
 PEER_TITLE = os.environ.get("ROOM_PEER_TITLE", PEER)
+SELF_TITLE = os.environ.get("ROOM_SELF_TITLE", "")
 TAILSCALE = os.environ.get("TAILSCALE", "tailscale")
 TERMINALS = {"kitty", "foot", "alacritty", "org.wezfurlong.wezterm", "com.mitchellh.ghostty"}
 BROWSERS = {"firefox"}
@@ -177,7 +178,7 @@ def send(name, peer):
     room = json.loads(path.read_text())
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / f"{name}.json"
-        out.write_text(json.dumps({"name": name, "from": socket.gethostname(), "windows": room["windows"]}))
+        out.write_text(json.dumps({"name": name, "from": SELF_TITLE or socket.gethostname(), "windows": room["windows"]}))
         res = subprocess.run([TAILSCALE, "file", "cp", str(out), f"{peer}:"], capture_output=True, text=True)
     if res.returncode != 0:
         sys.exit(f"send failed: {res.stderr.strip()[:200]}")

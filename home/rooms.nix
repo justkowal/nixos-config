@@ -2,9 +2,12 @@
   config,
   pkgs,
   lib,
+  osConfig ? {},
   ...
 }: let
   cfg = config.lab.rooms;
+  selfHost = osConfig.networking.hostName or "";
+  selfTitle = config.lab.roster.devices.${selfHost}.title or selfHost;
 
   peerTitle = config.lab.roster.devices.${cfg.peer}.title or cfg.peer;
 
@@ -14,6 +17,7 @@
     text = ''
       export ROOM_PEER=${lib.escapeShellArg cfg.peer}
       export ROOM_PEER_TITLE=${lib.escapeShellArg peerTitle}
+      export ROOM_SELF_TITLE=${lib.escapeShellArg selfTitle}
       export TAILSCALE=/run/current-system/sw/bin/tailscale
       exec python3 ${./scripts/room.py} "$@"
     '';
