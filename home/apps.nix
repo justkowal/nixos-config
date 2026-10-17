@@ -112,33 +112,6 @@ let
       exec python3 "${guisDir}/control_center_gui.py" "$@"
     '';
   };
-  accubattery-gui = pkgs.writeShellApplication {
-    name = "accubattery-gui";
-    runtimeInputs = with pkgs; [
-      (python3.withPackages (ps: [ps.pygobject3 ps.pycairo ps.psutil]))
-      gtk4
-      libadwaita
-      graphene
-      pango
-      gdk-pixbuf
-      gobject-introspection
-      coreutils
-      procps
-      systemd
-      swayosd
-    ];
-    checkPhase = "";
-    text = ''
-      export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
-      export PYTHONPATH="${guisDir}''${PYTHONPATH:+:$PYTHONPATH}"
-      devGui="/etc/nixos/home/scripts/guis/accubattery_gui.py"
-      if [ -f "$devGui" ]; then
-        exec python3 "$devGui" "$@"
-      fi
-      exec python3 "${guisDir}/accubattery_gui.py" "$@"
-    '';
-  };
-
   accubattery = pkgs.callPackage ../pkgs/accubattery {};
 
   batmon = pkgs.writeShellApplication {
@@ -150,7 +123,6 @@ let
 in {
   home.packages = [
     batmon
-    accubattery-gui
     accubattery
     control-center-gui
     lan-mouse-gui

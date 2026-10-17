@@ -112,6 +112,8 @@ impl Tokens {
              .help-card {{ background-color: alpha(@window_fg_color, 0.05); border-radius: {md}px; padding: 14px 16px; }}\n\
              .help-title {{ font-weight: 700; font-size: {big2}px; }}\n\
              .help-ok {{ opacity: 0.9; }}\n\
+             .help-chip-ok {{ color: @accent_color; font-weight: 700; }}\n\
+             .help-chip-fail {{ background-color: alpha(@error_color, 0.20); color: @error_color; font-weight: 700; }}\n\
              .help-fail {{ color: @error_color; font-weight: 700; }}\n",
             alpha = self.alpha_surface,
             font = self.ui_font,

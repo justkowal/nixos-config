@@ -90,7 +90,7 @@ impl Battery {
         if let Some(v) = num(&self.dir, "temp") {
             return if v < 1000.0 { v / 10.0 } else { v / 1000.0 };
         }
-        num(Path::new("/sys/class/thermal/thermal_zone0"), "temp").map(|v| v / 1000.0).unwrap_or(0.0)
+        0.0
     }
 }
 

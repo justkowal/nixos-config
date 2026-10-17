@@ -477,9 +477,9 @@ in {
           bindl = , switch:on:Lid Switch, exec, monitor-ctl lid-close
           bindl = , switch:off:Lid Switch, exec, monitor-ctl lid-open
 
-          windowrule = float 1, match:class ^(io\.github\.justkowal\.AccuBattery)$
-          windowrule = size ${if laptop then "740 780" else "740 780"}, match:class ^(io\.github\.justkowal\.AccuBattery)$
-          windowrule = center 1, match:class ^(io\.github\.justkowal\.AccuBattery)$
+          windowrule = float 1, match:class ^(lab\.justkowal\.AccuBattery)$
+          windowrule = size ${if laptop then "740 780" else "740 780"}, match:class ^(lab\.justkowal\.AccuBattery)$
+          windowrule = center 1, match:class ^(lab\.justkowal\.AccuBattery)$
 
           windowrule = float 1, match:class ^(io\.github\.justkowal\.TabletDisplayStudio)$
           windowrule = size ${if laptop then "540 580" else "560 620"}, match:class ^(io\.github\.justkowal\.TabletDisplayStudio)$

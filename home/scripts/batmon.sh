@@ -244,8 +244,6 @@ case "${1:-}" in
   --gui)
     if command -v accubattery-gui >/dev/null 2>&1; then
       exec accubattery-gui
-    else
-      exec python3 "$(dirname "$0")/guis/accubattery_gui.py"
     fi
     ;;
   --help|-h)

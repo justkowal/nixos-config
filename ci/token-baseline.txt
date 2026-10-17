@@ -1,5 +1,4 @@
 home/ai.nix
-home/scripts/guis/accubattery_gui.py
 home/scripts/guis/control_center_gui.py
 home/scripts/guis/fleet_manager_gui.py
 home/scripts/guis/lan_mouse_gui.py

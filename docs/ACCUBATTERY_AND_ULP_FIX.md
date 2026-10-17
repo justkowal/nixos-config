@@ -165,8 +165,8 @@ The port brings all core features of the Android **AccuBattery** application to 
 | Path | Purpose |
 | :--- | :--- |
 | `modules/power-saving.nix` | Replaces `amdgpu.abm_level=4` with `0`, updates TLP `AMDGPU_ABM_LEVEL=0`, updates `apply-ultra-power` runtime script, adds sysfs permissions for `panel_power_savings`. |
-| `home/scripts/guis/accubattery_gui.py` | Standalone GTK4 + Libadwaita + Cairo application implementing all AccuBattery tabs, graphs, per-app battery estimations, and ULP filter controls. |
-| `home/apps.nix` | Adds `accubattery-gui` package with `pycairo` and `psutil` runtime inputs, adds `.desktop` launcher, and registers systemd background service. |
+| `pkgs/accubattery` | Rust crate: `accubattery` (session daemon, `status`) and `accubattery-gui` (GTK4 + Libadwaita + cairo window). |
+| `home/apps.nix` | Installs the package, the `.desktop` launcher and the `accubattery-daemon` user service. |
 | `home/scripts/guis/control_center_gui.py` | Adds direct launch action for AccuBattery Studio and adds the AMD ABM color filter status & 1-click fix to Control Center. |
 | `home/hyprland.nix` | Adds window rules (`size 680 740`, `center`, `float`) and `$mod ALT, B` keybinding for instant launch. |
 | `home/scripts/batmon.sh` | Adds `--gui` flag to open `accubattery-gui`. |
@@ -199,7 +199,7 @@ sudo nixos-rebuild switch --flake /etc/nixos#thinkpad-t14s-gen1-amd
 
 ## 3. Session engine (Rust, `pkgs/accubattery`)
 
-`accubattery daemon` (user service `accubattery-daemon`) is the only writer of `~/.local/share/accubattery/history.db`. The GTK window in `accubattery_gui.py` follows the active cycle through `$XDG_RUNTIME_DIR/accubattery/state.json` and only writes per-app drain.
+`accubattery daemon` (user service `accubattery-daemon`) is the only writer of `~/.local/share/accubattery/history.db`. `accubattery-gui` reads the database, follows the active cycle through `$XDG_RUNTIME_DIR/accubattery/state.json` and writes only settings (alarm, charge limit, display power saving).
 
 Detection rules (`src/engine.rs`, unit tested):
 * Sessions are Charging or Discharging only. `Full` and `Not charging` (charge limit hold) close the session instead of starting a fake discharge.

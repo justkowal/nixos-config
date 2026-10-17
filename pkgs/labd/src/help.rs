@@ -248,6 +248,16 @@ pub fn parse_binds(binds: &Value, keymap: &Value) -> Vec<Bind> {
             labels.insert(canon(&mods, key), (label.to_owned(), group.to_owned()));
         }
     }
+    // a mode's binds only work after the bind that enters it, so say which one
+    let mut enter: HashMap<String, String> = HashMap::new();
+    for b in binds.as_array().into_iter().flatten() {
+        let arg = b["arg"].as_str().unwrap_or("");
+        if b["dispatcher"] == "submap" && arg != "reset" {
+            let mut combo: Vec<String> = mods_from_mask(b["modmask"].as_u64().unwrap_or(0)).iter().map(|m| (*m).to_owned()).collect();
+            combo.push(key_name(b["key"].as_str().unwrap_or(""), 0));
+            enter.insert(arg.to_owned(), combo.join(" + "));
+        }
+    }
     let mut out: Vec<Bind> = Vec::new();
     for b in binds.as_array().into_iter().flatten() {
         let mods = mods_from_mask(b["modmask"].as_u64().unwrap_or(0));
@@ -263,6 +273,10 @@ pub fn parse_binds(binds: &Value, keymap: &Value) -> Vec<Bind> {
         let submap = b["submap"].as_str().unwrap_or("");
         let group = if submap.is_empty() {
             group
+        } else if let Some(combo) = enter.get(submap) {
+            let mut name = submap.to_owned();
+            name[..1].make_ascii_uppercase();
+            format!("{name} mode, press {combo} first")
         } else {
             "Resize mode".to_owned()
         };
@@ -280,7 +294,7 @@ pub fn parse_binds(binds: &Value, keymap: &Value) -> Vec<Bind> {
     let rank = |g: &str| {
         GROUP_ORDER
             .iter()
-            .position(|o| *o == g)
+            .position(|o| g.starts_with(o))
             .unwrap_or(GROUP_ORDER.len())
     };
     out.sort_by(|a, b| {
@@ -335,6 +349,7 @@ pub struct Help {
     rows: RefCell<Vec<Bind>>,
     health: gtk::Box,
     stack: gtk::Stack,
+    scrolls: Vec<gtk::ScrolledWindow>,
 }
 
 impl Help {
@@ -407,6 +422,7 @@ impl Help {
             rows: RefCell::new(Vec::new()),
             health,
             stack,
+            scrolls: vec![binds_scroll, features_scroll, health_scroll],
         });
         me.wire();
         me
@@ -489,6 +505,7 @@ impl Help {
         }
         self.stack.set_visible_child_name(page);
         self.win.present();
+        self.reset_scroll();
         self.search.set_text("");
         self.refresh();
     }
@@ -512,6 +529,7 @@ impl Help {
         while let Some(r) = self.binds.first_child() {
             self.binds.remove(&r);
         }
+        *self.rows.borrow_mut() = data.binds.clone();
         for b in &data.binds {
             let row = gtk::Box::builder()
                 .orientation(gtk::Orientation::Horizontal)
@@ -543,7 +561,8 @@ impl Help {
                     .build(),
             );
         }
-        *self.rows.borrow_mut() = data.binds;
+        self.binds.invalidate_headers();
+        self.binds.invalidate_filter();
 
         while let Some(r) = self.health.first_child() {
             self.health.remove(&r);
@@ -557,15 +576,50 @@ impl Help {
             );
         }
         for (ok, line) in data.health {
+            let row = gtk::Box::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .spacing(12)
+                .build();
+            let chip = gtk::Label::new(Some(if ok { "OK" } else { "FIX" }));
+            chip.add_css_class("kbd");
+            chip.add_css_class(if ok { "help-chip-ok" } else { "help-chip-fail" });
+            chip.set_size_request(44, -1);
+            row.append(&chip);
             let l = gtk::Label::builder()
-                .label(&line)
+                .label(friendly(&line))
                 .xalign(0.0)
                 .wrap(true)
+                .hexpand(true)
                 .build();
             l.add_css_class(if ok { "help-ok" } else { "help-fail" });
-            self.health.append(&l);
+            row.append(&l);
+            self.health.append(&row);
+        }
+        self.reset_scroll();
+    }
+
+    fn reset_scroll(&self) {
+        for sw in &self.scrolls {
+            sw.vadjustment().set_value(0.0);
         }
     }
+}
+
+/// `lab doctor` names are for the terminal, the window uses plain ones.
+fn friendly(line: &str) -> String {
+    const NAMES: &[(&str, &str)] = &[
+        ("bus", "Event bus"),
+        ("shell services", "Shell"),
+        ("continuity services", "Devices and rooms"),
+        ("tokens", "Design tokens"),
+        ("keymap", "Keymap"),
+        ("waybar and swaync fallbacks", "Fallback bar and notifications"),
+        ("sound", "Sound"),
+    ];
+    NAMES
+        .iter()
+        .find(|(k, _)| line.starts_with(k))
+        .map_or_else(|| line.to_owned(), |(k, v)| format!("{v}{}", &line[k.len()..]))
 }
 
 fn build_features(page: &gtk::Box, help: &Value) {
@@ -617,6 +671,23 @@ fn build_features(page: &gtk::Box, help: &Value) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn mode_binds_name_the_bind_that_enters_them() {
+        let binds = json!([
+            {"modmask": 64, "key": "R", "dispatcher": "submap", "arg": "resize", "submap": ""},
+            {"modmask": 0, "key": "1", "dispatcher": "exec", "arg": "resize-split width 25", "submap": "resize"},
+        ]);
+        let out = parse_binds(&binds, &Value::Null);
+        assert!(out.iter().any(|b| b.group == "Resize mode, press SUPER + R first"), "{out:?}");
+    }
+
+    #[test]
+    fn doctor_lines_get_plain_names() {
+        assert_eq!(friendly("bus (1 events)"), "Event bus (1 events)");
+        assert_eq!(friendly("continuity services: lab-inbox is failed"), "Devices and rooms: lab-inbox is failed");
+        assert_eq!(friendly("something else"), "something else");
+    }
 
     #[test]
     fn modmask_reads_like_a_shortcut() {
