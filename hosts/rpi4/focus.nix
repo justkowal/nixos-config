@@ -78,9 +78,9 @@ in {
 
     distractions = lib.mkOption {
       type = lib.types.listOf lib.types.str;
+      # youtube is deliberately not here: it is the study music. Blocking is per domain, so there is no
+      # way to block videos and keep music.youtube.com. Add it to this list in the host config if you want it.
       default = [
-        "youtube.com"
-        "youtu.be"
         "reddit.com"
         "x.com"
         "twitter.com"
