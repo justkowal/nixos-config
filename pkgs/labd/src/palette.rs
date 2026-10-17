@@ -134,23 +134,26 @@ fn app_items() -> Vec<Item> {
         .collect()
 }
 
-/// `room entries` prints [{name, kind}]; it is slow (scans ~ for repos), so it runs off the main loop.
+/// `room entries` prints [{title, group, exec, rank}]; it is slow (scans ~ for repos), so it runs off the main loop.
 fn room_items(entries: &Value) -> Vec<Item> {
     entries
         .as_array()
         .map(|a| {
             a.iter()
                 .filter_map(|e| {
-                    let name = e["name"].as_str()?;
-                    let kind = if e["kind"] == "repo" { "Repo" } else { "Room" };
+                    let group = e["group"].as_str().unwrap_or("Room");
                     Some(Item {
-                        title: name.to_owned(),
-                        group: kind.into(),
-                        exec: format!("room open {}", shell_quote(name)),
+                        title: e["title"].as_str()?.to_owned(),
+                        group: group.to_owned(),
+                        exec: e["exec"].as_str()?.to_owned(),
                         confirm: false,
-                        glyph: Glyph::Room,
+                        glyph: if matches!(group, "Inbox" | "Send") {
+                            Glyph::Handoff
+                        } else {
+                            Glyph::Room
+                        },
                         icon: None,
-                        rank: 1,
+                        rank: e["rank"].as_u64().map_or(1, |r| r.min(3) as u8),
                     })
                 })
                 .collect()
@@ -568,6 +571,19 @@ mod tests {
         let it = web_item("rust gtk4", "https://example.org/?q=%s");
         assert_eq!(it.exec, "xdg-open 'https://example.org/?q=rust%20gtk4'");
         assert_eq!(it.group, "Web");
+    }
+
+    #[test]
+    fn room_entries_map_to_items() {
+        let entries = serde_json::json!([
+            {"title": "x from Desktop", "group": "Inbox", "rank": 0, "exec": "room take x"},
+            {"title": "Send proj to Desktop", "group": "Send", "rank": 2, "exec": "room send proj"},
+            {"title": "no exec"},
+        ]);
+        let items = room_items(&entries);
+        assert_eq!(items.len(), 2);
+        assert_eq!((items[0].rank, items[1].rank), (0, 2));
+        assert_eq!(items[0].exec, "room take x");
     }
 
     #[test]

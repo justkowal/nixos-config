@@ -160,24 +160,21 @@ Add a row here when you add an event. Payload keys are the contract between publ
 | `room.restored` | `room` | `name`, `windows` | "Room restored, <name>" |
 | `handoff.arrived` | `home-lan` | `peer`, `ip` | "Handoff complete, <peer>" |
 | `handoff.left` | `home-lan` | `peer` | not shown (kept for scenes) |
+| `roster.changed` | `roster` | `devices` (`host`, `title`, `kind`, `os`, `online`, `self`) | stored by the island, not shown |
+| `roster.show` | `keymap` | none | "Devices" with a dot per device (filled online, ring offline), `SUPER + ALT + D` |
+| `roster.device` | `roster` | `title`, `online` | "<title> connected" or "offline" |
+| `room.sent` | `room` | `name`, `peer` | "Room sent to <peer>" |
+| `room.received` | `lab-inbox` | `name`, `from`, `windows` | "Room received, <name> from <from>" (high priority) |
+| `room.accepted` | `room` | `name` | not shown |
 | `scene.started` | `scene` | `name`, `title` | not shown |
 | `scene.done` | `scene` | `name`, `title`, `announce`, `failed` | title when `announce`; "Scene failed, <title>" when `failed` > 0 |
 | `palette.toggle` | `keymap` | none | opens or closes the palette (handled in `main.rs`, no card) |
 
-## 11. Widget section grammar
+### Continuity (device roster and room transfer)
 
-Every `deskwidgets` section uses the same few shapes, so new sections look like they belong. Build them from the helpers in `home/scripts/guis/widgets_gui.py`, not from raw labels.
-
-- **Header:** small tracked uppercase label left, freshness right (`Section`).
-- **`kv(label, value, unit)`:** the one row shape. Dim label on the left in a fixed column, value on the right. `stat()` draws the number in the display face (Departure Mono, class `dw-num`) with its unit beside it in the body face. Words and sentences stay in the body face (`num=False`), never pixel type.
-- **`bar(pct)`:** the thin progress bar, accent normally, `dw-mid` over 70 percent, `dw-hot` over 90.
-- **`Spark(values, "bars" | "line")`:** usage over time. Bars highlight the newest `hot_tail` buckets in the accent colour; the line chart is percent over a time span with a soft fill. Add a `dw-cap` caption under every graph saying what the axis is.
-- **Usage sections** (`_usage`): a row per window (label, bar, percent, raw count), then graphs. The raw column keeps its width when empty so bars line up between sections.
-- **Compact versus dashboard:** the wallpaper column is `compact` (fewer rows, one short hint line, small graphs); the dashboard shows resets, the full reason and the percent-over-time line chart.
-- **Preview before you ship a UI change.** Render the column to a PNG without a screenshot tool by building the sections with fake data in a throwaway script, mapping a plain window, and snapshotting the widget with `Gtk.WidgetPaintable` and `render_texture` (the widget must be mapped, so the window shows for a second). Then look at the image.
-
-### Usage data
-
-- `claude` and `gemini` providers keep a history of live limit readings in `~/.cache/deskwidgets/history/<name>.jsonl` (trimmed to 14 days), which feeds the percent-over-time line and the "Last reading" line when the token has expired.
-- Claude tokens per hour come from one pass over `~/.claude/projects/*/*.jsonl` (also the 5 h and week sums), so the graph is backfilled immediately. Gemini only leaves conversation files (counted from both `~/.gemini/antigravity` and `~/.gemini/antigravity-ide`), so it graphs conversations per day.
-- **Percentages need a live token.** Both providers refuse to refresh tokens themselves (a refresh would log out Claude Code or Antigravity), so run `claude` once to refresh Claude. For Antigravity, opening the app was not enough in testing (the token file stayed untouched), so send a prompt there. The column states the exact reason and fix in one line (`reason` in the provider output). Until then you get raw usage plus the last known reading. `lab.widgets.budgets.claude.fiveHour` and `.week` (tokens) turn local usage into an estimated percentage, shown with a `~`.
+- **Roster:** `lab-roster` (`home/lab/roster.nix`, `home/scripts/lab-roster.py`) reads `tailscale status --json` every 15 s, keeps only nodes owned by your own tailnet user, and names them from `lab.roster.devices` (keyed by the tailscale dns label). It publishes `roster.changed` on change and every 4 minutes, and `roster.device` when a device goes online or offline.
+- **Transport is Taildrop, on purpose.** `room send NAME` runs `tailscale file cp` to the peer (`lab.rooms.peer`, default the handoff peer). Tailscale authenticates the transfer between your own devices and labd opens no listener, so there is no new network surface. Do not replace this with a custom port or ssh without a written reason.
+- **Receiving:** `lab-inbox` (`home/scripts/lab-inbox.py`, started from `home/rooms.nix`) runs `tailscale file get --wait` into `~/.local/state/rooms/inbox-raw`, validates each file (JSON, at most 256 KB, safe name, a non-empty `windows` list), moves valid ones to `~/.local/state/rooms/inbox` and publishes `room.received`. It needs tailscale's operator to be your user (`--operator=justkowal`; set on the desktop, and via `extraSetFlags` on the laptop). Nothing opens automatically.
+- **Accepting is explicit.** Inbox rooms appear first in the palette ("<name> from <device>"). Enter runs `room take NAME`, which accepts the room and opens it. Accepting rewrites it with `sanitize_foreign` in `room.py`: terminals keep only their cwd, browsers keep nothing else, other windows may relaunch only an installed desktop application by program name with no arguments, and anything else is dropped. A received room can never carry its own command line.
+- **Send:** typing "send" in the palette lists "Send <room> to <peer>" for each saved room (rank 2, hidden from the default list). Rooms saved by `leave` (`last`) are sendable too.
+- `lab doctor` has a "continuity services" check that fails with the reason when `lab-roster` or `lab-inbox` is not running.

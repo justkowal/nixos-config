@@ -6,6 +6,7 @@
     ./palette.nix
     ./cli.nix
     ./led.nix
+    ./roster.nix
     ./shell.nix
   ];
 }

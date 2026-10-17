@@ -112,6 +112,16 @@ def chk_shell():
             raise RuntimeError(f"{unit} is {out or 'unknown'}")
 
 
+def chk_continuity():
+    bad = []
+    for unit in ("lab-roster", "lab-inbox"):
+        out = subprocess.run(["systemctl", "--user", "is-active", unit], capture_output=True, text=True).stdout.strip()
+        if out != "active":
+            bad.append(f"{unit} is {out or 'unknown'}")
+    if bad:
+        raise RuntimeError(", ".join(bad) + " (inbox needs tailscale --operator for your user)")
+
+
 def chk_tokens():
     t = load_conf("tokens.json")
     missing = [k for k in ("type", "radius", "motion", "material") if k not in t]
@@ -142,7 +152,7 @@ def chk_sound():
 
 def cmd_doctor(_a):
     results = [check(label, fn) for label, fn in (
-        ("bus", chk_bus), ("shell services", chk_shell), ("tokens", chk_tokens),
+        ("bus", chk_bus), ("shell services", chk_shell), ("continuity services", chk_continuity), ("tokens", chk_tokens),
         ("keymap", chk_keymap), ("waybar and swaync fallbacks", chk_fallbacks), ("sound", chk_sound))]
     return 0 if all(results) else 1
 

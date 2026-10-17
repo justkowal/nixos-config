@@ -5,18 +5,25 @@
   room open <name> [--dry-run]
   room pick                    rofi list of saved rooms plus git repos under ~
   room list
-  room entries                 JSON for the command palette: saved rooms plus git repos
+  room entries                 JSON for the command palette: inbox, saved rooms, repos, send actions
+  room send <name> [peer]      send a saved room to your other machine over Taildrop
+  room accept <name>           move a received room from the inbox into saved rooms
 """
 
 import json
 import os
 import shlex
+import socket
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "rooms"
+INBOX = STATE / "inbox"
+PEER = os.environ.get("ROOM_PEER", "")
+PEER_TITLE = os.environ.get("ROOM_PEER_TITLE", PEER)
+TAILSCALE = os.environ.get("TAILSCALE", "tailscale")
 TERMINALS = {"kitty", "foot", "alacritty", "org.wezfurlong.wezterm", "com.mitchellh.ghostty"}
 BROWSERS = {"firefox"}
 # windows that belong to the desktop shell, not to a project
@@ -106,6 +113,111 @@ def save(name, all_ws):
     (STATE / f"{name}.json").write_text(json.dumps({"name": name, "windows": windows}, indent=2))
     print(f"saved {len(windows)} windows to {STATE / f'{name}.json'}")
     publish("room.saved", {"name": name, "windows": len(windows)})
+
+
+def desktop_programs():
+    """Program names of installed desktop applications: the only ones a received room may relaunch."""
+    dirs = [Path.home() / ".local/share"] + [Path(d) for d in os.environ.get("XDG_DATA_DIRS", "/usr/share").split(":") if d]
+    names = set()
+    for d in dirs:
+        for f in (d / "applications").glob("*.desktop"):
+            try:
+                for line in f.read_text(errors="ignore").splitlines():
+                    if line.startswith("Exec="):
+                        argv = shlex.split(line[5:])
+                        # skip `env VAR=1 prog` style prefixes
+                        argv = [a for a in argv if "=" not in a.split("/")[-1] or a.startswith("/")]
+                        if argv and argv[0] == "env":
+                            argv = argv[1:]
+                        if argv:
+                            names.add(os.path.basename(argv[0]))
+                        break
+            except (OSError, ValueError):
+                continue
+    return names
+
+
+def sanitize_foreign(windows):
+    """A room from another machine only gets to relaunch programs by name, never run its own arguments."""
+    out = []
+    apps = desktop_programs()
+    for w in windows:
+        klass = str(w.get("class", ""))
+        if not klass:
+            continue
+        clean = {"class": klass, "title": str(w.get("title", ""))[:200], "workspace": w.get("workspace") if isinstance(w.get("workspace"), int) else None}
+        try:
+            size, at = [int(v) for v in w["size"]], [int(v) for v in w["at"]]
+            if w.get("floating") and len(size) == 2 and len(at) == 2:
+                clean.update(floating=True, size=size, at=at)
+        except (KeyError, TypeError, ValueError):
+            pass
+        k = klass.lower()
+        if k in TERMINALS:
+            cwd = w.get("cwd")
+            clean["cwd"] = cwd if isinstance(cwd, str) else None
+        elif k not in BROWSERS:
+            cmd = w.get("cmd")
+            prog = os.path.basename(cmd[0]) if isinstance(cmd, list) and cmd and isinstance(cmd[0], str) else k
+            if prog not in apps or not shutil.which(prog):
+                continue
+            clean["cmd"] = [prog]
+        out.append(clean)
+    return out
+
+
+def send(name, peer):
+    path = STATE / f"{name}.json"
+    if not path.exists():
+        sys.exit(f"no saved room '{name}' to send")
+    if not peer:
+        sys.exit("no peer: pass one or set lab.rooms.peer")
+    import tempfile
+
+    room = json.loads(path.read_text())
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / f"{name}.json"
+        out.write_text(json.dumps({"name": name, "from": socket.gethostname(), "windows": room["windows"]}))
+        res = subprocess.run([TAILSCALE, "file", "cp", str(out), f"{peer}:"], capture_output=True, text=True)
+    if res.returncode != 0:
+        sys.exit(f"send failed: {res.stderr.strip()[:200]}")
+    print(f"sent {name} to {peer}")
+    publish("room.sent", {"name": name, "peer": PEER_TITLE or peer})
+
+
+def accept(name):
+    src = INBOX / f"{name}.json"
+    if not src.exists():
+        sys.exit(f"no received room '{name}'")
+    room = json.loads(src.read_text())
+    dest = STATE / f"{name}.json"
+    if dest.exists():
+        dest = STATE / f"{name}-from-{room.get('from', 'peer')}.json"
+    STATE.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps({"name": dest.stem, "windows": sanitize_foreign(room["windows"])}, indent=2))
+    src.unlink()
+    print(dest.stem)
+    publish("room.accepted", {"name": dest.stem})
+    return dest.stem
+
+
+def entries():
+    q = shlex.quote
+    found = []
+    if INBOX.is_dir():
+        for f in sorted(INBOX.glob("*.json")):
+            try:
+                room = json.loads(f.read_text())
+            except (OSError, ValueError):
+                continue
+            found.append({"title": f"{f.stem} from {room.get('from', 'peer')}", "group": "Inbox", "rank": 0,
+                          "exec": f"room take {q(f.stem)}"})
+    rooms = saved()
+    found += [{"title": r, "group": "Room", "rank": 1, "exec": f"room open {q(r)}"} for r in rooms]
+    found += [{"title": n, "group": "Repo", "rank": 1, "exec": f"room open {q(n)}"} for n in sorted(repos()) if n not in rooms]
+    if PEER:
+        found += [{"title": f"Send {r} to {PEER_TITLE}", "group": "Send", "rank": 2, "exec": f"room send {q(r)}"} for r in rooms]
+    return found
 
 
 def terminal_cmd(klass, cwd):
@@ -212,10 +324,11 @@ def main(argv):
     elif cmd == "list":
         print("\n".join(saved()))
     elif cmd == "entries":
-        rooms = saved()
-        found = [{"name": r, "kind": "room"} for r in rooms]
-        found += [{"name": n, "kind": "repo"} for n in sorted(repos()) if n not in rooms]
-        print(json.dumps(found))
+        print(json.dumps(entries()))
+    elif cmd == "send" and rest:
+        send(rest[0], rest[1] if len(rest) > 1 else PEER)
+    elif cmd == "accept" and rest:
+        accept(rest[0])
     else:
         sys.exit(__doc__.strip())
 

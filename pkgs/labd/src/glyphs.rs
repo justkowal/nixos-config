@@ -26,6 +26,9 @@ pub enum Glyph {
     Lock,
     Search,
     Scene,
+    Device,
+    Dot,
+    Ring,
 }
 
 pub const SIZE: f64 = 24.0;
@@ -148,6 +151,19 @@ pub fn draw(cr: &Context, glyph: Glyph) {
             );
             cr.close_path();
         }
+        Glyph::Device => {
+            cr.rectangle(3.0, 4.0, 18.0, 12.0);
+            line(cr, &[(8.0, 20.0), (16.0, 20.0)]);
+            line(cr, &[(12.0, 16.0), (12.0, 20.0)]);
+        }
+        Glyph::Dot => {
+            cr.arc(12.0, 12.0, 7.0, 0.0, 2.0 * PI);
+            let _ = cr.fill();
+            return;
+        }
+        Glyph::Ring => {
+            cr.arc(12.0, 12.0, 6.5, 0.0, 2.0 * PI);
+        }
         Glyph::Handoff => {
             line(cr, &[(4.0, 8.0), (20.0, 8.0)]);
             line(cr, &[(16.0, 4.0), (20.0, 8.0), (16.0, 12.0)]);
@@ -209,6 +225,9 @@ mod tests {
             Glyph::Lock,
             Glyph::Search,
             Glyph::Scene,
+            Glyph::Device,
+            Glyph::Dot,
+            Glyph::Ring,
         ];
         let cell = 96;
         let surface = ImageSurface::create(Format::ARgb32, cell * all.len() as i32, cell).unwrap();

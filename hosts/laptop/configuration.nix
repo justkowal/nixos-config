@@ -336,6 +336,8 @@ in {
     enable = true;
     authKeyFile = config.sops.secrets."tailscale_auth_key".path;
     extraUpFlags = [ "--accept-routes" ];
+    # Taildrop receive (lab-inbox) needs the operator, the desktop already has it
+    extraSetFlags = [ "--operator=justkowal" ];
   };
 
   # Ensure Syncthing, Render, Notes, GameSaves, and Documents directories exist with correct user ownership,

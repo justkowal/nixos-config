@@ -29,6 +29,8 @@ pub struct Card {
     level: Option<f64>,
     hold_ms: u64,
     priority: Priority,
+    /// device roster chips: (title, online)
+    chips: Vec<(String, bool)>,
 }
 
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
@@ -92,6 +94,34 @@ fn card_for(ev: &Value) -> Option<Card> {
             None,
             3500,
         ),
+        "roster.device" => {
+            let title = p["title"].as_str().unwrap_or("Device");
+            let state = if p["online"].as_bool().unwrap_or(false) {
+                "connected"
+            } else {
+                "offline"
+            };
+            (Glyph::Device, format!("{title} {state}"), None, 3000)
+        }
+        "room.sent" => (
+            Glyph::Handoff,
+            match p["peer"].as_str() {
+                Some(peer) => format!("Room sent to {peer}"),
+                None => "Room sent".to_owned(),
+            },
+            None,
+            3000,
+        ),
+        "room.received" => {
+            let name = p["name"].as_str().unwrap_or("room");
+            let from = p["from"].as_str().unwrap_or("another device");
+            (
+                Glyph::Room,
+                format!("Room received, {name} from {from}"),
+                None,
+                5000,
+            )
+        }
         _ => return None,
     };
     let priority = match ev["priority"].as_str() {
@@ -107,7 +137,25 @@ fn card_for(ev: &Value) -> Option<Card> {
         level: level.map(|v| (v / 100.0).clamp(0.0, 1.0)),
         hold_ms: hold_ms.min(ttl_ms),
         priority,
+        chips: Vec::new(),
     })
+}
+
+/// roster.changed payload to (title, online), this machine first as the roster publisher sorts it.
+fn roster_from(ev: &Value) -> Vec<(String, bool)> {
+    ev["payload"]["devices"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|d| {
+                    Some((
+                        d["title"].as_str()?.to_owned(),
+                        d["online"].as_bool().unwrap_or(false),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub struct Island {
@@ -118,6 +166,9 @@ pub struct Island {
     glyph: Rc<Cell<Glyph>>,
     label: gtk::Label,
     bar: gtk::ProgressBar,
+    chips_box: gtk::Box,
+    /// last roster.changed: (title, online)
+    roster: RefCell<Vec<(String, bool)>>,
     motion: Rc<Motion>,
     current: RefCell<Option<Card>>,
     queue: RefCell<VecDeque<Card>>,
@@ -159,6 +210,11 @@ impl Island {
         pill.append(&icon);
         pill.append(&label);
         pill.append(&bar);
+        let chips_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(14)
+            .build();
+        pill.append(&chips_box);
         win.set_child(Some(&pill));
 
         // the island is output only, clicks must reach whatever is underneath
@@ -177,6 +233,8 @@ impl Island {
             glyph,
             label,
             bar,
+            chips_box,
+            roster: RefCell::new(Vec::new()),
             motion,
             current: RefCell::new(None),
             queue: RefCell::new(VecDeque::new()),
@@ -186,7 +244,15 @@ impl Island {
     }
 
     pub fn on_event(self: &Rc<Self>, ev: &Value) {
-        let Some(card) = card_for(ev) else { return };
+        let card = match ev["name"].as_str() {
+            Some("roster.changed") => {
+                *self.roster.borrow_mut() = roster_from(ev);
+                return;
+            }
+            Some("roster.show") => self.roster_card(ev),
+            _ => card_for(ev),
+        };
+        let Some(card) = card else { return };
         let idle = self.current.borrow().is_none() || self.hiding.get();
         if idle {
             self.show(card);
@@ -209,7 +275,44 @@ impl Island {
         }
     }
 
+    fn roster_card(&self, ev: &Value) -> Option<Card> {
+        let chips = self.roster.borrow().clone();
+        let text = if chips.is_empty() {
+            "No devices known"
+        } else {
+            "Devices"
+        };
+        Some(Card {
+            key: "roster.show".to_owned(),
+            glyph: Glyph::Device,
+            text: text.to_owned(),
+            level: None,
+            hold_ms: 4500,
+            priority: if ev["priority"] == "high" {
+                Priority::High
+            } else {
+                Priority::Normal
+            },
+            chips,
+        })
+    }
+
     fn show(self: &Rc<Self>, card: Card) {
+        while let Some(c) = self.chips_box.first_child() {
+            self.chips_box.remove(&c);
+        }
+        for (title, online) in &card.chips {
+            let dot = Rc::new(Cell::new(if *online { Glyph::Dot } else { Glyph::Ring }));
+            let chip = gtk::Box::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .spacing(6)
+                .build();
+            chip.append(&glyphs::area(&dot, 10));
+            chip.append(&gtk::Label::new(Some(title)));
+            chip.set_opacity(if *online { 1.0 } else { 0.5 });
+            self.chips_box.append(&chip);
+        }
+        self.chips_box.set_visible(!card.chips.is_empty());
         self.glyph.set(card.glyph);
         self.icon.queue_draw();
         self.label.set_text(&card.text);
