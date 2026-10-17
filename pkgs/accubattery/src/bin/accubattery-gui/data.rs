@@ -59,6 +59,7 @@ pub struct Snapshot {
     pub stop_threshold: Option<i64>,
     pub abm: Option<i64>,
     pub trip_until: Option<f64>,
+    pub keep_awake: bool,
     pub sched_enabled: bool,
     pub sched_dow: u32,
     pub sched_time: String,
@@ -133,6 +134,7 @@ pub fn snapshot(bats: &[Battery]) -> Snapshot {
     let setting = |k: &str| db.setting(k);
     snap.alarm_enabled = setting("alarm_enabled").map(|v| !v.eq_ignore_ascii_case("false")).unwrap_or(true);
     snap.alarm_target = setting("alarm_target").and_then(|v| v.parse().ok()).unwrap_or(80.0);
+    snap.keep_awake = setting("keep_awake_charging").is_some_and(|v| v.eq_ignore_ascii_case("true"));
     snap.sched_enabled = setting("sched_enabled").is_some_and(|v| v.eq_ignore_ascii_case("true"));
     snap.sched_dow = setting("sched_dow").and_then(|v| v.parse().ok()).unwrap_or(0);
     snap.sched_time = setting("sched_time").unwrap_or_else(|| "06:30".into());

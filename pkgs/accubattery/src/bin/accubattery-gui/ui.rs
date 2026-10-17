@@ -112,6 +112,7 @@ pub struct Ui {
     sb_rows: RefCell<Vec<adw::ActionRow>>,
     // settings
     s_alarm: adw::SwitchRow,
+    s_awake: adw::SwitchRow,
     s_target: adw::SpinRow,
     s_abm: adw::ComboRow,
     s_limit: adw::ComboRow,
@@ -248,10 +249,15 @@ impl Ui {
             .subtitle("AMD adaptive backlight. Higher saves power and lowers contrast.")
             .model(&gtk::StringList::new(&["Off", "Balanced", "Maximum"]))
             .build();
+        let s_awake = adw::SwitchRow::builder()
+            .title("Stay awake while charging")
+            .subtitle("Blocks sleep and lid-close suspend on AC. Off by default, charges that happen asleep are still found.")
+            .build();
         let g_hw = adw::PreferencesGroup::builder().title("Hardware").build();
         g_hw.add(&s_limit);
         g_hw.add(&r_trip);
         g_hw.add(&s_abm);
+        g_hw.add(&s_awake);
 
         let sc_on = adw::SwitchRow::builder().title("Full charge before a fixed time").subtitle("Every week on the chosen day").build();
         let sc_day = adw::ComboRow::builder().title("Day").model(&gtk::StringList::new(&control::DAYS)).build();
@@ -305,6 +311,7 @@ impl Ui {
             sb_group,
             sb_rows: RefCell::default(),
             s_alarm,
+            s_awake,
             s_target,
             s_abm,
             s_limit,
@@ -332,6 +339,12 @@ impl Ui {
         self.s_alarm.connect_active_notify(move |r| {
             if ready(&ui) {
                 data::set_setting("alarm_enabled", if r.is_active() { "true" } else { "false" });
+            }
+        });
+        let ui = self.clone();
+        self.s_awake.connect_active_notify(move |r| {
+            if ready(&ui) {
+                data::set_setting("keep_awake_charging", if r.is_active() { "true" } else { "false" });
             }
         });
         let ui = self.clone();
@@ -425,6 +438,7 @@ impl Ui {
         self.update_health(s);
         if !self.settings_ready.get() {
             self.s_alarm.set_active(s.alarm_enabled);
+            self.s_awake.set_active(s.keep_awake);
             self.s_target.set_value(s.alarm_target);
             if let Some(l) = s.abm {
                 let i = ABM_LEVELS.iter().position(|v| i64::from(*v) == l).unwrap_or(if l >= 3 { 2 } else { 1 });
@@ -509,7 +523,7 @@ impl Ui {
         }
         let p = st.and_then(|v| v["power"]["mode"].as_str()).unwrap_or("standard");
         self.r_power.set_subtitle(match p {
-            "charging_awake" => "Kept awake while charging so the session is logged",
+            "charging_awake" => "Kept awake while charging, as you chose in Settings",
             "countdown" => "Charged and idle, the laptop will sleep soon",
             "caffeine_manual" => "Caffeine is on, no automatic sleep",
             "charged_active" => "Charged, normal policies while in use",

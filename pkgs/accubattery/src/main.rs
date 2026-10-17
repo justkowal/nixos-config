@@ -211,6 +211,8 @@ fn daemon() -> ExitCode {
             baseline_at = t_now;
         }
         let target: f64 = db.setting("alarm_target").and_then(|v| v.parse().ok()).unwrap_or(80.0);
+        // off by default: blocking lid-close sleep is the user's call, offline detection covers the gaps
+        let keep_awake = db.setting("keep_awake_charging").is_some_and(|v| v.eq_ignore_ascii_case("true"));
 
         let mut states = serde_json::Map::new();
         let mut primary: Option<(Sample, Status)> = None;
@@ -286,7 +288,7 @@ fn daemon() -> ExitCode {
                     }
                 }
                 active_kind_primary = active.map(|a| a.kind);
-                pinfo = Some(policy.update(s.status == Status::Charging, s.status == Status::Idle, t_now));
+                pinfo = Some(policy.update(s.status == Status::Charging, s.status == Status::Idle, keep_awake, t_now));
                 primary = Some((s.clone(), s.status));
             }
         }

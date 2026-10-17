@@ -98,11 +98,15 @@ impl PowerPolicy {
         }
     }
 
-    pub fn update(&mut self, charging: bool, idle_full: bool, now: f64) -> PowerInfo {
+    pub fn update(&mut self, charging: bool, idle_full: bool, keep_awake: bool, now: f64) -> PowerInfo {
         let mut info = PowerInfo { mode: "standard", countdown_remaining: 0, action: "suspend" };
         if charging {
             self.was_charging = true;
             self.done_since = None;
+            if !keep_awake {
+                self.release();
+                return info;
+            }
             info.mode = "charging_awake";
             if self.inhibitor.is_none() && !self.external_inhibitor() && !self.caffeine() {
                 self.inhibitor = Command::new("systemd-inhibit")

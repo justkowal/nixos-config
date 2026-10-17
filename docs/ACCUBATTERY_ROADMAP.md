@@ -58,8 +58,9 @@ To fix a wrong detection: copy the relevant stretch of `ring-BAT0.csv` into `tes
 * Wakeup source names depend on what the kernel exposes under `/sys/class/wakeup`.
 * The roster battery chip needs the daemon running on the laptop and the tailnet reachable. The listener binds only the tailscale address.
 * GPU attribution reads `/proc/PID/fdinfo` and only sees processes of the same user.
+* The sleep inhibitor while charging is now off by default (Settings, "Stay awake while charging"). With it off, charges during sleep are still found by the gauge delta.
 * The weekly schedule and the trip timer have unit tests for their decisions, but they have not yet driven real TLP threshold changes.
 
-## Still open
 
-* Should the daemon keep the sleep inhibitor while charging? It blocks lid-close sleep on AC. Offline detection now covers the gap, so it could become opt-in.
+
+
