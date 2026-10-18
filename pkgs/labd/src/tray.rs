@@ -146,6 +146,7 @@ fn add(conn: &gio::DBusConnection, items: &Items, row: &gtk::Box, name: String, 
         button.add_controller(g);
     }
     row.append(&button);
+    row.set_visible(true);
     // every New* signal from the item means something changed, so read it all again
     let sub = {
         let (conn2, name2, path2) = (conn.clone(), name.clone(), path.clone());
@@ -202,6 +203,7 @@ fn add(conn: &gio::DBusConnection, items: &Items, row: &gtk::Box, name: String, 
             if let Some(item) = items.borrow_mut().remove(&key) {
                 row.remove(&item.button);
             }
+            row.set_visible(row.first_child().is_some());
             let _ = conn2.emit_signal(
                 None,
                 "/StatusNotifierWatcher",
@@ -219,6 +221,7 @@ pub fn widget() -> gtk::Widget {
         .spacing(2)
         .build();
     row.add_css_class("tray");
+    row.set_visible(false);
     let items: Items = Rc::new(RefCell::new(HashMap::new()));
     let Some(info) = gio::DBusNodeInfo::for_xml(XML)
         .ok()

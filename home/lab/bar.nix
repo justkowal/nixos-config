@@ -21,14 +21,15 @@ in {
     };
     center = lib.mkOption {
       type = lib.types.listOf (lib.types.listOf lib.types.str);
-      default = [["clock"]];
+      default = [["clock" "pomodoro"]];
     };
     right = lib.mkOption {
       type = lib.types.listOf (lib.types.listOf lib.types.str);
       default = [
+        ["media"]
         ["tray"]
-        ["focus" "fleet" "battery" "network" "volume" "bluetooth"]
-        ["notifications" "control" "power"]
+        ["focus" "fleet" "battery" "backlight" "network" "volume" "bluetooth"]
+        ["caffeine" "thinkdot" "notifications" "control" "power"]
       ];
     };
   };

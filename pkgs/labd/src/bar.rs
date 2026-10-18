@@ -144,6 +144,12 @@ impl Pill {
         }
     }
 
+    fn on_middle(&self, cmd: &'static str) {
+        let g = gtk::GestureClick::builder().button(2).build();
+        g.connect_released(move |_, _, _, _| launch(cmd));
+        self.root.add_controller(g);
+    }
+
     fn on_scroll(&self, up: &'static str, down: &'static str) {
         let c = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
         c.connect_scroll(move |_, _, dy| {
@@ -587,8 +593,168 @@ fn action(glyph: Glyph, cmd: &'static str, tip: &str) -> gtk::Widget {
     pill.root.clone().upcast()
 }
 
+/// Waybar glyphs live in the private use area; the Lab bar draws its own, so drop them.
+pub fn clean_text(raw: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in raw.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if in_tag => {}
+            '\u{e000}'..='\u{f8ff}' | '\u{f0000}'..='\u{ffffd}' => {}
+            _ => out.push(c),
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Quiet classes leave the capsule neutral; anything else (running, active) takes the accent.
+pub fn is_accent(class: &str) -> bool {
+    !class.split_whitespace().all(|c| {
+        matches!(
+            c,
+            "idle" | "inactive" | "online" | "normal" | "off" | "disconnected" | "none" | ""
+        )
+    })
+}
+
+/// A module backed by a command that prints one Waybar style JSON object per run.
+fn exec(
+    glyph: Glyph,
+    cmd: &'static str,
+    secs: u64,
+    clicks: [Option<&'static str>; 3],
+) -> gtk::Widget {
+    let pill = Pill::new(glyph);
+    // stays hidden until the command works, so thinkdot never shows on a machine without it
+    pill.root.set_visible(false);
+    pill.on_click(clicks[0], clicks[2]);
+    if let Some(m) = clicks[1] {
+        pill.on_middle(m);
+    }
+    let p = pill.clone();
+    poll(
+        Duration::from_secs(secs),
+        move || {
+            let mut parts = cmd.split_whitespace();
+            let prog = parts.next().unwrap_or_default();
+            let args: Vec<&str> = parts.collect();
+            serde_json::from_str::<Value>(&run(prog, &args)).ok()
+        },
+        move |v| {
+            let Some(v) = v else { return };
+            p.root.set_visible(true);
+            p.set(glyph, &clean_text(v["text"].as_str().unwrap_or_default()));
+            let tip = v["tooltip"].as_str().map(clean_text_keep_lines);
+            p.root.set_tooltip_text(tip.as_deref());
+            let class = v["class"].as_str().unwrap_or_default();
+            if is_accent(class) {
+                p.root.add_css_class("accent");
+            } else {
+                p.root.remove_css_class("accent");
+            }
+        },
+    );
+    pill.root.clone().upcast()
+}
+
+fn clean_text_keep_lines(raw: &str) -> String {
+    raw.lines().map(clean_text).collect::<Vec<_>>().join("\n")
+}
+
+/// Panel brightness from sysfs. None on machines without a backlight.
+fn backlight() -> Option<gtk::Widget> {
+    let dir = std::fs::read_dir("/sys/class/backlight")
+        .ok()?
+        .flatten()
+        .next()?
+        .path();
+    let read = move |f: &str| -> Option<f64> {
+        std::fs::read_to_string(dir.join(f))
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
+    };
+    let pill = Pill::new(Glyph::Brightness);
+    pill.on_scroll("brightness-osd up", "brightness-osd down");
+    let p = pill.clone();
+    poll(
+        Duration::from_secs(2),
+        move || Some((read("brightness")? / read("max_brightness")? * 100.0).round() as u32),
+        move |v| {
+            if let Some(v) = v {
+                p.set(Glyph::Brightness, &format!("{v}%"));
+            }
+        },
+    );
+    Some(pill.root.clone().upcast())
+}
+
+/// Current track from playerctl, hidden while nothing plays.
+fn media() -> gtk::Widget {
+    let pill = Pill::new(Glyph::Note);
+    pill.root.set_visible(false);
+    pill.root.add_css_class("media");
+    pill.on_click(Some("playerctl play-pause"), Some("playerctl next"));
+    pill.on_middle("playerctl previous");
+    let p = pill.clone();
+    poll(
+        Duration::from_secs(3),
+        || {
+            run(
+                "playerctl",
+                &["metadata", "--format", "{{status}}|{{artist}} - {{title}}"],
+            )
+        },
+        move |out| match out.trim().split_once('|') {
+            Some((status, title))
+                if status != "Stopped" && !title.trim_matches(&[' ', '-'][..]).is_empty() =>
+            {
+                let mut t: String = title.chars().take(36).collect();
+                if title.chars().count() > 36 {
+                    t.push('…');
+                }
+                p.root.set_visible(true);
+                p.set(Glyph::Note, &t);
+            }
+            _ => p.root.set_visible(false),
+        },
+    );
+    pill.root.clone().upcast()
+}
+
 fn module(name: &str, ctx: &Rc<Ctx>) -> Option<gtk::Widget> {
     Some(match name {
+        "pomodoro" => exec(
+            Glyph::Timer,
+            "pomodoro status",
+            1,
+            [
+                Some("pomodoro toggle"),
+                Some("pomodoro reset"),
+                Some("pomodoro skip"),
+            ],
+        ),
+        "caffeine" => exec(
+            Glyph::Cup,
+            "caffeine waybar",
+            2,
+            [Some("caffeine toggle"), None, None],
+        ),
+        "thinkdot" => exec(
+            Glyph::Dial,
+            "thinkdot waybar",
+            2,
+            [
+                Some("thinkdot stealth toggle"),
+                Some("thinkdot gauge"),
+                Some("control-center-gui"),
+            ],
+        ),
+        "backlight" => backlight()?,
+        "media" => media(),
         "workspaces" => workspaces(),
         "clock" => clock(),
         "battery" => battery()?,
@@ -605,6 +771,19 @@ fn module(name: &str, ctx: &Rc<Ctx>) -> Option<gtk::Widget> {
     })
 }
 
+/// A capsule shows only while at least one of its modules does.
+fn sync_capsule(capsule: &gtk::Box) {
+    let mut child = capsule.first_child();
+    while let Some(w) = child {
+        if w.is_visible() {
+            capsule.set_visible(true);
+            return;
+        }
+        child = w.next_sibling();
+    }
+    capsule.set_visible(false);
+}
+
 fn section(caps: &[Vec<String>], ctx: &Rc<Ctx>) -> gtk::Box {
     let row = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -618,11 +797,14 @@ fn section(caps: &[Vec<String>], ctx: &Rc<Ctx>) -> gtk::Box {
         capsule.add_css_class("cap");
         for name in cap {
             if let Some(w) = module(name, ctx) {
+                let c = capsule.clone();
+                w.connect_visible_notify(move |_| sync_capsule(&c));
                 capsule.append(&w);
             }
         }
         // a capsule whose modules all dropped out (no battery on a desktop) is not drawn
         if capsule.first_child().is_some() {
+            sync_capsule(&capsule);
             row.append(&capsule);
         }
     }
@@ -698,6 +880,16 @@ mod tests {
                 vec!["power".to_owned()]
             ]
         );
+    }
+
+    #[test]
+    fn waybar_text_loses_icons_and_markup() {
+        assert_eq!(clean_text("\u{f0ff4} 24:59"), "24:59");
+        assert_eq!(clean_text("<span>a</span>  b"), "a b");
+        assert_eq!(clean_text("\u{f04b2}"), "");
+        assert!(is_accent("work"));
+        assert!(!is_accent("inactive"));
+        assert!(!is_accent(""));
     }
 
     #[test]

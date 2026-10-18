@@ -41,6 +41,10 @@ pub enum Glyph {
     BellDot,
     BellOff,
     Sliders,
+    Timer,
+    Cup,
+    Dial,
+    Note,
 }
 
 pub const SIZE: f64 = 24.0;
@@ -259,6 +263,42 @@ pub fn draw(cr: &Context, glyph: Glyph) {
             }
             return;
         }
+        Glyph::Timer => {
+            cr.arc(12.0, 13.5, 7.0, 0.0, 2.0 * PI);
+            line(cr, &[(12.0, 13.5), (12.0, 9.5)]);
+            line(cr, &[(10.0, 3.5), (14.0, 3.5)]);
+            line(cr, &[(12.0, 3.5), (12.0, 6.5)]);
+        }
+        Glyph::Cup => {
+            line(
+                cr,
+                &[
+                    (5.0, 9.0),
+                    (5.0, 15.0),
+                    (8.0, 19.0),
+                    (14.0, 19.0),
+                    (17.0, 15.0),
+                    (17.0, 9.0),
+                ],
+            );
+            line(cr, &[(5.0, 9.0), (17.0, 9.0)]);
+            cr.new_sub_path();
+            cr.arc(17.5, 12.0, 3.0, -PI / 2.0, PI / 2.0);
+            line(cr, &[(9.0, 3.5), (9.0, 6.0)]);
+            line(cr, &[(13.0, 3.5), (13.0, 6.0)]);
+        }
+        Glyph::Dial => {
+            cr.arc(12.0, 12.0, 8.0, 0.0, 2.0 * PI);
+            cr.new_sub_path();
+            cr.arc(12.0, 12.0, 3.0, 0.0, 2.0 * PI);
+        }
+        Glyph::Note => {
+            line(cr, &[(9.0, 18.0), (9.0, 6.0), (18.0, 4.0), (18.0, 16.0)]);
+            cr.new_sub_path();
+            cr.arc(6.5, 18.0, 2.5, 0.0, 2.0 * PI);
+            cr.new_sub_path();
+            cr.arc(15.5, 16.0, 2.5, 0.0, 2.0 * PI);
+        }
         Glyph::Sliders => {
             line(cr, &[(4.0, 7.0), (20.0, 7.0)]);
             line(cr, &[(4.0, 12.0), (20.0, 12.0)]);
@@ -346,6 +386,10 @@ mod tests {
             Glyph::BellDot,
             Glyph::BellOff,
             Glyph::Sliders,
+            Glyph::Timer,
+            Glyph::Cup,
+            Glyph::Dial,
+            Glyph::Note,
         ];
         let cell = 96;
         let surface = ImageSurface::create(Format::ARgb32, cell * all.len() as i32, cell).unwrap();

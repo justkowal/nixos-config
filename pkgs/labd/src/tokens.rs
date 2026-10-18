@@ -120,7 +120,7 @@ impl Tokens {
              .lab-bar .ws.active {{ background-color: alpha(@accent_color, 0.24); color: @accent_color; }}\n\
              .lab-bar .bar-clock {{ font-family: \"{display}\"; font-size: {clock}px; font-weight: 400; }}\n\
              .lab-bar .bar-date {{ opacity: 0.6; }}\n\
-             .lab-bar .bar-num {{ font-family: \"{display}\"; font-size: {small}px; }}\n\
+             .lab-bar .bar-num {{ font-family: \"{display}\"; font-size: {pix}px; }}\n\
              .help-page {{ padding: 18px 24px; }}\n\
              .help-list {{ background: none; }}\n\
              .help-row {{ padding: 6px 4px; }}\n\
@@ -141,7 +141,8 @@ impl Tokens {
             xl = self.radius_xl,
             md = self.radius_md,
             lg = self.radius_lg,
-            clock = self.body_px * 1.1,
+            clock = (self.body_px / 11.0).round().max(1.0) * 11.0,
+            pix = (self.body_px / 11.0).round().max(1.0) * 11.0,
             sm = self.radius_md * 0.6,
             display = self.display_font,
             big2 = self.body_px * 1.15,
