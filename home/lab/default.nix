@@ -14,6 +14,7 @@
     ./bar.nix
     ./theme.nix
     ./continuity.nix
+    ./peek.nix
     ./shell.nix
   ];
 }

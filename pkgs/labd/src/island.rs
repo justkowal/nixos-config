@@ -96,6 +96,24 @@ fn card_for(ev: &Value) -> Option<Card> {
                 15000,
             )
         }
+        "clipboard.received" => (
+            Glyph::Clipboard,
+            text_of("Clipboard from", "host").replace("Clipboard from, ", "Clipboard from "),
+            None,
+            2200,
+        ),
+        "clipboard.paused" => (
+            Glyph::Clipboard,
+            "Clipboard sharing paused".to_owned(),
+            None,
+            2200,
+        ),
+        "clipboard.resumed" => (
+            Glyph::Clipboard,
+            "Clipboard sharing on".to_owned(),
+            None,
+            2200,
+        ),
         "auth.done" => {
             let text = if p["ok"].as_bool().unwrap_or(false) {
                 "Authenticated"

@@ -70,7 +70,7 @@
 		// lan-mouse and kdeconnect from the desktop, and roaming peers to each other
 		{"src": ["tag:worker", "tag:orchestrator"], "dst": ["tag:roaming"], "ip": ["tcp:22", "tcp:22000", "udp:22000"]},
 		{"src": ["tag:worker"], "dst": ["tag:roaming"], "ip": ["tcp:4242", "udp:4242", "tcp:1714-1764", "udp:1714-1764"]},
-		{"src": ["tag:roaming"], "dst": ["tag:roaming"], "ip": ["tcp:22", "tcp:22000", "udp:22000", "tcp:1714-1764", "udp:1714-1764", "tcp:8765"]},
+		{"src": ["tag:roaming"], "dst": ["tag:roaming"], "ip": ["tcp:22", "tcp:22000", "udp:22000", "tcp:1714-1764", "udp:1714-1764", "tcp:8765", "tcp:8766"]},
 
 		// exit node and LAN subnet via the rpi4 (WoL, router, printer)
 		{"src": ["tag:roaming"], "dst": ["autogroup:internet", "home-lan"], "ip": ["*"]},

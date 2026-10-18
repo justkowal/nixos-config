@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 import gi
+import hashlib
 
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib  # noqa: E402
@@ -151,11 +152,70 @@ def watch_fingerprint():
     return conn
 
 
+# ── clipboard ────────────────────────────────────────────────────────────────
+
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+CLIP_MAX = 64 * 1024
+CLIP_SENT = []
+
+
+def wayland_env():
+    env = dict(os.environ)
+    if "WAYLAND_DISPLAY" not in env:
+        socks = sorted(RUNTIME.glob("wayland-[0-9]"))
+        if socks:
+            env["WAYLAND_DISPLAY"] = socks[0].name
+    return env
+
+
+def clipboard_changed(text):
+    if (RUNTIME / "lab-clip-paused").exists() or not text.strip() or len(text.encode()) > CLIP_MAX:
+        return
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    try:
+        # lab-inbox writes the hash of what it just copied in, so it is never sent straight back
+        if (RUNTIME / "lab-clip-last").read_text() == digest:
+            return
+    except OSError:
+        pass
+    now = time.time()
+    CLIP_SENT[:] = [t for t in CLIP_SENT if now - t < 60]
+    if len(CLIP_SENT) >= 10:
+        return
+    CLIP_SENT.append(now)
+    mirror("clip", {"text": text})
+
+
+def watch_clipboard():
+    """wl-paste runs the handler on every change and the handler prints the text and a NUL. Password
+    managers mark their copies with a mime type, those are never read."""
+    handler = 'if wl-paste --list-types | grep -q x-kde-passwordManagerHint; then :; else wl-paste --no-newline --type text; fi; printf "\\0"'
+    proc = subprocess.Popen(["wl-paste", "--watch", "sh", "-c", handler], stdout=subprocess.PIPE, env=wayland_env())
+
+    def read():
+        buf = b""
+        while True:
+            chunk = os.read(proc.stdout.fileno(), 65536)
+            if not chunk:
+                return
+            buf += chunk
+            while b"\0" in buf:
+                one, buf = buf.split(b"\0", 1)
+                if one:
+                    clipboard_changed(one.decode(errors="replace"))
+            buf = buf[-(CLIP_MAX * 2):]
+
+    threading.Thread(target=read, daemon=True).start()
+    return proc
+
+
 def main():
     keep = []
     threading.Thread(target=sender, daemon=True).start()
     if CONF["notifications"]:
         keep.append(watch_notifications())
+    if CONF.get("clipboard"):
+        keep.append(watch_clipboard())
     if CONF["fingerprint"]:
         try:
             keep.append(watch_fingerprint())

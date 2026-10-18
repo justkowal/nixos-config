@@ -124,6 +124,30 @@ def cmd_theme(a):
     return 0
 
 
+def cmd_clip(a):
+    flag = os.path.join(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"), "lab-clip-paused")
+    paused = os.path.exists(flag)
+    if a.action == "status":
+        print("paused" if paused else "sharing")
+        return 0
+    if a.action == "toggle":
+        a.action = "resume" if paused else "pause"
+    if a.action == "pause":
+        open(flag, "w").close()
+    else:
+        try:
+            os.unlink(flag)
+        except FileNotFoundError:
+            pass
+    emit("clipboard.paused" if a.action == "pause" else "clipboard.resumed", {}, source="continuity")
+    return 0
+
+
+def cmd_peek(a):
+    # the preview window and the palette listing live in lab-peek, which needs the gi environment
+    os.execvp("lab-peek", ["lab-peek", *a.rest])
+
+
 def cmd_publish(a):
     # the compiled client owns the event contract and is fast enough for key repeat
     os.execvp("lab-publish", ["lab-publish", *a.rest])
@@ -337,6 +361,12 @@ def main():
     p.add_argument("--next", action="store_true", help="switch to the next pack")
     p.add_argument("--colors", metavar="IMAGE", help="only regenerate Matugen colours for IMAGE with the active pack")
     p.set_defaults(fn=cmd_theme)
+    p = sub.add_parser("clip", help="pause or resume clipboard sharing between your machines")
+    p.add_argument("action", nargs="?", default="status", choices=["status", "toggle", "pause", "resume"])
+    p.set_defaults(fn=cmd_clip)
+    p = sub.add_parser("peek", help="preview a window on another machine: peek HOST ADDRESS | peek entries", add_help=False)
+    p.add_argument("rest", nargs=argparse.REMAINDER)
+    p.set_defaults(fn=cmd_peek)
     p = sub.add_parser("phone", help="URL and token for the phone app")
     p.add_argument("--copy", action="store_true", help="copy the token to the clipboard instead of printing it")
     p.set_defaults(fn=cmd_phone)

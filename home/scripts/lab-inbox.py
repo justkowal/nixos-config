@@ -5,6 +5,7 @@ Files land in the raw folder, are validated, and only then appear in the inbox t
 lists. Nothing is opened automatically: accepting a room is an explicit action in the palette.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -36,7 +37,7 @@ def validate(raw):
     return {"windows": wins, "from": str(data.get("from", "unknown"))[:64]}
 
 
-MESSAGE_MAX = 16 * 1024
+MESSAGE_MAX = 80 * 1024
 SEEN = []
 
 
@@ -62,7 +63,7 @@ def publish(name, payload, priority="normal", ttl=30):
 
 
 def handle_message(kind, raw):
-    """notify-*.json and auth-*.json come from your own machines over Taildrop. Same caps as rooms."""
+    """notify-*.json, auth-*.json and clip-*.json come from your own machines over Taildrop. Same caps as rooms."""
     if len(raw) > MESSAGE_MAX or not under_rate_limit():
         return False
     try:
@@ -76,8 +77,25 @@ def handle_message(kind, raw):
         urgency = {0: "low", 1: "normal", 2: "critical"}.get(data.get("urgency"), "normal")
         app = clean(data.get("app", "App"), 48)
         summary = clean(data.get("summary", ""), 200) or app
+        # the origin goes in the visible title and icon, the app name label is hidden by the notification style
+        icon = {"laptop": "computer-laptop-symbolic", "desktop": "computer-symbolic"}.get(who.lower(), "network-workgroup-symbolic")
         # the hint keeps the sender from mirroring it straight back
-        subprocess.run(["notify-send", "-a", f"{app} on {who}", "-u", urgency, "-h", "string:x-lab-mirror:1", "--", summary, clean(data.get("body", ""), 1000)], check=False)
+        subprocess.run(["notify-send", "-a", f"{app} on {who}", "-i", icon, "-u", urgency, "-h", "string:x-lab-mirror:1", "--", f"{who.capitalize()} · {summary}", clean(data.get("body", ""), 1000)], check=False)
+        return True
+    if kind == "clip":
+        text = data.get("text")
+        rt = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+        if not isinstance(text, str) or not text or len(text.encode()) > 64 * 1024 or (rt / "lab-clip-paused").exists():
+            return False
+        env = dict(os.environ)
+        if "WAYLAND_DISPLAY" not in env:
+            socks = sorted(rt.glob("wayland-[0-9]"))
+            if socks:
+                env["WAYLAND_DISPLAY"] = socks[0].name
+        # remember the hash first, so the sender on this machine does not echo it back
+        (rt / "lab-clip-last").write_text(hashlib.sha256(text.encode()).hexdigest())
+        subprocess.run(["wl-copy", "--type", "text/plain"], input=text.encode(), env=env, check=False, timeout=10)
+        publish("clipboard.received", {"host": who, "chars": len(text)}, "normal", 10)
         return True
     if kind == "auth":
         if data.get("state") == "done":
@@ -93,7 +111,7 @@ def process(landing, inbox):
     for f in sorted(landing.iterdir()):
         name = f.name[:-5] if f.name.endswith(".json") else f.name
         kind = name.split("-", 1)[0]
-        if kind in ("notify", "auth") and "-" in name:
+        if kind in ("notify", "auth", "clip") and "-" in name:
             try:
                 ok = handle_message(kind, f.read_bytes())
             except OSError:

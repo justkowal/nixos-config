@@ -46,6 +46,7 @@ pub enum Glyph {
     Dial,
     Note,
     Fingerprint,
+    Clipboard,
 }
 
 pub const SIZE: f64 = 24.0;
@@ -293,6 +294,13 @@ pub fn draw(cr: &Context, glyph: Glyph) {
             cr.new_sub_path();
             cr.arc(12.0, 12.0, 3.0, 0.0, 2.0 * PI);
         }
+        Glyph::Clipboard => {
+            cr.rectangle(5.0, 5.0, 14.0, 16.0);
+            cr.new_sub_path();
+            cr.rectangle(9.0, 3.0, 6.0, 4.0);
+            line(cr, &[(8.5, 12.0), (15.5, 12.0)]);
+            line(cr, &[(8.5, 16.0), (13.0, 16.0)]);
+        }
         Glyph::Fingerprint => {
             // ridges as arcs open at the bottom, widest first
             for r in [9.5, 6.5, 3.5] {
@@ -402,6 +410,7 @@ mod tests {
             Glyph::Dial,
             Glyph::Note,
             Glyph::Fingerprint,
+            Glyph::Clipboard,
         ];
         let cell = 96;
         let surface = ImageSurface::create(Format::ARgb32, cell * all.len() as i32, cell).unwrap();

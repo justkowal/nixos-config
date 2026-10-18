@@ -43,6 +43,11 @@ in {
         description = "Applications whose notifications are never mirrored.";
       };
     };
+    clipboard.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Share copied text between your machines. Password manager copies are never read, and `lab clip toggle` pauses it.";
+    };
     fingerprint.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -61,9 +66,10 @@ in {
       notifications = cfg.notifications.enable;
       inherit (cfg.notifications) ignore;
       fingerprint = cfg.fingerprint.enable;
+      clipboard = cfg.clipboard.enable;
     };
 
-    systemd.user.services.lab-continuity = lib.mkIf (cfg.notifications.enable || cfg.fingerprint.enable) {
+    systemd.user.services.lab-continuity = lib.mkIf (cfg.notifications.enable || cfg.fingerprint.enable || cfg.clipboard.enable) {
       Unit = {
         Description = "Kowal Lab notification and authentication mirror";
         After = ["graphical-session.target" "labd.service"];

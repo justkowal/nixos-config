@@ -383,11 +383,13 @@ in {
         color: @on_surface_variant;
       }
 
-      #custom-controlcenter, #custom-notification, #custom-power, #custom-thinkdot {
+      #custom-controlcenter, #custom-notification, #custom-power {
         font-size: 15px;
         padding: 0 8px;
         color: @on_surface_variant;
       }
+      /* shows a percentage while charging, so it keeps the bar font size instead of the icon size */
+      #custom-thinkdot { padding: 0 8px; color: @on_surface_variant; }
       #custom-power:hover { color: @error; background-color: alpha(@error, 0.12); }
 
       #custom-fleet, #custom-homelab { font-weight: 700; }
