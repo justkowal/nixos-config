@@ -16,7 +16,7 @@ State of the Kowal Lab layer on 2026-10-18, branch `perf-benchmarks`. The rules 
 | Lock screen | `home/hyprland.nix` | Tokens and Matugen colours. |
 | Login greeter | `modules/lab-greeter.nix` | tuigreet, shared by laptop and desktop. |
 | Continuity | `home/lab/continuity.nix` | Fleet focus follows the hub on every machine, notifications and the fingerprint wait toast are mirrored over Taildrop. Needs `lab-inbox` and Taildrop on both machines. |
-| Peek | `home/lab/peek.nix` | Use a window of your other machine like a local one: palette entry, window-locked GPU encoded video, full mouse and keyboard passthrough, dialogs as their own windows, small badge. |
+| Peek | `home/lab/peek.nix` | Use a window of your other machine like a local one: palette entry, window-locked GPU encoded video, full mouse and keyboard passthrough, dialogs as their own windows, small badge. Portal mode moves the window to a headless output on the source machine while it is used elsewhere, with a placeholder and automatic return. |
 | Run on desktop | `lab run`, palette "Run on <Machine> · <App>" | Wakes the other machine if needed, shows a spinner, check and dot toast, then opens the app there. |
 | Clipboard sharing | `home/lab/continuity.nix` | Copied text follows you between the laptop and desktop. `lab clip toggle` pauses it. |
 | Theme packs | `home/lab/theme.nix`, `lab theme` | Lab, Dot matrix, Soft. `SUPER + ALT + C` cycles. |
@@ -33,7 +33,6 @@ Waybar and SwayNC stay installed and are the default until the owner has verifie
 
 ## Not done
 
-- Pi OLED mirror of the island: the screen was unavailable.
 - Visual regression VM test for island states: the headless labwc + grim harness was only used by hand, it is not a flake check.
 - Tablet is not yet on Tailscale, so the phone app has not been used from it.
 
@@ -43,7 +42,7 @@ Waybar and SwayNC stay installed and are the default until the owner has verifie
 2. Walk through [ANDROID_SETUP.md](ANDROID_SETUP.md) for the phone and tablet.
 3. Decide on `lab.handoff.enable`, streaming wake (HDMI dummy plug) and applying `tailscale/policy.hujson`.
 4. Try the bar and the splash as described above, then decide whether Waybar and SwayNC can go.
-5. Fix the unused `ICalGLib` import in `pkgs/accubattery/scripts/events.py`, it fails the flake `scripts` check (not Lab code).
+5. (done) the unused `ICalGLib` import is gone, the flake `scripts` and `tokens` checks pass.
 
 ## Known limits
 
@@ -60,5 +59,3 @@ Waybar and SwayNC stay installed and are the default until the owner has verifie
   - Waking and finding the desktop is the core path: `lab run desktop` already wakes it and shows the toast, the thin client would boot into that flow and open the Moonlight session (or Peek windows) without a launcher.
   - The design language stays: tokens, Matugen colour, the island and the bar (labd only, no Waybar or SwayNC), drawn glyphs. Minimal means fewer services, not a different look.
   - Open questions: single specialisation versus a separate host config, how the specialisation is chosen at boot (systemd-boot entry), whether Moonlight or Peek is the primary path, and what stays local (browser, terminal) when the desktop is unreachable.
-- **Portal mode (move instead of mirror)**: when a window is streamed to another machine, move it to a headless Hyprland output (`hyprctl output create headless`) on the source machine instead of leaving it on the physical screen. It keeps rendering and accepting remote input there (a hidden workspace would not: apps stop animating without frame callbacks and the virtual pointer cannot reach a window that is not on a visible output). Leave a small placeholder window in the vacated slot ("This app is used on <device>, click to work on it here") whose click moves the window back, and show the mirrored message on the other side to switch which machine holds it. The app still renders once on the source GPU, so the gain is a quiet physical screen and less composition work, which matters most for the thin client mode. Needs: headless output management in `lab-peer`, the layout box covering that output for input mapping (already derived from `hyprctl monitors`), a placeholder client app id (`lab.justkowal.Portal`), and a rule for floating versus tiled slots.
-  - A portal-mode window can also be resized to the viewer's window size (the headless output or the window itself follows what the viewer reports), so the stream is always native resolution with no scaling on either side.

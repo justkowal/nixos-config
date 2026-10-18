@@ -17,6 +17,7 @@ encodes with VA-API. Input: lab-inject replays events through the wlroots virtua
 """
 
 import json
+import shutil
 import os
 import re
 import select
@@ -104,7 +105,7 @@ def window_info(addr):
     visible = visible_workspaces()
     for c in hypr_json("clients"):
         if c["address"] == addr and c.get("mapped"):
-            return info_of(c, visible)
+            return dict(info_of(c, visible), portal=addr in portals)
     return None
 
 
@@ -150,6 +151,133 @@ def layout_box():
 
 # ── input ────────────────────────────────────────────────────────────────────
 
+# ── portal mode ──────────────────────────────────────────────────────────────
+# A window that is being used from another machine moves to a headless output here, so it is not drawn on
+# the physical screen twice. It still renders there (an output counts as visible), still takes remote input,
+# and a placeholder stays behind. Everything is remembered so that it can always be put back.
+
+PORTAL_OUT = "LAB-PORTAL"
+STATE_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "lab-portal.json"
+portals = {}
+portal_lock = threading.Lock()
+
+
+def save_portals():
+    try:
+        STATE_FILE.write_text(json.dumps(portals))
+    except OSError:
+        pass
+
+
+def cursor_pos():
+    out = run(["hyprctl", "cursorpos"], session_env()).stdout.decode().strip().split(",")
+    try:
+        return int(out[0]), int(out[1])
+    except (ValueError, IndexError):
+        return None
+
+
+def portal_monitor():
+    return next((m for m in hypr_json("monitors") if m["name"] == PORTAL_OUT), None)
+
+
+def ensure_output(w, h):
+    """The headless output sits to the right of the real ones, where the mouse cannot wander in by accident."""
+    env = session_env()
+    mons = hypr_json("monitors")
+    if not any(m["name"] == PORTAL_OUT for m in mons):
+        run(["hyprctl", "output", "create", "headless", PORTAL_OUT], env)
+    others = [m for m in hypr_json("monitors") if m["name"] != PORTAL_OUT]
+    x = max((m["x"] + int(m["width"] / m["scale"]) for m in others), default=0)
+    run(["hyprctl", "keyword", "monitor", f"{PORTAL_OUT},{w}x{h}@60,{x}x0,1"], env)
+    for _ in range(20):
+        mon = portal_monitor()
+        if mon and mon["activeWorkspace"]["id"] > 0:
+            return mon
+        time.sleep(0.05)
+    return None
+
+
+def portal_window(addr, w, h, by):
+    w, h = max(320, int(w) & ~1), max(200, int(h) & ~1)
+    with portal_lock:
+        if addr in portals:
+            return resize_portal(addr, w, h)
+        info = window_info(addr)
+        if info is None:
+            return False
+        mon = ensure_output(w, h)
+        if mon is None:
+            return False
+        env = session_env()
+        portals[addr] = {"orig": info, "cursor": cursor_pos(), "by": by, "w": w, "h": h}
+        save_portals()
+        ws = mon["activeWorkspace"]["id"]
+        run(["hyprctl", "dispatch", "movetoworkspacesilent", f"{ws},address:{addr}"], env)
+        if info["floating"]:
+            run(["hyprctl", "dispatch", "resizewindowpixel", f"exact {w} {h},address:{addr}"], env)
+            run(["hyprctl", "dispatch", "movewindowpixel", f"exact {mon['x']} {mon['y']},address:{addr}"], env)
+        # the placeholder takes the place the window left, floating where it floated
+        rule = "float;size {w} {h};move {x} {y};".format(**{"w": info["w"], "h": info["h"], "x": info["x"], "y": info["y"]}) if info["floating"] else ""
+        run(["hyprctl", "dispatch", "exec", f"[{rule}workspace {info['workspace']} silent] {shutil.which('lab-peek') or 'lab-peek'} --placeholder {addr} {by}"], env)
+        return True
+
+
+def resize_portal(addr, w, h):
+    """Called with the lock held. The output follows the viewer, so the stream is always native size."""
+    p = portals.get(addr)
+    if p is None or (p["w"], p["h"]) == (w, h):
+        return p is not None
+    p["w"], p["h"] = w, h
+    mon = ensure_output(w, h)
+    if mon and window_info(addr) and window_info(addr)["floating"]:
+        env = session_env()
+        run(["hyprctl", "dispatch", "resizewindowpixel", f"exact {w} {h},address:{addr}"], env)
+        run(["hyprctl", "dispatch", "movewindowpixel", f"exact {mon['x']} {mon['y']},address:{addr}"], env)
+    save_portals()
+    return True
+
+
+def unportal_window(addr):
+    with portal_lock:
+        p = portals.pop(addr, None)
+        if p is None:
+            return False
+        save_portals()
+        env = session_env()
+        o = p["orig"]
+        if window_info(addr):
+            run(["hyprctl", "dispatch", "movetoworkspacesilent", f"{o['workspace']},address:{addr}"], env)
+            if o["floating"]:
+                run(["hyprctl", "dispatch", "resizewindowpixel", f"exact {o['w']} {o['h']},address:{addr}"], env)
+                run(["hyprctl", "dispatch", "movewindowpixel", f"exact {o['x']} {o['y']},address:{addr}"], env)
+        # the placeholder has done its job
+        for c in hypr_json("clients"):
+            if c.get("class") == "lab.justkowal.Portal" and c["workspace"]["id"] == o["workspace"] and c["title"].endswith(addr):
+                run(["hyprctl", "dispatch", "closewindow", f"address:{c['address']}"], env)
+        if not portals:
+            run(["hyprctl", "output", "remove", PORTAL_OUT], env)
+        # a remote session may have left the cursor on the invisible output
+        if p.get("cursor"):
+            run(["hyprctl", "dispatch", "movecursor", f"{p['cursor'][0]} {p['cursor'][1]}"], env)
+        run(["hyprctl", "dispatch", "focuswindow", f"address:{addr}"], env)
+        return True
+
+
+def recover_portals():
+    """After a crash or restart, put back whatever is still on the headless output."""
+    try:
+        saved = json.loads(STATE_FILE.read_text())
+    except (OSError, ValueError):
+        saved = {}
+    with portal_lock:
+        portals.update(saved)
+    for addr in list(saved):
+        unportal_window(addr)
+    if portal_monitor() and not portals:
+        run(["hyprctl", "output", "remove", PORTAL_OUT], session_env())
+
+
 class Injector:
     """One lab-inject child shared by every input connection."""
 
@@ -194,6 +322,18 @@ class Tracker:
             self.refresh()
 
 
+conns = {}
+
+
+def release_later(addr):
+    """A viewer that disappears must not strand its window on the invisible output."""
+    def check():
+        if conns.get(addr, 0) == 0 and addr in portals:
+            unportal_window(addr)
+
+    threading.Timer(8.0, check).start()
+
+
 class InputHandler(socketserver.StreamRequestHandler):
     def say(self, state):
         try:
@@ -212,6 +352,7 @@ class InputHandler(socketserver.StreamRequestHandler):
             return
         if not isinstance(addr, str) or not ADDR_RE.fullmatch(addr):
             return
+        conns[addr] = conns.get(addr, 0) + 1
         track = Tracker(addr)
         held_keys, held_buttons, said = set(), set(), None
         if track.info and track.info["visible"]:
@@ -252,6 +393,9 @@ class InputHandler(socketserver.StreamRequestHandler):
                     injector.send({"k": [code, down]})
         finally:
             track.stop = True
+            conns[addr] = max(0, conns.get(addr, 1) - 1)
+            if conns[addr] == 0:
+                release_later(addr)
             # a dropped connection must not leave a key or button held down over there
             for code in held_buttons:
                 injector.send({"b": [code, 0]})
@@ -444,6 +588,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(404, {"error": "no such app"})
             out = run(["hyprctl", "dispatch", "exec", f"gio launch '{path}'"], session_env())
             return self.json(200, {"ok": out.returncode == 0})
+        m = re.fullmatch(r"/window/(0x[0-9a-f]{1,16})/(portal|unportal)", self.path)
+        if m:
+            addr, what = m.groups()
+            if what == "unportal":
+                return self.json(200, {"ok": unportal_window(addr)})
+            try:
+                b = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 256)))
+                ok = portal_window(addr, b["w"], b["h"], str(b.get("by", "another machine"))[:32].replace(" ", "-"))
+            except (ValueError, KeyError, TypeError):
+                return self.json(400, {"error": "bad body"})
+            return self.json(200, {"ok": ok})
         m = re.fullmatch(r"/window/(0x[0-9a-f]{1,16})/(focus|close)", self.path)
         if not m:
             return self.json(404, {"error": "unknown path"})
@@ -460,6 +615,7 @@ class ThreadedTCP(socketserver.ThreadingTCPServer):
 def main():
     global ME
     ME = my_user_id()
+    recover_portals()
     ip = run([TAILSCALE, "ip", "-4"]).stdout.decode().split()[0]
     threading.Thread(target=ThreadedTCP((ip, INPUT_PORT), InputHandler).serve_forever, daemon=True).start()
     http = ThreadingHTTPServer((ip, HTTP_PORT), Handler)

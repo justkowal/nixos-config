@@ -101,6 +101,72 @@ class Sender:
                 self.wake.wait(1.0)
 
 
+def own_name():
+    me = socket.gethostname()
+    return NAMES.get(me, me)
+
+
+def post(host, path, body, timeout=4):
+    return call(host, path, json.dumps(body).encode(), timeout=timeout)
+
+
+def placeholder(addr, by):
+    """What stays on screen where the window used to be: the window is being used on another machine."""
+    import subprocess
+
+    import gi
+
+    gi.require_version("Gtk", "4.0")
+    gi.require_version("Adw", "1")
+    from gi.repository import Adw, Gdk, Gtk
+
+    def bring_back(_btn=None):
+        try:
+            ip = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5).stdout.split()[0]
+            post(ip, f"/window/{addr}/unportal", {})
+        except (OSError, IndexError, subprocess.SubprocessError):
+            pass
+
+    class App(Adw.Application):
+        def __init__(self):
+            super().__init__(application_id="lab.justkowal.Portal")
+
+        def do_activate(self):
+            Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+            tokens = {"radius": {"md": 12}, "type": {"ui": "Inter", "display": "Departure Mono"}}
+            try:
+                raw = json.loads((CONF / "tokens.json").read_text())
+                tokens["radius"].update(raw.get("radius", {}))
+                tokens["type"].update(raw.get("type", {}))
+            except (OSError, ValueError):
+                pass
+            css = Gtk.CssProvider()
+            css.load_from_string(
+                f".portal-title {{ font-family: '{tokens['type']['display']}'; font-size: 11px; opacity: 0.55; letter-spacing: 1px; }} "
+                f".portal-text {{ font-family: '{tokens['type']['ui']}'; font-size: 18px; }} "
+                f".portal-button {{ border-radius: {tokens['radius']['md']}px; padding: 8px 18px; }}"
+            )
+            Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            # the title ends with the address, lab-peer finds the placeholder by it when the window returns
+            win = Gtk.ApplicationWindow(application=self, default_width=420, default_height=240, title=f"In use on {by} {addr}")
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+            kicker = Gtk.Label(label=f"ON {by.upper()}")
+            kicker.add_css_class("portal-title")
+            text = Gtk.Label(label=f"This app is being used on {by}")
+            text.add_css_class("portal-text")
+            box.append(kicker)
+            box.append(text)
+            button = Gtk.Button(label="Work on it here", halign=Gtk.Align.CENTER)
+            button.add_css_class("suggested-action")
+            button.add_css_class("portal-button")
+            button.connect("clicked", bring_back)
+            box.append(button)
+            win.set_child(box)
+            win.present()
+
+    return App().run([])
+
+
 def gui(host, addr, child=False):
     import subprocess
 
@@ -117,8 +183,9 @@ def gui(host, addr, child=False):
     # holds the newest frame back. Set LAB_PEEK_DECODER=vah264dec to decode on the GPU anyway (heavy video).
     want = os.environ.get("LAB_PEEK_DECODER", "avdec_h264 max-threads=1")
     decoder = want if Gst.ElementFactory.find(want.split()[0]) else "vah264dec"
-    state = {"held_keys": set(), "held_buttons": set(), "window": "ok"}
+    state = {"held_keys": set(), "held_buttons": set(), "window": "ok", "portal": False, "sent_size": None}
     children = {}
+    use_portal = os.environ.get("LAB_PEEK_PORTAL", "1") != "0"
 
     class Peek(Adw.Application):
         def __init__(self):
@@ -181,8 +248,10 @@ def gui(host, addr, child=False):
             self.win.connect("notify::is-active", self.on_focus)
             self.win.connect("close-request", self.on_close)
             self.win.present()
-            GLib.timeout_add(500, self.start_video)
+            GLib.timeout_add(400, self.enter_portal)
             GLib.timeout_add(2000, self.refresh_title)
+            if use_portal:
+                GLib.timeout_add(500, self.follow_size)
             if not child:
                 GLib.timeout_add(700, self.watch_children)
 
@@ -242,11 +311,43 @@ def gui(host, addr, child=False):
                 state["held_buttons"].clear()
 
         def on_close(self, *_):
+            if state["portal"]:
+                state["portal"] = False
+                try:
+                    post(host, f"/window/{addr}/unportal", {}, timeout=3)
+                except OSError:
+                    pass
             for proc in children.values():
                 proc.terminate()
             if getattr(self, "pipeline", None):
                 self.pipeline.set_state(Gst.State.NULL)
             return False
+
+        def enter_portal(self):
+            """Move the window to the headless output over there at this window's size, then start the video."""
+            def go():
+                ok = False
+                if use_portal:
+                    try:
+                        w, h = max(self.pic.get_width(), 320), max(self.pic.get_height(), 200)
+                        ok = json.loads(post(host, f"/window/{addr}/portal", {"w": w, "h": h, "by": own_name()}, timeout=6)).get("ok", False)
+                        state["sent_size"] = (w, h)
+                    except (OSError, ValueError):
+                        ok = False
+                state["portal"] = ok
+                GLib.idle_add(self.start_video)
+
+            threading.Thread(target=go, daemon=True).start()
+            return False
+
+        def follow_size(self):
+            """The output over there follows this window, so the stream is always native size."""
+            size = (self.pic.get_width(), self.pic.get_height())
+            if state["portal"] and size[0] > 0 and size != state["sent_size"] and getattr(self, "seen", None) == size:
+                state["sent_size"] = size
+                threading.Thread(target=lambda: post(host, f"/window/{addr}/portal", {"w": size[0], "h": size[1], "by": own_name()}), daemon=True).start()
+            self.seen = size
+            return True
 
         def start_video(self):
             self.pipeline = Gst.parse_launch(
@@ -273,6 +374,10 @@ def gui(host, addr, child=False):
                 try:
                     info = json.loads(call(host, f"/window/{addr}/info"))
                     GLib.idle_add(self.win.set_title, info["title"])
+                    if state["portal"] and not info.get("portal"):
+                        # it was brought back over there, nothing to show here any more
+                        state["portal"] = False
+                        GLib.idle_add(self.win.close)
                 except (OSError, ValueError, KeyError):
                     pass
 
@@ -304,6 +409,8 @@ def main():
     if args == ["entries"]:
         json.dump(entries(), sys.stdout)
         return 0
+    if len(args) == 3 and args[0] == "--placeholder":
+        return placeholder(args[1], args[2])
     child = "--child" in args
     args = [a for a in args if a != "--child"]
     if len(args) == 2 and args[0] in NAMES:
