@@ -81,6 +81,7 @@ fn card_for(ev: &Value) -> Option<Card> {
             )
         }
         "focus.off" => (Glyph::FocusOff, "Focus off".to_owned(), None, 2500),
+        "theme.changed" => (Glyph::Scene, text_of("Theme", "title"), None, 2500),
         "room.saved" => (Glyph::Room, text_of("Room saved", "name"), None, 2500),
         "room.restored" => (Glyph::Room, text_of("Room restored", "name"), None, 2500),
         "scene.done" => {

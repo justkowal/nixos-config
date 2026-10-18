@@ -144,6 +144,7 @@ Visual changes need a screenshot check: trigger the state, capture with `grim`, 
 - The phone app is built (`pkgs/labd/src/phone.rs`, assets in `pkgs/labd/assets/phone`, module `home/lab/phone.nix`, off by default). It is served by labd itself on the machine's tailnet address only (port 8765, wildcard addresses are refused), needs a bearer token (`~/.config/lab/phone-token`, 0600, created on first start, shown by `lab phone`), exposes only `GET /api/state` and `POST /api/scene/<name>` for scenes that exist in `scenes.json`, caps request size and time, delays failed logins, and sends no CORS headers. It is not served through the rpi4 ingress: that would have needed a listener on the computers anyway, and a bare tailnet address cannot get a certificate, so it is plain http inside the tailnet. `tailscale/policy.hujson` allows tcp 8765 for `tag:roaming`.
 - The labd bar is built (`pkgs/labd/src/bar.rs`, `tray.rs`, `hypr.rs`, module `home/lab/bar.nix`, off by default). It draws capsules from `~/.config/lab/bar.json`: workspaces from the Hyprland socket, a pixel clock, status modules and a StatusNotifier tray (labd owns `org.kde.StatusNotifierWatcher`, so stop Waybar first or it wins the name). `lab.bar.default = "labd"` stops Waybar autostarting; either way the palette entries "Bar: use the Lab bar" and "Bar: use Waybar" switch live through `bar.show` and `bar.hide`. Waybar stays as the fallback.
 - The lock screen (`home/hyprland.nix`), the greeter (`modules/lab-greeter.nix`) and the opt-in boot splash (`modules/lab-splash.nix`, `lab.boot.splash.enable`) read the same tokens and Matugen colours.
+- Theme packs live in `home/lab/theme.nix` (`lab.theme.packs`: title, Matugen `mode` and `scheme`, token overrides). `lab theme` lists them, `lab theme NAME` or `--next` (`SUPER + ALT + C`) merges the pack over the base tokens into `~/.local/state/lab/tokens.json`, regenerates Matugen colours and restarts labd, which reads that file before the Nix one. `mode = "auto"` picks light for a bright wallpaper. `change-wallpaper` calls `lab theme --colors` so a new wallpaper keeps the pack's scheme. A pack changes labd surfaces and Matugen colours only: Waybar radii are baked at build time. After changing base tokens in Nix, run `lab theme NAME` again, or the old merged file keeps winning.
 - The OSD wrappers `home/scripts/volume-osd.sh` and `home/scripts/brightness-osd.sh` are legacy. Do not add to them.
 - Matugen templates in `home/matugen/templates/` are the colour source and stay that way.
 
@@ -172,6 +173,7 @@ Add a row here when you add an event. Payload keys are the contract between publ
 | `scene.started` | `scene` | `name`, `title` | not shown |
 | `scene.done` | `scene` | `name`, `title`, `announce`, `failed` | title when `announce`; "Scene failed, <title>" when `failed` > 0 |
 | `palette.toggle` | `keymap` | none | opens or closes the palette (handled in `main.rs`, no card) |
+| `theme.changed` | `theme` | `name`, `title` | "Theme, <title>" |
 | `bar.show`, `bar.hide`, `bar.toggle` | `palette` | none | shows or hides the labd bar window (handled in `bar.rs`, no card) |
 
 ### Continuity (device roster and room transfer)

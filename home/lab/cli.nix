@@ -13,7 +13,7 @@
   # publish is the hot path (volume keys), so it skips Python and goes straight to the Rust client
   lab = pkgs.writeShellApplication {
     name = "lab";
-    runtimeInputs = [pkgs.python3 pkgs.systemd config.lab.shell.package];
+    runtimeInputs = [pkgs.python3 pkgs.systemd pkgs.imagemagick pkgs.matugen config.lab.shell.package];
     text = ''
       export LAB_HUB_HOOKS=${lib.escapeShellArg config.lab.focus.hooksUrl}
       if [ "''${1:-}" = publish ]; then

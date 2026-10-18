@@ -21,15 +21,118 @@ def load_conf(name):
         return json.load(f)
 
 
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "lab")
+
+
+def merge(base, over):
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def read_state(name):
+    try:
+        with open(os.path.join(STATE, name)) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def write_state(name, text):
+    os.makedirs(STATE, exist_ok=True)
+    with open(os.path.join(STATE, name), "w") as f:
+        f.write(text)
+
+
+def wallpaper():
+    return read_state("wallpaper") or os.path.expanduser("~/Pictures/wallpaper.png")
+
+
+def luminance(path):
+    # 0 is black, 1 is white. Any failure counts as dark, the safe default for this desk.
+    try:
+        out = subprocess.run(
+            ["magick", path, "-resize", "1x1!", "-colorspace", "Gray", "-format", "%[fx:mean]", "info:"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout
+        return float(out)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0.0
+
+
+def pick_mode(pack, path):
+    if pack["mode"] != "auto":
+        return pack["mode"]
+    return "light" if luminance(path) > 0.6 else "dark"
+
+
+def paint(pack, path):
+    if not shutil.which("matugen"):
+        return
+    subprocess.run(
+        ["matugen", "image", "--source-color-index", "0", "--mode", pick_mode(pack, path), "--type", pack["scheme"], path],
+        check=False,
+    )
+
+
+def active_pack(themes):
+    name = read_state("theme") or themes["default"]
+    if name not in themes["packs"]:
+        name = themes["default"]
+    return name, themes["packs"][name]
+
+
+def wait_for_bus(seconds=4):
+    end = time.time() + seconds
+    while time.time() < end:
+        try:
+            lab_bus.request({"op": "state"})
+            return True
+        except (OSError, ValueError):
+            time.sleep(0.3)
+    return False
+
+
+def cmd_theme(a):
+    themes = load_conf("themes.json")
+    packs = themes["packs"]
+    current, current_pack = active_pack(themes)
+    if a.colors:
+        paint(current_pack, a.colors)
+        write_state("wallpaper", a.colors)
+        return 0
+    if a.next:
+        names = sorted(packs)
+        a.name = names[(names.index(current) + 1) % len(names)]
+    if not a.name:
+        for n in sorted(packs):
+            print(f"{'*' if n == current else ' '} {n:<10} {packs[n]['title']} ({packs[n]['mode']}, {packs[n]['scheme']})")
+        return 0
+    if a.name not in packs:
+        print(f"no theme pack '{a.name}', try: {', '.join(sorted(packs))}", file=sys.stderr)
+        return 2
+    pack = packs[a.name]
+    base = load_conf("tokens.json")
+    write_state("tokens.json", json.dumps(merge(base, pack["tokens"])))
+    write_state("theme", a.name)
+    paint(pack, wallpaper())
+    # labd reads its tokens once at start, so a restart is the reload
+    subprocess.run(["systemctl", "--user", "restart", "labd"], check=False)
+    if wait_for_bus():
+        emit("theme.changed", {"name": a.name, "title": pack["title"]}, source="theme")
+    return 0
+
+
 def cmd_publish(a):
     # the compiled client owns the event contract and is fast enough for key repeat
     os.execvp("lab-publish", ["lab-publish", *a.rest])
 
 
-def emit(name, payload, priority="normal"):
+def emit(name, payload, priority="normal", source="scene"):
     # best effort: scenes still run with the shell down
     try:
-        lab_bus.request({"op": "publish", "event": {"name": name, "source": "scene", "payload": payload, "priority": priority}})
+        lab_bus.request({"op": "publish", "event": {"name": name, "source": source, "payload": payload, "priority": priority}})
     except (OSError, ValueError):
         pass
 
@@ -229,6 +332,11 @@ def main():
     p = sub.add_parser("scene", help="run a scene, or list them")
     p.add_argument("name", nargs="?")
     p.set_defaults(fn=cmd_scene)
+    p = sub.add_parser("theme", help="list theme packs, or switch to one")
+    p.add_argument("name", nargs="?")
+    p.add_argument("--next", action="store_true", help="switch to the next pack")
+    p.add_argument("--colors", metavar="IMAGE", help="only regenerate Matugen colours for IMAGE with the active pack")
+    p.set_defaults(fn=cmd_theme)
     p = sub.add_parser("phone", help="URL and token for the phone app")
     p.add_argument("--copy", action="store_true", help="copy the token to the clipboard instead of printing it")
     p.set_defaults(fn=cmd_phone)

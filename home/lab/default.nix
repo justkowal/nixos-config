@@ -12,6 +12,7 @@
     ./roster.nix
     ./phone.nix
     ./bar.nix
+    ./theme.nix
     ./shell.nix
   ];
 }

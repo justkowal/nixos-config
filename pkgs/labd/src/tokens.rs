@@ -29,14 +29,23 @@ fn path<'a>(v: &'a Value, keys: &[&str]) -> &'a Value {
 
 impl Tokens {
     pub fn load() -> Self {
-        let file = std::env::var_os("XDG_CONFIG_HOME")
+        let config = std::env::var_os("XDG_CONFIG_HOME")
             .map(std::path::PathBuf::from)
             .or_else(|| {
                 std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))
             })
             .map(|d| d.join("lab/tokens.json"));
-        let raw = file
-            .and_then(|f| std::fs::read_to_string(f).ok())
+        // `lab theme` writes the merged tokens of the active pack here, the Nix file is the fallback
+        let state = std::env::var_os("XDG_STATE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+            })
+            .map(|d| d.join("lab/tokens.json"));
+        let raw = [state, config]
+            .into_iter()
+            .flatten()
+            .find_map(|f| std::fs::read_to_string(f).ok())
             .and_then(|s| serde_json::from_str::<Value>(&s).ok())
             .unwrap_or(Value::Null);
         let num = |keys: &[&str], default: f64| path(&raw, keys).as_f64().unwrap_or(default);

@@ -14,7 +14,10 @@ if command -v awww &>/dev/null; then
   awww img "$WALLPAPER" --transition-type wipe --transition-step 90
 fi
 
-if command -v matugen &>/dev/null; then
+# the active theme pack picks the scheme and the mode, plain matugen is the fallback
+if command -v lab &>/dev/null && lab theme --colors "$WALLPAPER"; then
+  :
+elif command -v matugen &>/dev/null; then
   matugen image --source-color-index 0 "$WALLPAPER"
 fi
 

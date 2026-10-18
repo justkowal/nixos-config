@@ -31,8 +31,8 @@ in {
   lab.widgets.enable = true;
   # phone app: tailnet-only, token protected, see docs/ANDROID_SETUP.md part 5
   lab.phone.enable = true;
-  # labd bar next to waybar, switch live from the palette; waybar stays the session default
-  lab.bar.enable = true;
+  # labd bar is built but off until the owner has checked it live, see docs/LAB_GUIDELINES.md
+  lab.bar.enable = false;
 
   home.username = user;
   home.homeDirectory = homeDir;
