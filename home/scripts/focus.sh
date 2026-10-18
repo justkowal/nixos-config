@@ -41,6 +41,7 @@ announce() {
 
 # say why focus did not start, in the island, instead of dying silently under errexit
 fail() {
+  rm -f "$MARKER"
   lab publish focus.failed --source focus --strict --priority high --payload "$(jq -nc --arg r "$1" '{reason: $r}')" 2>/dev/null ||
     notify-send -a Focus -u critical -i dialog-warning-symbolic "Focus unavailable" "$1"
   exit 1
@@ -60,9 +61,9 @@ hook() {
 
 focus_on() {
   local minutes="${1:-25}"
+  touch "$MARKER"
   hook "focus-on?minutes=$minutes"
   rm -f "$CACHE"
-  touch "$MARKER"
   if have pomodoro; then
     pomodoro reset
     pomodoro toggle
@@ -72,13 +73,35 @@ focus_on() {
 }
 
 focus_off() {
+  local had=0
+  [ -f "$MARKER" ] && had=1
+  rm -f "$MARKER"
   curl -fsS -m 5 -X POST "$HOOKS/focus-off" >/dev/null || true
   rm -f "$CACHE"
-  if [ -f "$MARKER" ]; then
-    rm -f "$MARKER"
+  if [ "$had" = 1 ]; then
     have caffeine && caffeine off >/dev/null
   fi
   announce focus.off '{}' "Focus off" ""
+}
+
+# Bring this machine in line with the hub: start or end the local side effects when focus
+# changed somewhere else. Idempotent, the marker says what this machine has already applied.
+apply() {
+  rm -f "$CACHE"
+  if is_active; then
+    [ -f "$MARKER" ] && return 0
+    touch "$MARKER"
+    if have pomodoro; then
+      pomodoro reset
+      pomodoro toggle
+    fi
+    have caffeine && caffeine on >/dev/null
+    announce focus.on "$(jq -nc --arg m "$(remaining_min)" '{minutes: $m, from: "fleet"}')" "Focus on" "started on another machine"
+  elif [ -f "$MARKER" ]; then
+    rm -f "$MARKER"
+    have caffeine && caffeine off >/dev/null
+    announce focus.off '{"ended":"elsewhere"}' "Focus off" ""
+  fi
 }
 
 waybar() {
@@ -110,7 +133,8 @@ case "${1:-status}" in
   off) focus_off ;;
   toggle) if is_active; then focus_off; else focus_on "${2:-25}"; fi ;;
   status) state ;;
+  apply) apply ;;
   waybar) waybar ;;
   gate) gate "${2:-3}" ;;
-  *) echo "usage: focus {on [minutes]|off|toggle|status|waybar|gate <priority>}" >&2; exit 1 ;;
+  *) echo "usage: focus {on [minutes]|off|toggle|status|apply|waybar|gate <priority>}" >&2; exit 1 ;;
 esac

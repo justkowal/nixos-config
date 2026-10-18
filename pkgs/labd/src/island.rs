@@ -81,6 +81,29 @@ fn card_for(ev: &Value) -> Option<Card> {
             )
         }
         "focus.off" => (Glyph::FocusOff, "Focus off".to_owned(), None, 2500),
+        "auth.waiting" => {
+            let app = p["app"].as_str().unwrap_or("An app");
+            let mut app_chars = app.chars();
+            let app = app_chars
+                .next()
+                .map(|c| c.to_uppercase().chain(app_chars).collect::<String>())
+                .unwrap_or_default();
+            let host = p["host"].as_str().unwrap_or("this machine");
+            (
+                Glyph::Fingerprint,
+                format!("{app} on {host} is waiting for user authentication"),
+                None,
+                15000,
+            )
+        }
+        "auth.done" => {
+            let text = if p["ok"].as_bool().unwrap_or(false) {
+                "Authenticated"
+            } else {
+                "Authentication ended"
+            };
+            (Glyph::Fingerprint, text.to_owned(), None, 1500)
+        }
         "theme.changed" => (Glyph::Scene, text_of("Theme", "title"), None, 2500),
         "room.saved" => (Glyph::Room, text_of("Room saved", "name"), None, 2500),
         "room.restored" => (Glyph::Room, text_of("Room restored", "name"), None, 2500),
@@ -439,5 +462,17 @@ mod tests {
         let card = card_for(&ev).unwrap();
         assert_eq!(card.text, "Focus unavailable, the hub is unreachable");
         assert_eq!(card.priority, Priority::High);
+    }
+
+    #[test]
+    fn fingerprint_wait_names_app_and_machine() {
+        let ev = json!({"name": "auth.waiting", "payload": {"app": "sudo", "host": "laptop"}, "priority": "high", "ttl": 20});
+        let card = card_for(&ev).unwrap();
+        assert_eq!(
+            card.text,
+            "Sudo on laptop is waiting for user authentication"
+        );
+        let done = card_for(&json!({"name": "auth.done", "payload": {"ok": true}})).unwrap();
+        assert_eq!(done.text, "Authenticated");
     }
 }

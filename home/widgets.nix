@@ -138,12 +138,13 @@ in {
         Description = "Desktop widgets";
         # a login can start it before the display is imported; retrying must never hit the start limit
         StartLimitIntervalSec = 0;
-        PartOf = ["graphical-session.target"];
+        # no PartOf: a session target restart stopped it once and nothing started it again
         After = ["graphical-session.target"];
       };
+      Install.WantedBy = ["graphical-session.target"];
       Service = {
         ExecStart = "${lib.getExe deskwidgets}";
-        Restart = "on-failure";
+        Restart = "always";
         RestartSec = 3;
         # fleet-status and focus live in the user profile
         Environment = ["PATH=/etc/profiles/per-user/${config.home.username}/bin:/run/current-system/sw/bin"];

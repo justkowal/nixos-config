@@ -13,6 +13,7 @@
     ./phone.nix
     ./bar.nix
     ./theme.nix
+    ./continuity.nix
     ./shell.nix
   ];
 }

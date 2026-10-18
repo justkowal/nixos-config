@@ -15,6 +15,7 @@ State of the Kowal Lab layer on 2026-10-18, branch `perf-benchmarks`. The rules 
 | Phone and tablet app | `pkgs/labd/src/phone.rs`, `home/lab/phone.nix` | Tailnet only, bearer token, `lab phone --copy`. Setup: [ANDROID_SETUP.md](ANDROID_SETUP.md). |
 | Lock screen | `home/hyprland.nix` | Tokens and Matugen colours. |
 | Login greeter | `modules/lab-greeter.nix` | tuigreet, shared by laptop and desktop. |
+| Continuity | `home/lab/continuity.nix` | Fleet focus follows the hub on every machine, notifications and the fingerprint wait toast are mirrored over Taildrop. Needs `lab-inbox` and Taildrop on both machines. |
 | Theme packs | `home/lab/theme.nix`, `lab theme` | Lab, Dot matrix, Soft. `SUPER + ALT + C` cycles. |
 | rpi4 hub | `hosts/rpi4`, [DEPLOYMENT.md](DEPLOYMENT.md) | Deployed. Focus hooks, Blocky DNS, paperless fixes. |
 
