@@ -17,11 +17,10 @@ from collections import deque
 import cairo
 import gi
 
-gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk, Pango  # noqa: E402
 from gi.repository import Gtk4LayerShell as LS  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -604,6 +603,21 @@ def art_path(url):
     return None
 
 
+def square_art(path, size):
+    try:
+        tex = Gdk.Texture.new_from_filename(path)
+    except GLib.Error:
+        return None
+    w, h = tex.get_width(), tex.get_height()
+    k = size / min(w, h)
+    snap = Gtk.Snapshot()
+    snap.push_clip(Graphene.Rect().init(0, 0, size, size))
+    snap.translate(Graphene.Point().init(-(w * k - size) / 2, -(h * k - size) / 2))
+    snap.append_texture(tex, Graphene.Rect().init(0, 0, w * k, h * k))
+    snap.pop()
+    return snap.to_paintable(Graphene.Size().init(size, size))
+
+
 def r_media(box, d, compact):
     if not d or not d.get("title") or d.get("status") == "Stopped":
         box.append(lbl("Nothing playing", "dw-dim"))
@@ -612,12 +626,9 @@ def r_media(box, d, compact):
     size = 56 if compact else 96
     pic = None
     if path:
-        # a Picture sizes itself from the image, so a 640 px cover blew the whole column past the screen; scale it first
-        try:
-            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, size, size, True)
-            pic = Gtk.Picture.new_for_paintable(Gdk.Texture.new_for_pixbuf(pb))
-        except GLib.Error:
-            pic = None
+        # a Picture sizes itself from the image, so a 640 px cover blew the column past the screen; bake a small paintable first
+        paintable = square_art(path, size)
+        pic = Gtk.Picture.new_for_paintable(paintable) if paintable else None
     if pic is not None:
         pic.set_halign(Gtk.Align.START)
         pic.set_valign(Gtk.Align.CENTER)
