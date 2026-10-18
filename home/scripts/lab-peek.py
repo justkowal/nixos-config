@@ -113,8 +113,10 @@ def gui(host, addr, child=False):
 
     Gst.init(None)
     name = NAMES.get(host, host)
-    want = os.environ.get("LAB_PEEK_DECODER", "vah264dec")
-    decoder = want if Gst.ElementFactory.find(want) else "avdec_h264"
+    # Measured on this hardware: software decode adds about 3 ms, the VA-API decoder about 20 ms because it
+    # holds the newest frame back. Set LAB_PEEK_DECODER=vah264dec to decode on the GPU anyway (heavy video).
+    want = os.environ.get("LAB_PEEK_DECODER", "avdec_h264 max-threads=1")
+    decoder = want if Gst.ElementFactory.find(want.split()[0]) else "vah264dec"
     state = {"held_keys": set(), "held_buttons": set(), "window": "ok"}
     children = {}
 

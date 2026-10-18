@@ -15,7 +15,13 @@ libadwaita = { version = "0.9.2", features = ["v1_5"] }
 serde_json = "1.0.154"
 wayland-backend = "0.3"
 wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
 wayland-scanner = "0.31"
+gbm = "0.18"
+gstreamer = { version = "0.25", features = ["v1_24"] }
+gstreamer-allocators = { version = "0.25", features = ["v1_24"] }
+gstreamer-app = { version = "0.25", features = ["v1_24"] }
+gstreamer-video = { version = "0.25", features = ["v1_24"] }
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 

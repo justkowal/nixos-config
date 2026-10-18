@@ -308,6 +308,14 @@ def start_pipeline(addr, hardware):
     return cap, enc
 
 
+def start_zero_copy(addr):
+    """lab-stream: the window goes from GPU buffers into the GPU encoder, nothing is read back."""
+    env = session_env()
+    env.setdefault("LIBVA_DRIVERS_PATH", "/run/opengl-driver/lib/dri")
+    enc = subprocess.Popen(["lab-stream", addr], stdout=subprocess.PIPE, stderr=debug_log(), env=env)
+    return None, enc
+
+
 def nudge_until(flag):
     """An idle window never completes a capture, so ask the compositor to render once until the first frame is out."""
     for _ in range(12):
@@ -318,9 +326,10 @@ def nudge_until(flag):
 
 
 def stop_pipeline(pipe):
-    for p in pipe:
+    procs = [p for p in pipe if p is not None]
+    for p in procs:
         p.kill()
-    for p in pipe:
+    for p in procs:
         p.wait()
 
 
@@ -360,11 +369,13 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True
         # small frames must leave at once, Nagle would hold them back for the next ACK
         self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        hardware, sent, pipe = True, 0, None
+        # zero copy first, then the readback path with a GPU encoder, then a CPU encoder
+        mode = "zero" if os.environ.get("LAB_PEER_ZEROCOPY", "1") != "0" else "gpu"
+        sent, pipe = 0, None
         try:
             while True:
                 if pipe is None:
-                    pipe = start_pipeline(addr, hardware)
+                    pipe = start_zero_copy(addr) if mode == "zero" else start_pipeline(addr, mode == "gpu")
                     if pipe is None:
                         return
                     started = time.time()
@@ -380,14 +391,16 @@ class Handler(BaseHTTPRequestHandler):
                         first_out.set()
                         continue
                 # the encoder is done: the window changed size (restart), went away, or the GPU path failed
-                code = cap.poll()
+                code = cap.poll() if cap else None
                 if enc.poll() is not None or code is not None:
-                    cap_code = cap.wait() if code is None else code
+                    # the exit code of the capturing process: 3 means the window changed size, 4 means this path is unavailable
+                    cap_code = (cap or enc).wait() if (cap or enc).poll() is None else (cap or enc).poll()
                     stop_pipeline(pipe)
                     pipe = None
-                    if hardware and sent == 0 and time.time() - started < 4 and cap_code in (None, 3, -9, -13):
-                        hardware = False
-                        continue
+                    if sent == 0 and time.time() - started < 4 and cap_code != 3:
+                        mode = {"zero": "gpu", "gpu": "cpu"}.get(mode)
+                        if mode:
+                            continue
                     if cap_code == 3:
                         continue
                     return

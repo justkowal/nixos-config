@@ -51,3 +51,12 @@ Waybar and SwayNC stay installed and are the default until the owner has verifie
 - labd and Waybar both want `org.kde.StatusNotifierWatcher`. Stop Waybar before using the Lab bar tray.
 - `labd` retries without a start limit, so a compositor restart no longer leaves it dead. Logs: `journalctl --user -u labd`.
 - Sandbox notes for anyone testing remotely: ssh needs `-F /dev/null`, and `nixos-rebuild` needs `NIX_SSHOPTS="-F /dev/null -o BatchMode=yes"`.
+
+## Planned
+
+- **Thin client mode** for the laptop: a NixOS specialisation (`thin-client`) that turns the ThinkPad into a battery-first window onto the desktop. Ideas to settle before building it:
+  - A different, lean kernel (no XanMod tuning for gaming, power-saving defaults, only the modules this machine needs) and the smallest set of services: network stack and Tailscale, a very small Wayland compositor (cage, labwc or a trimmed Hyprland), Moonlight, `labd` with the island, and the accubattery daemon. No Syncthing, no widgets, no AI daemons, no background indexing.
+  - Everything tuned for battery: CPU governor and EPP, AMD GPU power states, screen refresh and brightness policy, Wi-Fi power save, wake-up sources, suspend that resumes straight into the stream. Measure it (`powertop`, accubattery) and keep the numbers in this file.
+  - Waking and finding the desktop is the core path: `lab run desktop` already wakes it and shows the toast, the thin client would boot into that flow and open the Moonlight session (or Peek windows) without a launcher.
+  - The design language stays: tokens, Matugen colour, the island and the bar (labd only, no Waybar or SwayNC), drawn glyphs. Minimal means fewer services, not a different look.
+  - Open questions: single specialisation versus a separate host config, how the specialisation is chosen at boot (systemd-boot entry), whether Moonlight or Peek is the primary path, and what stays local (browser, terminal) when the desktop is unreachable.
