@@ -282,8 +282,12 @@ fn room_items(entries: &Value) -> Vec<Item> {
                         confirm: false,
                         glyph: if matches!(group, "Inbox" | "Send") {
                             Glyph::Handoff
-                        } else if group.starts_with("On ") {
+                        } else if group.starts_with("On ")
+                            || matches!(group, "Network" | "Tailnet" | "Thin client")
+                        {
                             Glyph::Device
+                        } else if group == "Audio" {
+                            Glyph::Volume(1)
                         } else {
                             Glyph::Room
                         },
@@ -515,8 +519,12 @@ impl Palette {
         self.entry.grab_focus();
         self.fade(1.0, || {});
 
-        // rooms and the windows on your other machines, each on its own thread so a slow peer never holds the rooms back
-        for (cmd, args) in [("room", "entries"), ("lab-peek", "entries")] {
+        // rooms, the windows on your other machines and the thin client utilities (Wi-Fi, audio, tailnet), each on its own thread so a slow peer never holds the rooms back
+        for (cmd, args) in [
+            ("room", "entries"),
+            ("lab-peek", "entries"),
+            ("lab-thin", "entries"),
+        ] {
             let (tx, rx) = async_channel::bounded::<Value>(1);
             std::thread::spawn(move || {
                 let out = Command::new(cmd).arg(args).output().ok();

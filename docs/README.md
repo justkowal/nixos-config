@@ -15,6 +15,7 @@ This directory contains the detailed documentation for the `/etc/nixos` Flake co
 | [**Desktop Environment**](DESKTOP_ENVIRONMENT.md) | Hyprland, Waybar, Rofi, Kitty, and full keybinding reference. |
 | [**Android Setup**](ANDROID_SETUP.md) | Step by step for a phone and tablet that were never set up: Tailscale, DNS, the lab CA, ntfy, the phone app, Moonlight, KDE Connect, Syncthing. |
 | [**Lab Guidelines**](LAB_GUIDELINES.md) | Visual rules, interaction rules, state bus contract and the add-a-feature checklist for desk work. |
+| [**Thin Client**](THIN_CLIENT.md) | The battery first boot entry that only shows the desktop: labwc, Moonlight, the island, no Hyprland. |
 | [**Lab Status**](LAB_STATUS.md) | What is built, what is switched on, what still needs a person. |
 | [**Ambient AI Suite**](AMBIENT_AI.md) | Local Gemma models, vector indexing, AI daemons, and shell integrations. |
 | [**Networking & VPN**](NETWORKING_AND_VPN.md) | Tailscale, Syncthing, Firewall rules, and isolated network namespaces. |

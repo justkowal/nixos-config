@@ -16,6 +16,7 @@ State of the Kowal Lab layer on 2026-10-18, branch `perf-benchmarks`. The rules 
 | Lock screen | `home/hyprland.nix` | Tokens and Matugen colours. |
 | Login greeter | `modules/lab-greeter.nix` | tuigreet, shared by laptop and desktop. |
 | Continuity | `home/lab/continuity.nix` | Fleet focus follows the hub on every machine, notifications and the fingerprint wait toast are mirrored over Taildrop. Needs `lab-inbox` and Taildrop on both machines. |
+| Thin client mode | `hosts/laptop/thin-client.nix`, [THIN_CLIENT.md](THIN_CLIENT.md) | A separate boot entry (labwc, Moonlight, the island, battery tuning, a direct to screen stream session). Builds, not yet booted on the laptop. |
 | Peek | `home/lab/peek.nix` | Use a window of your other machine like a local one: palette entry, window-locked GPU encoded video, full mouse and keyboard passthrough, dialogs as their own windows, small badge. Portal mode moves the window to a headless output on the source machine while it is used elsewhere, with a placeholder and automatic return. |
 | Run on desktop | `lab run`, palette "Run on <Machine> · <App>" | Wakes the other machine if needed, shows a spinner, check and dot toast, then opens the app there. |
 | Clipboard sharing | `home/lab/continuity.nix` | Copied text follows you between the laptop and desktop. `lab clip toggle` pauses it. |
@@ -53,9 +54,4 @@ Waybar and SwayNC stay installed and are the default until the owner has verifie
 
 ## Planned
 
-- **Thin client mode** for the laptop: a NixOS specialisation (`thin-client`) that turns the ThinkPad into a battery-first window onto the desktop. Ideas to settle before building it:
-  - A different, lean kernel (no XanMod tuning for gaming, power-saving defaults, only the modules this machine needs) and the smallest set of services: network stack and Tailscale, a very small Wayland compositor (cage, labwc or a trimmed Hyprland), Moonlight, `labd` with the island, and the accubattery daemon. No Syncthing, no widgets, no AI daemons, no background indexing.
-  - Everything tuned for battery: CPU governor and EPP, AMD GPU power states, screen refresh and brightness policy, Wi-Fi power save, wake-up sources, suspend that resumes straight into the stream. Measure it (`powertop`, accubattery) and keep the numbers in this file.
-  - Waking and finding the desktop is the core path: `lab run desktop` already wakes it and shows the toast, the thin client would boot into that flow and open the Moonlight session (or Peek windows) without a launcher.
-  - The design language stays: tokens, Matugen colour, the island and the bar (labd only, no Waybar or SwayNC), drawn glyphs. Minimal means fewer services, not a different look.
-  - Open questions: single specialisation versus a separate host config, how the specialisation is chosen at boot (systemd-boot entry), whether Moonlight or Peek is the primary path, and what stays local (browser, terminal) when the desktop is unreachable.
+

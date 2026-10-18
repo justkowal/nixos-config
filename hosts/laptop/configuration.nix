@@ -151,6 +151,12 @@ in {
     };
   };
 
+  # Thin client mode: a separate battery first boot entry, see docs/THIN_CLIENT.md
+  specialisation.thin-client = {
+    inheritParentConfig = false;
+    configuration = {imports = [./thin-client.nix];};
+  };
+
   # Logind lid switch handling: suspend on battery, keep active when docked/external monitor
   services.logind.settings = {
     Login = {
