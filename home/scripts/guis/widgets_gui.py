@@ -17,10 +17,11 @@ from collections import deque
 import cairo
 import gi
 
+gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
 from gi.repository import Gtk4LayerShell as LS  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -609,10 +610,20 @@ def r_media(box, d, compact):
         return
     path = art_path(d.get("art"))
     size = 56 if compact else 96
+    pic = None
     if path:
-        pic = Gtk.Picture.new_for_filename(path)
+        # a Picture sizes itself from the image, so a 640 px cover blew the whole column past the screen; scale it first
+        try:
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, size, size, True)
+            pic = Gtk.Picture.new_for_paintable(Gdk.Texture.new_for_pixbuf(pb))
+        except GLib.Error:
+            pic = None
+    if pic is not None:
+        pic.set_halign(Gtk.Align.START)
+        pic.set_valign(Gtk.Align.CENTER)
+        pic.set_hexpand(False)
+        pic.set_vexpand(False)
         pic.set_content_fit(Gtk.ContentFit.COVER)
-        pic.set_size_request(size, size)
         pic.add_css_class("dw-art")
         pic.set_overflow(Gtk.Overflow.HIDDEN)
     else:
