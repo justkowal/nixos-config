@@ -22,6 +22,18 @@
     gdk-pixbuf
     harfbuzz
     gobject-introspection
+    gst_all_1.gstreamer.out
+    gst_all_1.gst-plugins-base
+  ]);
+
+  # vah264dec lives in plugins-bad and the GTK4 paintable sink in plugins-rs
+  gstPlugins = lib.makeSearchPath "lib/gstreamer-1.0" (with pkgs.gst_all_1; [
+    gstreamer.out
+    gst-plugins-base
+    gst-plugins-good
+    gst-plugins-bad
+    gst-plugins-rs
+    gst-libav
   ]);
 
   peek = pkgs.writeShellApplication {
@@ -29,6 +41,8 @@
     runtimeInputs = [(pkgs.python3.withPackages (ps: [ps.pygobject3]))];
     text = ''
       export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+      export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPlugins}"
+      export LIBVA_DRIVERS_PATH="''${LIBVA_DRIVERS_PATH:-/run/opengl-driver/lib/dri}"
       exec python3 ${src}/lab-peek.py "$@"
     '';
   };
@@ -36,7 +50,7 @@ in {
   options.lab.peek.enable = lib.mkOption {
     type = lib.types.bool;
     default = config.lab.continuity.enable;
-    description = "Preview and poke windows on your other machines from the command palette. Needs lab.continuity.names for the machine list.";
+    description = "Use windows of your other machines like local ones: pick one in the command palette, get hardware decoded video and full input passthrough. Needs lab.continuity.names for the machine list.";
   };
 
   config = lib.mkIf cfg.enable {
@@ -51,21 +65,17 @@ in {
       };
       Service = {
         ExecStart = "${pkgs.python3}/bin/python3 ${src}/lab-peer.py";
+        # wf-recorder encodes on the GPU through VA-API, lab-inject presses the keys
         Environment = [
-          "PATH=/etc/profiles/per-user/${user}/bin:/run/current-system/sw/bin"
+          "PATH=${lib.makeBinPath [pkgs.wf-recorder pkgs.grim config.lab.shell.package]}:/etc/profiles/per-user/${user}/bin:/run/current-system/sw/bin"
           "TAILSCALE=/run/current-system/sw/bin/tailscale"
+          "LIBVA_DRIVERS_PATH=/run/opengl-driver/lib/dri"
         ];
         Restart = "always";
         RestartSec = 5;
       };
       Install.WantedBy = ["graphical-session.target"];
     };
-
-    wayland.windowManager.hyprland.extraConfig = ''
-      windowrule = float 1, match:class ^(lab\.justkowal\.Peek)$
-      windowrule = size 960 640, match:class ^(lab\.justkowal\.Peek)$
-      windowrule = center 1, match:class ^(lab\.justkowal\.Peek)$
-    '';
 
     lab.keymap.entries = [
       {
