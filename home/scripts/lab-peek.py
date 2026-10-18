@@ -251,7 +251,8 @@ def gui(host, addr, child=False):
         def start_video(self):
             self.pipeline = Gst.parse_launch(
                 f"souphttpsrc location=http://{host}:{PORT}/window/{addr}/video is-live=true do-timestamp=true ! "
-                f"h264parse ! {decoder} ! gtk4paintablesink name=sink sync=false"
+                f"h264parse ! {decoder} ! videoconvert ! video/x-raw,format=BGRx ! "
+                f"gtk4paintablesink name=sink sync=false"
             )
             self.pic.set_paintable(self.pipeline.get_by_name("sink").props.paintable)
             bus = self.pipeline.get_bus()

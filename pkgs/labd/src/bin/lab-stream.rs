@@ -116,8 +116,15 @@ mod sps {
         out
     }
 
-    /// Position (in bits) and value of max_dec_frame_buffering and of max_num_ref_frames.
-    fn locate(rbsp: &[u8]) -> Option<(usize, u32, u32)> {
+    /// Bit positions in the SPS: the video_signal_type_present_flag and its value, then max_dec_frame_buffering,
+    /// its value, and max_num_ref_frames.
+    struct Found {
+        signal_flag: (usize, bool),
+        dpb: (usize, u32),
+        refs: u32,
+    }
+
+    fn locate(rbsp: &[u8]) -> Option<Found> {
         let mut r = Bits { data: rbsp, pos: 8 }; // after the NAL header byte
         let profile = r.bits(8)?;
         if !matches!(profile, 66 | 77 | 88) {
@@ -162,7 +169,9 @@ mod sps {
         if r.bit()? == 1 {
             r.bit()?;
         }
-        if r.bit()? == 1 {
+        let signal_at = r.pos;
+        let signal = r.bit()? == 1;
+        if signal {
             r.bits(4)?;
             if r.bit()? == 1 {
                 r.bits(24)?;
@@ -190,22 +199,63 @@ mod sps {
         }
         r.ue()?; // max_num_reorder_frames
         let at = r.pos;
-        Some((at, r.ue()?, refs))
+        Some(Found {
+            signal_flag: (signal_at, signal),
+            dpb: (at, r.ue()?),
+            refs,
+        })
     }
 
-    /// The NAL unit (without start code) with the field lowered, or None when nothing needs changing.
-    pub fn patch(nal: &[u8]) -> Option<Vec<u8>> {
-        let mut rbsp = unescape(nal);
-        let (at, value, refs) = locate(&rbsp)?;
-        let want = refs.max(1);
-        // ue(1) is 010 and ue(2) is 011: same length, so a bit flip is enough
-        if value != 2 || want != 1 {
-            return None;
+    fn unpack(rbsp: &[u8]) -> Vec<bool> {
+        rbsp.iter()
+            .flat_map(|b| (0..8).rev().map(move |i| (b >> i) & 1 == 1))
+            .collect()
+    }
+
+    fn pack(mut bits: Vec<bool>) -> Vec<u8> {
+        // the closing bit, then zeros up to a byte boundary
+        bits.push(true);
+        while bits.len() % 8 != 0 {
+            bits.push(false);
         }
-        // the third bit of the code, the last one, goes from 1 to 0
-        let last = at + 2;
-        rbsp[last / 8] &= !(1 << (7 - last % 8));
-        Some(escape(&rbsp))
+        bits.chunks(8)
+            .map(|c| c.iter().fold(0u8, |a, &b| (a << 1) | u8::from(b)))
+            .collect()
+    }
+
+    /// The NAL unit (without start code) with two changes: the decoder buffer is lowered to the smallest legal
+    /// size, and the colour is declared (BT.709, limited range) when the encoder left it out, because a decoder
+    /// that has to guess treats limited range data as full range and lifts every black. None when nothing changes.
+    pub fn patch(nal: &[u8]) -> Option<Vec<u8>> {
+        let rbsp = unescape(nal);
+        let found = locate(&rbsp)?;
+        let mut bits = unpack(&rbsp);
+        // drop the trailing closing bit and padding
+        while bits.last() == Some(&false) {
+            bits.pop();
+        }
+        bits.pop();
+        let mut changed = false;
+        // ue(1) is 010 and ue(2) is 011: same length, so lowering the buffer is a bit flip
+        if found.dpb.1 == 2 && found.refs.max(1) == 1 {
+            bits[found.dpb.0 + 2] = false;
+            changed = true;
+        }
+        if !found.signal_flag.1 {
+            let at = found.signal_flag.0;
+            bits[at] = true;
+            // video_format 5 (unspecified), limited range, colour description present, then BT.709 three times
+            let mut add = vec![true, false, true, false, true];
+            for _ in 0..3 {
+                add.extend([false, false, false, false, false, false, false, true]);
+            }
+            add.splice(5..5, []);
+            for (i, b) in add.into_iter().enumerate() {
+                bits.insert(at + 1 + i, b);
+            }
+            changed = true;
+        }
+        changed.then(|| escape(&pack(bits)))
     }
 }
 
