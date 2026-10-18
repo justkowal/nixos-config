@@ -562,6 +562,7 @@ name = "labd"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "bitflags",
  "cairo-rs",
  "gio-unix",
  "gtk4",
@@ -569,9 +570,11 @@ dependencies = [
  "libadwaita",
  "libc",
  "serde_json",
+ "wayland-backend",
  "wayland-client",
  "wayland-protocols-misc",
  "wayland-protocols-wlr",
+ "wayland-scanner",
 ]
 
 [[package]]

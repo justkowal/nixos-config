@@ -65,9 +65,9 @@ in {
       };
       Service = {
         ExecStart = "${pkgs.python3}/bin/python3 ${src}/lab-peer.py";
-        # wf-recorder encodes on the GPU through VA-API, lab-inject presses the keys
+        # lab-capture grabs the window, ffmpeg encodes it on the GPU through VA-API, lab-inject presses the keys
         Environment = [
-          "PATH=${lib.makeBinPath [pkgs.wf-recorder pkgs.grim config.lab.shell.package]}:/etc/profiles/per-user/${user}/bin:/run/current-system/sw/bin"
+          "PATH=${lib.makeBinPath [pkgs.ffmpeg config.lab.shell.package]}:/etc/profiles/per-user/${user}/bin:/run/current-system/sw/bin"
           "TAILSCALE=/run/current-system/sw/bin/tailscale"
           "LIBVA_DRIVERS_PATH=/run/opengl-driver/lib/dri"
         ];
@@ -76,6 +76,12 @@ in {
       };
       Install.WantedBy = ["graphical-session.target"];
     };
+
+    # dialogs and popups of a remote app open as their own viewers, floating like they do over there
+    wayland.windowManager.hyprland.extraConfig = ''
+      windowrule = float 1, match:class ^(lab\.justkowal\.PeekDialog)$
+      windowrule = center 1, match:class ^(lab\.justkowal\.PeekDialog)$
+    '';
 
     lab.keymap.entries = [
       {
