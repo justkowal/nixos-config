@@ -1,0 +1,49 @@
+# Lab status
+
+State of the Kowal Lab layer on 2026-10-18, branch `perf-benchmarks`. The rules live in [LAB_GUIDELINES.md](LAB_GUIDELINES.md), this file says what exists, what is switched on and what still needs a person.
+
+## Built and in use
+
+| Part | Where | Notes |
+| :--- | :--- | :--- |
+| State bus, island, palette, help window | `pkgs/labd`, `home/lab/{shell,palette,help}.nix` | Rust, socket at `$XDG_RUNTIME_DIR/lab.sock`. `SUPER + SPACE` palette, `SUPER + /` help. |
+| Design tokens | `home/lab/design.nix` | Inter, Departure Mono, JetBrainsMono Nerd Font. Colour from Matugen only. Lint: `checks.tokens`. |
+| Keymap as data | `home/lab/keymap.nix` | Generates Hyprland binds, `lab keys`, the help window. |
+| Scenes, sound, LEDs | `home/lab/{scenes,led}.nix`, `lab scene` | arrive, focus, leave, present, sleep. |
+| Rooms, focus, handoff | `home/{rooms,focus,handoff}.nix` | Publish to the bus; the island presents. Focus does not block YouTube. |
+| Device roster, room transfer | `home/lab/roster.nix`, `home/scripts/lab-inbox.py` | Taildrop. Tagging a device breaks Taildrop, do not tag. |
+| Phone and tablet app | `pkgs/labd/src/phone.rs`, `home/lab/phone.nix` | Tailnet only, bearer token, `lab phone --copy`. Setup: [ANDROID_SETUP.md](ANDROID_SETUP.md). |
+| Lock screen | `home/hyprland.nix` | Tokens and Matugen colours. |
+| Login greeter | `modules/lab-greeter.nix` | tuigreet, shared by laptop and desktop. |
+| Theme packs | `home/lab/theme.nix`, `lab theme` | Lab, Dot matrix, Soft. `SUPER + ALT + C` cycles. |
+| rpi4 hub | `hosts/rpi4`, [DEPLOYMENT.md](DEPLOYMENT.md) | Deployed. Focus hooks, Blocky DNS, paperless fixes. |
+
+## Built but off
+
+| Part | Switch | Why off |
+| :--- | :--- | :--- |
+| labd bar and tray | `lab.bar.enable = true` (`lab.bar.default = "labd"` to start with it) | Needs a live check of Pomodoro, Caffeine, thinkdot, backlight, media, tray with a real app, and the Departure Mono sharpness. Waybar stays the fallback. |
+| Boot splash | `lab.boot.splash.enable = true` | Never run on hardware. Try the desktop first. The laptop is LUKS2 + TPM2 with a systemd initrd, so check it boots cleanly before enabling there. |
+
+Waybar and SwayNC stay installed and are the default until the owner has verified the replacements.
+
+## Not done
+
+- Pi OLED mirror of the island: the screen was unavailable.
+- Visual regression VM test for island states: the headless labwc + grim harness was only used by hand, it is not a flake check.
+- Tablet is not yet on Tailscale, so the phone app has not been used from it.
+
+## Needs a person
+
+1. Switch both machines: `nh os switch /etc/nixos`, then `systemctl --user restart labd` if the island is missing.
+2. Walk through [ANDROID_SETUP.md](ANDROID_SETUP.md) for the phone and tablet.
+3. Decide on `lab.handoff.enable`, streaming wake (HDMI dummy plug) and applying `tailscale/policy.hujson`.
+4. Try the bar and the splash as described above, then decide whether Waybar and SwayNC can go.
+5. Fix the unused `ICalGLib` import in `pkgs/accubattery/scripts/events.py`, it fails the flake `scripts` check (not Lab code).
+
+## Known limits
+
+- A theme pack changes labd surfaces and Matugen colours. Waybar radii are baked at build time. After changing base tokens in Nix, run `lab theme NAME` again, the merged file in `~/.local/state/lab/` wins until then.
+- labd and Waybar both want `org.kde.StatusNotifierWatcher`. Stop Waybar before using the Lab bar tray.
+- `labd` retries without a start limit, so a compositor restart no longer leaves it dead. Logs: `journalctl --user -u labd`.
+- Sandbox notes for anyone testing remotely: ssh needs `-F /dev/null`, and `nixos-rebuild` needs `NIX_SSHOPTS="-F /dev/null -o BatchMode=yes"`.

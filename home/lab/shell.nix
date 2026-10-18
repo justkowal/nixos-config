@@ -30,6 +30,8 @@ in {
     systemd.user.services.labd = {
       Unit = {
         Description = "Kowal Lab state bus and island";
+        # a compositor restart leaves no display for a few seconds; retrying must never hit the start limit
+        StartLimitIntervalSec = 0;
         PartOf = ["graphical-session.target"];
         After = ["graphical-session.target"];
       };
@@ -41,7 +43,7 @@ in {
           "TAILSCALE=/run/current-system/sw/bin/tailscale"
         ];
         Restart = "on-failure";
-        RestartSec = 2;
+        RestartSec = 3;
       };
       Install.WantedBy = ["graphical-session.target"];
     };
