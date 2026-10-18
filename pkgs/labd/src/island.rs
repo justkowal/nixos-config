@@ -114,6 +114,23 @@ fn card_for(ev: &Value) -> Option<Card> {
             None,
             2200,
         ),
+        "wake.progress" => {
+            let who = p["title"].as_str().unwrap_or("The machine");
+            match p["state"].as_str() {
+                // spinner and check stay until the next state arrives, the dot is short and ends the toast
+                Some("up") => (Glyph::Check, format!("{who} is up"), None, 300_000),
+                Some("online") => (Glyph::Dot, format!("{who} online"), None, 1800),
+                Some("failed") => (
+                    Glyph::Ring,
+                    p["reason"]
+                        .as_str()
+                        .map_or_else(|| format!("{who} did not wake"), str::to_owned),
+                    None,
+                    4500,
+                ),
+                _ => (Glyph::Spinner(0), format!("Waking {who}"), None, 300_000),
+            }
+        }
         "auth.done" => {
             let text = if p["ok"].as_bool().unwrap_or(false) {
                 "Authenticated"
@@ -436,6 +453,19 @@ impl Island {
 
         let gen = self.generation.get() + 1;
         self.generation.set(gen);
+        if matches!(self.glyph.get(), Glyph::Spinner(_)) {
+            let me = Rc::downgrade(self);
+            let mut frame = 0u8;
+            glib::timeout_add_local(Duration::from_millis(70), move || {
+                let Some(me) = me.upgrade().filter(|m| m.generation.get() == gen) else {
+                    return glib::ControlFlow::Break;
+                };
+                frame = (frame + 1) % 12;
+                me.glyph.set(Glyph::Spinner(frame));
+                me.icon.queue_draw();
+                glib::ControlFlow::Continue
+            });
+        }
         let me = Rc::downgrade(self);
         glib::timeout_add_local_once(hold, move || {
             if let Some(me) = me.upgrade().filter(|m| m.generation.get() == gen) {
@@ -480,6 +510,28 @@ mod tests {
         let card = card_for(&ev).unwrap();
         assert_eq!(card.text, "Focus unavailable, the hub is unreachable");
         assert_eq!(card.priority, Priority::High);
+    }
+
+    #[test]
+    fn wake_toast_goes_spinner_check_dot() {
+        let card = |state: &str| {
+            card_for(&json!({"name": "wake.progress", "payload": {"title": "Desktop", "state": state}, "priority": "high", "ttl": 400})).unwrap()
+        };
+        let (waking, up, online) = (card("waking"), card("up"), card("online"));
+        assert_eq!(
+            (waking.glyph, waking.text.as_str()),
+            (Glyph::Spinner(0), "Waking Desktop")
+        );
+        assert_eq!(
+            (up.glyph, up.text.as_str()),
+            (Glyph::Check, "Desktop is up")
+        );
+        assert_eq!(
+            (online.glyph, online.text.as_str()),
+            (Glyph::Dot, "Desktop online")
+        );
+        // spinner and check wait for the next state, the dot is the last card before the island leaves
+        assert!(waking.hold_ms > 60_000 && up.hold_ms > 60_000 && online.hold_ms < 3000);
     }
 
     #[test]

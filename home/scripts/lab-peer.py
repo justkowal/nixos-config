@@ -6,7 +6,7 @@ caller is another device of the same user, so there is no token to share.
 
   HTTP :8766   GET /windows, GET /window/ADDR/info, GET /window/ADDR/related,
                GET /window/ADDR/video (hardware encoded H.264 of that window alone),
-               POST /window/ADDR/(focus|close)
+               POST /window/ADDR/(focus|close), POST /run {"app": "firefox.desktop"}
   TCP  :8767   input channel: first line {"window": ADDR}, then one JSON event per line:
                {"m":[nx,ny]} {"b":[code,1|0]} {"a":[dx,dy]} {"k":[code,1|0]} {"focus":1}
                with nx,ny in 0..1 over the window. The server answers {"state":"ok"|"hidden"|"gone"}.
@@ -120,6 +120,22 @@ def related(addr):
     if me is None:
         return []
     return [w for w in windows() if w["pid"] == me["pid"] and w["addr"] != addr]
+
+
+APP_ID_RE = re.compile(r"[A-Za-z0-9._-]+\.desktop")
+
+
+def find_app(app_id):
+    """The desktop entry file for an app id, only from the installed application folders."""
+    if not APP_ID_RE.fullmatch(app_id):
+        return None
+    user = os.environ.get("USER", "")
+    for d in (Path.home() / ".local/share/applications", Path(f"/etc/profiles/per-user/{user}/share/applications"),
+              Path("/run/current-system/sw/share/applications"), Path.home() / ".nix-profile/share/applications"):
+        p = d / app_id
+        if p.is_file():
+            return p
+    return None
 
 
 def layout_box():
@@ -404,6 +420,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.guard():
             return
+        if self.path == "/run":
+            # open an installed app in this session, by desktop file name only, never an arbitrary command
+            try:
+                app = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 512)))["app"]
+            except (ValueError, KeyError, TypeError):
+                return self.json(400, {"error": "bad body"})
+            path = find_app(app) if isinstance(app, str) else None
+            if path is None:
+                return self.json(404, {"error": "no such app"})
+            out = run(["hyprctl", "dispatch", "exec", f"gio launch '{path}'"], session_env())
+            return self.json(200, {"ok": out.returncode == 0})
         m = re.fullmatch(r"/window/(0x[0-9a-f]{1,16})/(focus|close)", self.path)
         if not m:
             return self.json(404, {"error": "unknown path"})

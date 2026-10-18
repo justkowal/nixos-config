@@ -17,6 +17,7 @@ State of the Kowal Lab layer on 2026-10-18, branch `perf-benchmarks`. The rules 
 | Login greeter | `modules/lab-greeter.nix` | tuigreet, shared by laptop and desktop. |
 | Continuity | `home/lab/continuity.nix` | Fleet focus follows the hub on every machine, notifications and the fingerprint wait toast are mirrored over Taildrop. Needs `lab-inbox` and Taildrop on both machines. |
 | Peek | `home/lab/peek.nix` | Use a window of your other machine like a local one: palette entry, window-locked GPU encoded video, full mouse and keyboard passthrough, dialogs as their own windows, small badge. |
+| Run on desktop | `lab run`, palette "Run on <Machine> · <App>" | Wakes the other machine if needed, shows a spinner, check and dot toast, then opens the app there. |
 | Clipboard sharing | `home/lab/continuity.nix` | Copied text follows you between the laptop and desktop. `lab clip toggle` pauses it. |
 | Theme packs | `home/lab/theme.nix`, `lab theme` | Lab, Dot matrix, Soft. `SUPER + ALT + C` cycles. |
 | rpi4 hub | `hosts/rpi4`, [DEPLOYMENT.md](DEPLOYMENT.md) | Deployed. Focus hooks, Blocky DNS, paperless fixes. |

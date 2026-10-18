@@ -47,6 +47,9 @@ pub enum Glyph {
     Note,
     Fingerprint,
     Clipboard,
+    /// a rotating arc, the frame 0 to 11 sets the angle
+    Spinner(u8),
+    Check,
 }
 
 pub const SIZE: f64 = 24.0;
@@ -294,6 +297,13 @@ pub fn draw(cr: &Context, glyph: Glyph) {
             cr.new_sub_path();
             cr.arc(12.0, 12.0, 3.0, 0.0, 2.0 * PI);
         }
+        Glyph::Spinner(frame) => {
+            let start = f64::from(frame % 12) * PI / 6.0;
+            cr.arc(12.0, 12.0, 8.0, start, start + 1.5 * PI);
+        }
+        Glyph::Check => {
+            line(cr, &[(5.5, 12.5), (10.0, 17.0), (18.5, 7.5)]);
+        }
         Glyph::Clipboard => {
             cr.rectangle(5.0, 5.0, 14.0, 16.0);
             cr.new_sub_path();
@@ -411,6 +421,8 @@ mod tests {
             Glyph::Note,
             Glyph::Fingerprint,
             Glyph::Clipboard,
+            Glyph::Spinner(3),
+            Glyph::Check,
         ];
         let cell = 96;
         let surface = ImageSurface::create(Format::ARgb32, cell * all.len() as i32, cell).unwrap();

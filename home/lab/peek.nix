@@ -67,7 +67,7 @@ in {
         ExecStart = "${pkgs.python3}/bin/python3 ${src}/lab-peer.py";
         # lab-capture grabs the window, ffmpeg encodes it on the GPU through VA-API, lab-inject presses the keys
         Environment = [
-          "PATH=${lib.makeBinPath [pkgs.ffmpeg config.lab.shell.package]}:/etc/profiles/per-user/${user}/bin:/run/current-system/sw/bin"
+          "PATH=${lib.makeBinPath [pkgs.ffmpeg pkgs.glib.bin config.lab.shell.package]}:/etc/profiles/per-user/${user}/bin:/run/current-system/sw/bin"
           "TAILSCALE=/run/current-system/sw/bin/tailscale"
           "LIBVA_DRIVERS_PATH=/run/opengl-driver/lib/dri"
         ];

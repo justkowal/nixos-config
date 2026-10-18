@@ -31,6 +31,11 @@ in {
       };
       description = "Machines that mirror to each other, keyed by hostname, with the short name used in toasts.";
     };
+    wake = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      default = {nixos-desktop = "wake-desktop";};
+      description = "Command that wakes a machine, by hostname. `lab run NAME` uses it when the machine does not answer.";
+    };
     notifications = {
       enable = lib.mkOption {
         type = lib.types.bool;
@@ -63,6 +68,7 @@ in {
   config = lib.mkIf cfg.enable {
     xdg.configFile."lab/continuity.json".text = builtins.toJSON {
       inherit (cfg) names;
+      inherit (cfg) wake;
       notifications = cfg.notifications.enable;
       inherit (cfg.notifications) ignore;
       fingerprint = cfg.fingerprint.enable;

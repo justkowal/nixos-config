@@ -148,15 +148,89 @@ def cmd_peek(a):
     os.execvp("lab-peek", ["lab-peek", *a.rest])
 
 
+def machine(target):
+    """(hostname, short name) for `desktop` or `nixos-desktop` from continuity.json."""
+    for host, name in load_conf("continuity.json")["names"].items():
+        if target in (host, name):
+            return host, name
+    return None, None
+
+
+def peer_ok(host, timeout=1.5):
+    try:
+        urllib.request.urlopen(f"http://{host}:8766/hello", timeout=timeout).read()
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def tailnet_up(host):
+    r = subprocess.run([os.environ.get("TAILSCALE", "tailscale"), "ping", "-c", "1", "--timeout=1s", host], capture_output=True)
+    return r.returncode == 0
+
+
+def bring_online(host, name):
+    """Wake the machine if it sleeps and wait until its session answers. The island shows a spinner,
+    then a check when the machine is up, then a dot once it is online, and leaves after that."""
+    if peer_ok(host):
+        return True
+    title = name.capitalize()
+
+    def progress(state, **extra):
+        emit("wake.progress", {"host": name, "title": title, "state": state, **extra}, "high", "wake", ttl=400)
+
+    progress("waking")
+    wake = load_conf("continuity.json").get("wake", {}).get(host)
+    if wake:
+        subprocess.Popen(wake, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    deadline = time.time() + 240
+    while time.time() < deadline and not tailnet_up(host):
+        time.sleep(1)
+    if not tailnet_up(host):
+        progress("failed", reason=f"{title} did not wake")
+        return False
+    progress("up")
+    shown = time.time()
+    while time.time() < deadline and not peer_ok(host):
+        time.sleep(1)
+    if not peer_ok(host):
+        progress("failed", reason=f"{title} is up but nobody is logged in")
+        return False
+    time.sleep(max(0.0, 0.9 - (time.time() - shown)))
+    progress("online")
+    return True
+
+
+def cmd_run(a):
+    host, name = machine(a.target)
+    if host is None:
+        print(f"unknown machine '{a.target}'", file=sys.stderr)
+        return 2
+    if not bring_online(host, name):
+        return 1
+    if not a.app:
+        return 0
+    req = urllib.request.Request(f"http://{host}:8766/run", data=json.dumps({"app": a.app}).encode(), method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=10).read()
+    except urllib.error.HTTPError as e:
+        why = "does not have that app" if e.code == 404 else f"refused it ({e.code})"
+        emit("wake.progress", {"host": name, "title": name.capitalize(), "state": "failed", "reason": f"{name.capitalize()} {why}"}, "high", "wake", ttl=10)
+        return 1
+    except OSError:
+        return 1
+    return 0
+
+
 def cmd_publish(a):
     # the compiled client owns the event contract and is fast enough for key repeat
     os.execvp("lab-publish", ["lab-publish", *a.rest])
 
 
-def emit(name, payload, priority="normal", source="scene"):
+def emit(name, payload, priority="normal", source="scene", ttl=None):
     # best effort: scenes still run with the shell down
     try:
-        lab_bus.request({"op": "publish", "event": {"name": name, "source": source, "payload": payload, "priority": priority}})
+        lab_bus.request({"op": "publish", "event": {"name": name, "source": source, "payload": payload, "priority": priority, **({"ttl": ttl} if ttl else {})}})
     except (OSError, ValueError):
         pass
 
@@ -361,6 +435,10 @@ def main():
     p.add_argument("--next", action="store_true", help="switch to the next pack")
     p.add_argument("--colors", metavar="IMAGE", help="only regenerate Matugen colours for IMAGE with the active pack")
     p.set_defaults(fn=cmd_theme)
+    p = sub.add_parser("run", help="wake another machine if needed and open an app on it: run desktop firefox.desktop")
+    p.add_argument("target")
+    p.add_argument("app", nargs="?", help="desktop file name, omit to only wake the machine")
+    p.set_defaults(fn=cmd_run)
     p = sub.add_parser("clip", help="pause or resume clipboard sharing between your machines")
     p.add_argument("action", nargs="?", default="status", choices=["status", "toggle", "pause", "resume"])
     p.set_defaults(fn=cmd_clip)

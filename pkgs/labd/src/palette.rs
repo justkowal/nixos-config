@@ -190,6 +190,63 @@ fn gio_path() -> String {
         .map_or_else(|| "gio".to_owned(), |p| p.to_string_lossy().into_owned())
 }
 
+/// Other machines of yours from continuity.json: (hostname, short name). This machine is left out.
+fn peers() -> Vec<(String, String)> {
+    let Some(dir) = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+    else {
+        return Vec::new();
+    };
+    let me = std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_default();
+    std::fs::read_to_string(dir.join("lab/continuity.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| v["names"].as_object().cloned())
+        .map(|names| {
+            names
+                .iter()
+                .filter(|(host, _)| host.as_str() != me.trim())
+                .filter_map(|(host, name)| Some((host.clone(), name.as_str()?.to_owned())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every app again for each other machine: "Run on Desktop · Firefox" wakes it if needed and opens the app there.
+fn run_on_items(apps: &[Item]) -> Vec<Item> {
+    let mut out = Vec::new();
+    for (_, name) in peers() {
+        let title_name = {
+            let mut c = name.chars();
+            c.next()
+                .map(|f| f.to_uppercase().chain(c).collect::<String>())
+                .unwrap_or_default()
+        };
+        for a in apps {
+            // the desktop file name is the last path part of the gio launch command
+            let Some(file) = a
+                .exec
+                .rsplit('/')
+                .next()
+                .map(|s| s.trim_end_matches('\'').to_owned())
+            else {
+                continue;
+            };
+            out.push(Item {
+                title: format!("Run on {title_name} · {}", a.title),
+                group: format!("Run on {name}"),
+                exec: format!("lab run {name} {file}"),
+                confirm: false,
+                glyph: Glyph::Device,
+                icon: a.icon.clone(),
+                rank: 3,
+            });
+        }
+    }
+    out
+}
+
 fn app_items() -> Vec<Item> {
     let gio = shell_quote(&gio_path());
     gio::AppInfo::all()
@@ -446,7 +503,9 @@ impl Palette {
         let raw = palette_json();
         *self.search_url.borrow_mut() = raw["search"].as_str().unwrap_or(DEFAULT_SEARCH).to_owned();
         let mut items = static_items(&raw);
-        items.extend(app_items());
+        let apps = app_items();
+        items.extend(run_on_items(&apps));
+        items.extend(apps);
         *self.items.borrow_mut() = items;
         self.pending.set(None);
         self.entry.set_text("");
