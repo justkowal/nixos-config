@@ -132,7 +132,7 @@ status() {
     fi
   fi
 
-  if [ -n "$text" ]; then display_text="$icon $text"; else display_text="$icon"; fi
+  if [ -n "$text" ]; then display_text="$icon  $text"; else display_text="$icon"; fi
   FULL_TOOLTIP=$(printf "%s\nCycle: %s" "$tooltip" "$cycles")
   jq -n -c --arg text "$display_text" --arg tooltip "$FULL_TOOLTIP" --arg class "$class" '{text: $text, tooltip: $tooltip, class: $class}'
 }

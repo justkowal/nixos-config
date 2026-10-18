@@ -179,7 +179,19 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
+/// hyprctl runs the command with the compositor's PATH, which has no gio; labd's own PATH does.
+fn gio_path() -> String {
+    std::env::var_os("PATH")
+        .and_then(|p| {
+            std::env::split_paths(&p)
+                .map(|d| d.join("gio"))
+                .find(|f| f.is_file())
+        })
+        .map_or_else(|| "gio".to_owned(), |p| p.to_string_lossy().into_owned())
+}
+
 fn app_items() -> Vec<Item> {
+    let gio = shell_quote(&gio_path());
     gio::AppInfo::all()
         .into_iter()
         .filter(|a| a.should_show())
@@ -188,7 +200,7 @@ fn app_items() -> Vec<Item> {
             Some(Item {
                 title: a.display_name().to_string(),
                 group: "App".into(),
-                exec: format!("gio launch {}", shell_quote(&path.to_string_lossy())),
+                exec: format!("{gio} launch {}", shell_quote(&path.to_string_lossy())),
                 confirm: false,
                 glyph: Glyph::Action,
                 icon: a.icon(),

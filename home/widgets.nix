@@ -136,6 +136,8 @@ in {
     systemd.user.services.deskwidgets = {
       Unit = {
         Description = "Desktop widgets";
+        # a login can start it before the display is imported; retrying must never hit the start limit
+        StartLimitIntervalSec = 0;
         PartOf = ["graphical-session.target"];
         After = ["graphical-session.target"];
       };

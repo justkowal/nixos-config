@@ -121,10 +121,10 @@ in {
             warning = 30;
             critical = 15;
           };
-          format = "{icon} {capacity}%";
-          format-charging = "󰂄 {capacity}%";
-          format-plugged = "󰚥 {capacity}%";
-          format-full = "󰁹 {capacity}%";
+          format = "{icon}  {capacity}%";
+          format-charging = "󰂄  {capacity}%";
+          format-plugged = "󰚥  {capacity}%";
+          format-full = "󰁹  {capacity}%";
           format-icons = ["󰁺" "󰁻" "󰁼" "󰁽" "󰁾" "󰁿" "󰂀" "󰂁" "󰂂" "󰁹"];
           tooltip-format = "{timeTo} ({power:0.1f}W)\nHealth: {health}%\nLeft-click: AccuBattery Studio\nRight-click: Control Center";
           on-click = "accubattery-gui";
@@ -133,7 +133,7 @@ in {
 
         backlight = {
           device = "amdgpu_bl1";
-          format = "{icon} {percent}%";
+          format = "{icon}  {percent}%";
           format-icons = ["󰃞" "󰃟" "󰃠"];
           on-scroll-up = "${pkgs.brightnessctl}/bin/brightnessctl set 5%+ -q";
           on-scroll-down = "${pkgs.brightnessctl}/bin/brightnessctl set 5%- -q";
@@ -143,7 +143,7 @@ in {
         bluetooth = {
           format = "󰂯";
           format-connected = "󰂱";
-          format-connected-battery = "󰂱 {device_battery_percentage}%";
+          format-connected-battery = "󰂱  {device_battery_percentage}%";
           tooltip-format = "{controller_alias} · {status}\n{num_connections} connected";
           tooltip-format-connected = "{controller_alias}\n{num_connections} connected\n\n{device_enumerate}";
           tooltip-format-enumerate-connected = "{device_alias}\t{device_address}";
@@ -151,8 +151,8 @@ in {
         };
 
         "mpris" = {
-          format = "{player_icon} {title} - {artist}";
-          format-paused = "{status_icon} <i>{title} - {artist}</i>";
+          format = "{player_icon}  {title} - {artist}";
+          format-paused = "{status_icon}  <i>{title} - {artist}</i>";
           player-icons = {
             default = "󰎆 ";
             spotify = " ";
@@ -174,12 +174,12 @@ in {
 
         "disk" = {
           interval = 30;
-          format = "󰋊 {percentage_used}%";
+          format = "󰋊  {percentage_used}%";
           path = "/";
         };
         "pulseaudio" = {
-          format = "󰕾 {volume}%";
-          format-muted = "󰖁 Muted";
+          format = "󰕾  {volume}%";
+          format-muted = "󰖁  Muted";
           on-click = "pwvucontrol";
         };
 
@@ -203,7 +203,7 @@ in {
           escape = true;
         };
 
-        "memory" = {format = "󰍛 {percentage}%";};
+        "memory" = {format = "󰍛  {percentage}%";};
 
         "custom/update" = {
           exec = pkgs.writeShellScript "check-update" ''
@@ -353,7 +353,7 @@ in {
       #custom-notification, #custom-thinkdot, #custom-power, #custom-pomodoro, #custom-fleet,
       #custom-homelab, #custom-caffeine, #backlight, #bluetooth, #custom-controlcenter, #battery,
       #custom-update, #idle_inhibitor {
-        padding: 0 9px;
+        padding: 0 11px;
         margin: 3px 1px;
         background-color: transparent;
         border-radius: ${toString radius.md}px;

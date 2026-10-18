@@ -93,13 +93,13 @@ fi
 
 if [ "$UP_COUNT" -eq 3 ]; then
   BADGE_CLASS="online"
-  BADGE_TEXT="󰒋 3/3"
+  BADGE_TEXT="󰒋  3/3"
 elif [ "$UP_COUNT" -eq 2 ]; then
   BADGE_CLASS="partial"
-  BADGE_TEXT="󰒋 2/3"
+  BADGE_TEXT="󰒋  2/3"
 else
   BADGE_CLASS="warning"
-  BADGE_TEXT="󰒋 1/3"
+  BADGE_TEXT="󰒋  1/3"
 fi
 
 RP_PING_FMT=${RP_PING:-"timeout"}
