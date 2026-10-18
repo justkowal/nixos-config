@@ -123,6 +123,10 @@ shellcheck home/scripts/*.sh
 
 # Desk health, once `lab doctor` exists
 lab doctor
+
+# Island looks: headless labwc, grim, pixel diff against ci/visual/golden
+nix run .#lab-visual
+nix run .#lab-visual -- --update   # accept an intended change, review the PNGs in the diff
 ```
 
 Visual changes need a screenshot check: trigger the state, capture with `grim`, and compare against the previous capture. Once the VM screenshot test exists, it is the reference.
