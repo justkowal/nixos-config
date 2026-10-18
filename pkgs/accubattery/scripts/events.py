@@ -13,7 +13,7 @@ import gi
 gi.require_version("EDataServer", "1.2")
 gi.require_version("ECal", "2.0")
 gi.require_version("ICalGLib", "3.0")
-from gi.repository import ECal, EDataServer, GLib, ICalGLib  # noqa: E402
+from gi.repository import ECal, EDataServer, GLib  # noqa: E402
 
 
 def to_epoch(t):
