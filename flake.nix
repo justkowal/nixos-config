@@ -117,6 +117,21 @@
 
     formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.alejandra;
 
+    # visual regression of the island: `nix run .#lab-visual`, add `-- --update` to accept new looks
+    packages.x86_64-linux.lab-visual = let
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      labd = pkgs.callPackage ./pkgs/labd {};
+    in
+      pkgs.writeShellApplication {
+        name = "lab-visual";
+        runtimeInputs = with pkgs; [labwc grim dbus imagemagick swaybg coreutils labd];
+        text = ''
+          export LAB_VISUAL_FONTS=${pkgs.makeFontsConf {fontDirectories = [pkgs.inter pkgs.departure-mono];}}
+          export LAB_VISUAL_GOLDEN="''${LAB_VISUAL_GOLDEN:-$PWD/ci/visual/golden}"
+          exec bash ${./ci/visual.sh} "$@"
+        '';
+      };
+
     checks.x86_64-linux.tokens = nixpkgs.legacyPackages.x86_64-linux.runCommand "lint-tokens" {} ''
       bash ${self}/ci/lint-tokens.sh ${self}
       touch $out
