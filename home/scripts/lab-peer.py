@@ -43,11 +43,38 @@ def run(cmd, env=None, timeout=10):
     return subprocess.run(cmd, capture_output=True, timeout=timeout, env=env, check=False)
 
 
+def stage_pid():
+    """pid of the headless stage compositor, which runs without a login (see home/lab/peek.nix)."""
+    out = run(["systemctl", "--user", "show", "lab-stage-hypr", "-p", "MainPID", "--value"], dict(os.environ))
+    return out.stdout.decode().strip()
+
+
+_session = {"at": 0.0, "env": None}
+
+
 def session_env():
-    """hyprctl needs the session variables, a systemd user service may not have them."""
+    """Cached for a second, every request asks for it several times."""
+    if _session["env"] is None or time.time() - _session["at"] > 1.0:
+        _session["env"], _session["at"] = find_session(), time.time()
+    return dict(_session["env"])
+
+
+def find_session():
+    """hyprctl needs the session variables, a systemd user service may not have them. A live session wins,
+    the headless stage answers when nobody is logged in."""
     env = dict(os.environ)
     rt = Path(env.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
     env["XDG_RUNTIME_DIR"] = str(rt)
+    try:
+        found = json.loads(run(["hyprctl", "instances", "-j"], env).stdout)
+    except ValueError:
+        found = []
+    stage = stage_pid()
+    found.sort(key=lambda i: (str(i.get("pid")) == stage, -int(i.get("time", 0))))
+    if found:
+        env["HYPRLAND_INSTANCE_SIGNATURE"] = found[0]["instance"]
+        env["WAYLAND_DISPLAY"] = found[0]["wl_socket"]
+        return env
     hypr = sorted((rt / "hypr").glob("*/.socket.sock"), key=lambda p: p.stat().st_mtime, reverse=True)
     if hypr:
         env["HYPRLAND_INSTANCE_SIGNATURE"] = hypr[0].parent.name

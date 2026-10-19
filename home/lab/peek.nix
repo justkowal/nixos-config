@@ -2,6 +2,7 @@
   config,
   pkgs,
   lib,
+  laptop ? false,
   ...
 }: let
   cfg = config.lab.peek;
@@ -46,7 +47,66 @@
       exec python3 ${src}/lab-peek.py "$@"
     '';
   };
+  # The stage: a headless labwc with Hyprland nested in it, run by the lingering user manager so a booted
+  # machine can open and stream windows with nobody logged in. A live session, when there is one, is
+  # preferred by lab-peer and the stage idles behind it. It has no real output, so no screen is exposed.
+  stageHyprland = pkgs.writeText "lab-stage-hyprland.conf" ''
+    misc {
+      disable_hyprland_logo = true
+      disable_splash_rendering = true
+      vfr = true
+    }
+    animations {
+      enabled = false
+    }
+    debug {
+      disable_logs = true
+    }
+  '';
+  stageLabwc = pkgs.writeTextDir "rc.xml" ''<?xml version="1.0"?><labwc_config/>'';
+
+  # the nested Hyprland needs the socket of our labwc, not the one of a live session
+  stageRun = pkgs.writeShellApplication {
+    name = "lab-stage-hypr";
+    runtimeInputs = [pkgs.iproute2 pkgs.coreutils pkgs.gnugrep];
+    text = ''
+      pid=$(systemctl --user show lab-stage -p MainPID --value)
+      sock=""
+      for _ in $(seq 100); do
+        sock=$(ss -xlpn | grep "pid=$pid," | grep -o 'wayland-[0-9]*' | head -1 || true)
+        [ -n "$sock" ] && break
+        sleep 0.1
+      done
+      [ -n "$sock" ] || { echo "no wayland socket for labwc $pid" >&2; exit 1; }
+      export WAYLAND_DISPLAY=$sock
+      exec /run/current-system/sw/bin/Hyprland -c ${stageHyprland}
+    '';
+  };
+
+  # a nested Hyprland starts with no output, give it a headless one
+  stageOutput = pkgs.writeShellApplication {
+    name = "lab-stage-output";
+    runtimeInputs = [pkgs.jq pkgs.coreutils];
+    text = ''
+      sig=""
+      for _ in $(seq 100); do
+        # shellcheck disable=SC2016
+        sig=$(/run/current-system/sw/bin/hyprctl instances -j | jq -r --arg pid "$MAINPID" '.[] | select((.pid | tostring) == $pid) | .instance' || true)
+        [ -n "$sig" ] && break
+        sleep 0.1
+      done
+      export HYPRLAND_INSTANCE_SIGNATURE=$sig
+      /run/current-system/sw/bin/hyprctl output create headless LAB-STAGE
+      /run/current-system/sw/bin/hyprctl keyword monitor "LAB-STAGE,1920x1080@60,0x0,1"
+    '';
+  };
 in {
+  options.lab.peek.sessionless = lib.mkOption {
+    type = lib.types.bool;
+    default = !laptop;
+    description = "Run the headless stage so this machine answers Peek and Run on machine with nobody logged in. Needs users.users.<name>.linger on the NixOS side.";
+  };
+
   options.lab.peek.enable = lib.mkOption {
     type = lib.types.bool;
     default = config.lab.continuity.enable;
@@ -74,7 +134,38 @@ in {
         Restart = "always";
         RestartSec = 5;
       };
-      Install.WantedBy = ["graphical-session.target"];
+      # with the stage it runs from boot, without it only inside a login
+      Install.WantedBy =
+        if cfg.sessionless
+        then ["default.target"]
+        else ["graphical-session.target"];
+    };
+
+    systemd.user.services.lab-stage = lib.mkIf cfg.sessionless {
+      Unit.Description = "Kowal Lab headless stage compositor";
+      Service = {
+        Environment = ["WLR_BACKENDS=headless" "WLR_LIBINPUT_NO_DEVICES=1" "WLR_RENDERER=gles2"];
+        ExecStart = "${pkgs.labwc}/bin/labwc -C ${stageLabwc}";
+        Restart = "on-failure";
+        RestartSec = 3;
+      };
+      Install.WantedBy = ["default.target"];
+    };
+
+    systemd.user.services.lab-stage-hypr = lib.mkIf cfg.sessionless {
+      Unit = {
+        Description = "Kowal Lab headless stage, Hyprland";
+        Requires = ["lab-stage.service"];
+        After = ["lab-stage.service"];
+        PartOf = ["lab-stage.service"];
+      };
+      Service = {
+        ExecStart = "${stageRun}/bin/lab-stage-hypr";
+        ExecStartPost = "${stageOutput}/bin/lab-stage-output";
+        Restart = "on-failure";
+        RestartSec = 3;
+      };
+      Install.WantedBy = ["default.target"];
     };
 
     # dialogs and popups of a remote app open as their own viewers, floating like they do over there

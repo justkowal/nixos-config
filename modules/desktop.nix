@@ -56,6 +56,10 @@
     };
   };
 
+  # the user manager runs from boot without a login so lab-peer and the headless stage (home/lab/peek.nix) answer
+  # Peek and Run on desktop on a machine nobody is logged in to. No session, no unlocked screen.
+  users.users.justkowal.linger = true;
+
   security.polkit.enable = true;
   security.pam.services.greetd.enableGnomeKeyring = true;
   security.pam.services.hyprlock = {};
