@@ -51,7 +51,9 @@
   services.greetd = {
     enable = true;
     settings.default_session = {
-      command = config.lab.greeter.command;
+      # the headless stage (home/lab/peek.nix) owns wayland-0, and a Hyprland that finds a Wayland display nests
+      # inside it instead of using the screen, so the session is told there is none
+      command = builtins.replaceStrings [ "--cmd Hyprland" ] [ "--cmd 'env WAYLAND_DISPLAY=/nonexistent Hyprland'" ] config.lab.greeter.command;
       user = "greeter";
     };
   };
