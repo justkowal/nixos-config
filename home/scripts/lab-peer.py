@@ -171,6 +171,16 @@ def same_app(stream_pid, window_pid):
     return stream_pid == window_pid or window_pid in ancestors(stream_pid) or stream_pid in ancestors(window_pid)
 
 
+def other_peek_sinks():
+    """Indexes of null sinks of other viewers, their streams stay where they are."""
+    out = set()
+    for line in pactl("list", "short", "sinks").stdout.decode().splitlines():
+        cols = line.split("\t")
+        if len(cols) > 1 and cols[1].startswith(SINK_PREFIX):
+            out.add(int(cols[0]))
+    return out
+
+
 def sink_inputs():
     try:
         return json.loads(pactl("-f", "json", "list", "sink-inputs").stdout)
@@ -225,7 +235,7 @@ class AudioPortal:
                         pid = int(props.get("application.process.id", 0))
                     except ValueError:
                         pid = 0
-                    if pid and si["index"] not in self.moved and same_app(pid, g["pid"]):
+                    if pid and si["index"] not in self.moved and same_app(pid, g["pid"]) and si["sink"] not in other_peek_sinks():
                         if pactl("move-sink-input", str(si["index"]), self.name).returncode == 0:
                             self.moved.add(si["index"])
             self.stop.wait(0.4)
@@ -249,11 +259,20 @@ def audio_command(sink):
 
 
 def related(addr):
-    """Other windows of the same process, which is how dialogs and popups of an app show up."""
+    """Dialogs and popups are windows of the same process. Windows of processes it started, which is how a
+    launcher such as Lutris or Steam shows its games, are "spawned"."""
     me = window_info(addr)
     if me is None:
         return []
-    return [w for w in windows() if w["pid"] == me["pid"] and w["addr"] != addr]
+    out = []
+    for w in windows():
+        if w["addr"] == addr:
+            continue
+        if w["pid"] == me["pid"]:
+            out.append(dict(w, kind="dialog"))
+        elif me["pid"] in ancestors(w["pid"], 16):
+            out.append(dict(w, kind="spawned"))
+    return out
 
 
 APP_ID_RE = re.compile(r"[A-Za-z0-9._-]+\.desktop")

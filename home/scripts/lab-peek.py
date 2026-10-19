@@ -178,6 +178,22 @@ def placeholder(addr, by):
     return App().run([])
 
 
+def viewer_file(host, addr):
+    root = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "lab-peek"
+    root.mkdir(exist_ok=True)
+    return root / f"{host}-{addr}"
+
+
+def viewer_open(host, addr):
+    """Whether a viewer of this window is already running here, so a launcher's game is never shown twice."""
+    try:
+        pid = int(viewer_file(host, addr).read_text())
+        os.kill(pid, 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def forward_gamepads(sender, active):
     """Physical gamepads on this machine appear as the same gamepad over there while this window has focus.
     Capabilities are copied, events are passed through untouched."""
@@ -254,6 +270,10 @@ def gui(host, addr, child=False):
                              flags=Gio.ApplicationFlags.NON_UNIQUE)
 
         def do_activate(self):
+            try:
+                viewer_file(host, addr).write_text(str(os.getpid()))
+            except OSError:
+                pass
             tokens = {"radius": {"sm": 8}, "type": {"display": "Departure Mono"}}
             try:
                 raw = json.loads((CONF / "tokens.json").read_text())
@@ -469,6 +489,10 @@ def gui(host, addr, child=False):
                     pass
             for proc in children.values():
                 proc.terminate()
+            try:
+                viewer_file(host, addr).unlink()
+            except OSError:
+                pass
             if getattr(self, "pipeline", None):
                 self.pipeline.set_state(Gst.State.NULL)
             self.closing = True
@@ -560,16 +584,27 @@ def gui(host, addr, child=False):
             return True
 
         def watch_children(self):
-            """A dialog or popup of the same app is another window over there, so it becomes another window here."""
+            """A dialog or popup of the same app is another window over there, so it becomes another window here.
+            A window of a process this app started (a game from Lutris or Steam) opens as a full viewer of its own,
+            once, and stays open when this one closes."""
             def go():
                 try:
                     rows = json.loads(call(host, f"/window/{addr}/related", timeout=2))
                 except (OSError, ValueError):
                     return
-                live = {w["addr"] for w in rows}
+                first = "initial" not in state
+                if first:
+                    # what already ran before this viewer opened is not "started by" it
+                    state["initial"] = {w["addr"] for w in rows if w["kind"] == "spawned"}
+                live = {w["addr"] for w in rows if w["kind"] == "dialog"}
                 for w in rows:
-                    if w["addr"] not in children and w["visible"]:
+                    if not w["visible"]:
+                        continue
+                    if w["kind"] == "dialog" and w["addr"] not in children:
                         children[w["addr"]] = subprocess.Popen(["lab-peek", host, w["addr"], "--child"])
+                    elif w["kind"] == "spawned" and w["addr"] not in state["initial"] and not viewer_open(host, w["addr"]):
+                        state["initial"].add(w["addr"])
+                        subprocess.Popen(["lab-peek", host, w["addr"]], start_new_session=True)
                 for a in [a for a, p in children.items() if p.poll() is not None or a not in live]:
                     children.pop(a).terminate()
 
