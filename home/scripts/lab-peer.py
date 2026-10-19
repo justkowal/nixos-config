@@ -72,6 +72,8 @@ def find_session():
     stage = stage_pid()
     found.sort(key=lambda i: (str(i.get("pid")) == stage, -int(i.get("time", 0))))
     if found:
+        # nobody sits at the stage, so it may switch workspaces to show a window, a live session may not
+        env["LAB_STAGE"] = "1" if str(found[0].get("pid")) == stage else ""
         env["HYPRLAND_INSTANCE_SIGNATURE"] = found[0]["instance"]
         env["WAYLAND_DISPLAY"] = found[0]["wl_socket"]
         return env
@@ -83,6 +85,13 @@ def find_session():
         if socks:
             env["WAYLAND_DISPLAY"] = socks[0].name
     return env
+
+
+def reveal(addr):
+    """On the stage a window that is not on the visible workspace renders nothing, so bring its workspace up."""
+    g = window_info(addr)
+    if g and not g["visible"] and session_env().get("LAB_STAGE"):
+        run(["hyprctl", "dispatch", "workspace", str(g["workspace"])], session_env())
 
 
 def hypr_json(what):
@@ -165,6 +174,25 @@ def ancestors(pid, depth=8):
             break
         out.append(pid)
     return out
+
+
+ROOT_STOP = {"systemd", "Hyprland", ".Hyprland-wrapped", "labwc", "init"}
+
+
+def app_root(pid):
+    """The topmost process of the tree a window belongs to, below the session itself. A launcher's own window
+    often belongs to a helper (Steam's is a web helper) and its games to another branch, the root is shared."""
+    for _ in range(40):
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text()
+            parent = int(stat.rsplit(")", 1)[1].split()[1])
+            comm = Path(f"/proc/{parent}/comm").read_text().strip()
+        except (OSError, ValueError, IndexError):
+            return pid
+        if parent <= 1 or comm in ROOT_STOP:
+            return pid
+        pid = parent
+    return pid
 
 
 def same_app(stream_pid, window_pid):
@@ -264,13 +292,14 @@ def related(addr):
     me = window_info(addr)
     if me is None:
         return []
+    root = app_root(me["pid"])
     out = []
     for w in windows():
         if w["addr"] == addr:
             continue
         if w["pid"] == me["pid"]:
             out.append(dict(w, kind="dialog"))
-        elif me["pid"] in ancestors(w["pid"], 16):
+        elif app_root(w["pid"]) == root:
             out.append(dict(w, kind="spawned"))
     return out
 
@@ -283,7 +312,10 @@ def find_app(app_id):
     if not APP_ID_RE.fullmatch(app_id):
         return None
     user = os.environ.get("USER", "")
-    for d in (Path.home() / ".local/share/applications", Path(f"/etc/profiles/per-user/{user}/share/applications"),
+    # the order a session itself uses: flatpak exports come before the nix profiles, so the Lutris that
+    # has your games is the one that starts, not a second copy with an empty library
+    for d in (Path.home() / ".local/share/applications", Path.home() / ".local/share/flatpak/exports/share/applications",
+              Path("/var/lib/flatpak/exports/share/applications"), Path(f"/etc/profiles/per-user/{user}/share/applications"),
               Path("/run/current-system/sw/share/applications"), Path.home() / ".nix-profile/share/applications"):
         p = d / app_id
         if p.is_file():
@@ -524,6 +556,7 @@ class InputHandler(socketserver.StreamRequestHandler):
             return
         conns[addr] = conns.get(addr, 0) + 1
         track = Tracker(addr)
+        reveal(addr)
         held_keys, held_buttons, said = set(), set(), None
         pads = {}
         if track.info and track.info["visible"]:
@@ -723,6 +756,7 @@ class Handler(BaseHTTPRequestHandler):
         g = window_info(addr)
         if g is None:
             return self.json(404, {"error": "gone"})
+        reveal(addr)
         self.send_response(200)
         self.send_header("Content-Type", "video/h264")
         self.send_header("Cache-Control", "no-store")

@@ -74,6 +74,12 @@
     # which breaks the pointer mapping of lab-peer
     monitor = LAB-STAGE, 1920x1080@60, 0x0, 1
     monitor = , preferred, auto, 1
+    # one workspace, floating windows at their own size: nobody tiles here, a hidden workspace renders black,
+    # and a viewer sets the size through portal mode anyway
+    workspace = 1, monitor:LAB-STAGE, default:true
+    windowrule = workspace 1, match:class .*
+    windowrule = float 1, match:class .*
+    windowrule = center 1, match:class .*
     misc {
       disable_hyprland_logo = true
       disable_splash_rendering = true
