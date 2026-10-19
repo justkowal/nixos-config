@@ -66,7 +66,7 @@ in {
     systemd.user.services.lab-roster = {
       Unit = {
         Description = "Kowal Lab device roster";
-        PartOf = ["graphical-session.target"];
+        PartOf = ["graphical-session.target" "labd.service"];
         After = ["graphical-session.target" "labd.service"];
       };
       Service = {
