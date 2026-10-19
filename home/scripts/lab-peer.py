@@ -586,7 +586,8 @@ class Handler(BaseHTTPRequestHandler):
             path = find_app(app) if isinstance(app, str) else None
             if path is None:
                 return self.json(404, {"error": "no such app"})
-            out = run(["hyprctl", "dispatch", "exec", f"gio launch '{path}'"], session_env())
+            # Hyprland execs in its own environment, where gio is not on PATH
+            out = run(["hyprctl", "dispatch", "exec", f"{shutil.which('gio') or 'gio'} launch '{path}'"], session_env())
             return self.json(200, {"ok": out.returncode == 0})
         m = re.fullmatch(r"/window/(0x[0-9a-f]{1,16})/(portal|unportal)", self.path)
         if m:
