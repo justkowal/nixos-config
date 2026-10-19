@@ -427,6 +427,8 @@ in {
     # KMS capture reads the real display, which at the login screen is the only thing there is. The headless
     # stage (home/lab/peek.nix) is a Wayland display too and would be picked otherwise.
     settings.capture = "kms";
+    # the web UI is opened over the tailnet name, Sunshine refuses other origins than localhost by default
+    settings.csrf_allowed_origins = "https://nixos-desktop.lab:47990,https://100.109.222.110:47990";
   };
 
   # Sunshine runs from boot in the lingering user manager, not from a login, so Moonlight can reach the login
