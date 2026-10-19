@@ -191,10 +191,12 @@ def bring_online(host, name):
         return False
     progress("up")
     shown = time.time()
+    # a booted machine with nobody logged in never answers, so say so early instead of spinning for minutes
+    deadline = min(deadline, shown + 45)
     while time.time() < deadline and not peer_ok(host):
         time.sleep(1)
     if not peer_ok(host):
-        progress("failed", reason=f"{title} is up but nobody is logged in")
+        progress("failed", reason=f"{title} is up, sign in there to continue")
         return False
     time.sleep(max(0.0, 0.9 - (time.time() - shown)))
     progress("online")
