@@ -42,6 +42,7 @@
     })
     loupe
     zathura
+    poppler-utils
     libreoffice-fresh
     mods
     fd
