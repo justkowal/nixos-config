@@ -1,12 +1,5 @@
 { config, pkgs, ... }:
 
-let
-  # marker for lab-autolock, only the automatic login gets a locked screen
-  autologinSession = pkgs.writeShellScript "lab-autologin-session" ''
-    touch "$XDG_RUNTIME_DIR/lab-autologin"
-    exec Hyprland
-  '';
-in
 {
   imports = [ ./lab-greeter.nix ./lab-splash.nix ];
 
@@ -60,24 +53,6 @@ in
     settings.default_session = {
       command = config.lab.greeter.command;
       user = "greeter";
-    };
-
-    # first login after a boot is automatic so lab-peer exists for Run on desktop and Peek, the session
-    # comes up locked (lab-autolock below). Later logins after a logout use the greeter.
-    settings.initial_session = {
-      command = "${autologinSession}";
-      user = "justkowal";
-    };
-  };
-
-  systemd.user.services.lab-autolock = {
-    description = "Lock the screen of an automatic login";
-    wantedBy = [ "graphical-session.target" ];
-    after = [ "graphical-session.target" ];
-    unitConfig.ConditionPathExists = "%t/lab-autologin";
-    serviceConfig = {
-      ExecStartPre = "${pkgs.coreutils}/bin/rm -f %t/lab-autologin";
-      ExecStart = "${pkgs.hyprlock}/bin/hyprlock --grace 0";
     };
   };
 
