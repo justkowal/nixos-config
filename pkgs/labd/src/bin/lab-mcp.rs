@@ -264,7 +264,21 @@ fn handle(msg: &Value) {
     }
 }
 
+// a client that sets an `env` block hands us only that block, so the bus socket and the
+// user's systemd would be unreachable (labd's sock_path falls back to /tmp)
+fn ensure_user_env() {
+    if std::env::var_os("XDG_RUNTIME_DIR").is_some() {
+        return;
+    }
+    let dir = format!("/run/user/{}", unsafe { libc::getuid() });
+    std::env::set_var("XDG_RUNTIME_DIR", &dir);
+    if std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
+        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", format!("unix:path={dir}/bus"));
+    }
+}
+
 fn main() {
+    ensure_user_env();
     for line in std::io::stdin().lock().lines().map_while(Result::ok) {
         if line.trim().is_empty() {
             continue;
@@ -280,6 +294,16 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_dir_is_derived_when_the_client_strips_the_env() {
+        std::env::remove_var("XDG_RUNTIME_DIR");
+        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+        ensure_user_env();
+        let uid = unsafe { libc::getuid() };
+        assert_eq!(std::env::var("XDG_RUNTIME_DIR").unwrap(), format!("/run/user/{uid}"));
+        assert!(std::env::var("DBUS_SESSION_BUS_ADDRESS").unwrap().ends_with("/bus"));
+    }
 
     #[test]
     fn power_needs_confirm() {
