@@ -353,7 +353,11 @@ def gui(host, addr, child=False):
             self.last = (x, y)
             self.sender.push({"m": self.norm(x, y)})
 
-        def on_raw(self, _c, ev):
+        def on_raw(self, ctrl, _ev):
+            # PyGObject passes None as the signal argument for GdkEvent, the controller has the real one
+            ev = ctrl.get_current_event()
+            if ev is None:
+                return False
             kind = ev.get_event_type()
             if kind in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.BUTTON_RELEASE):
                 x, y = getattr(self, "last", (0, 0))
