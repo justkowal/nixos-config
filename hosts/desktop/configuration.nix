@@ -424,6 +424,19 @@ in {
     autoStart = true;
     capSysAdmin = true;
     openFirewall = true;
+    # KMS capture reads the real display, which at the login screen is the only thing there is. The headless
+    # stage (home/lab/peek.nix) is a Wayland display too and would be picked otherwise.
+    settings.capture = "kms";
+  };
+
+  # Sunshine runs from boot in the lingering user manager, not from a login, so Moonlight can reach the login
+  # screen, sign in there and keep streaming the desktop. It must not see the stage as a Wayland display.
+  systemd.user.services.sunshine = {
+    wantedBy = lib.mkForce [ "default.target" ];
+    partOf = lib.mkForce [ ];
+    wants = lib.mkForce [ ];
+    after = lib.mkForce [ ];
+    environment.WAYLAND_DISPLAY = "/nonexistent";
   };
 
   services.tailscale = {
