@@ -46,6 +46,7 @@ pub enum Glyph {
     Dial,
     Note,
     Fingerprint,
+    Face,
     Clipboard,
     /// a rotating arc, the frame 0 to 11 sets the angle
     Spinner(u8),
@@ -321,6 +322,17 @@ pub fn draw(cr: &Context, glyph: Glyph) {
             line(cr, &[(8.5, 14.0), (8.5, 19.0)]);
             line(cr, &[(15.5, 14.0), (15.5, 20.5)]);
         }
+        Glyph::Face => {
+            // corner brackets like a face id frame, two eyes and a short smile
+            line(cr, &[(3.0, 8.0), (3.0, 3.0), (8.0, 3.0)]);
+            line(cr, &[(16.0, 3.0), (21.0, 3.0), (21.0, 8.0)]);
+            line(cr, &[(21.0, 16.0), (21.0, 21.0), (16.0, 21.0)]);
+            line(cr, &[(8.0, 21.0), (3.0, 21.0), (3.0, 16.0)]);
+            line(cr, &[(9.0, 9.5), (9.0, 11.0)]);
+            line(cr, &[(15.0, 9.5), (15.0, 11.0)]);
+            cr.new_sub_path();
+            cr.arc(12.0, 12.5, 4.0, 0.25 * PI, 0.75 * PI);
+        }
         Glyph::Note => {
             line(cr, &[(9.0, 18.0), (9.0, 6.0), (18.0, 4.0), (18.0, 16.0)]);
             cr.new_sub_path();
@@ -420,6 +432,7 @@ mod tests {
             Glyph::Dial,
             Glyph::Note,
             Glyph::Fingerprint,
+            Glyph::Face,
             Glyph::Clipboard,
             Glyph::Spinner(3),
             Glyph::Check,

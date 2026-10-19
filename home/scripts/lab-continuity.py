@@ -9,6 +9,7 @@ lab-inbox. Nothing leaves your tailnet and no server is involved.
 import json
 import os
 import queue
+import shutil
 import socket
 import subprocess
 import sys
@@ -73,8 +74,14 @@ def sender():
         n += 1
         f = tmp / f"{kind}-{int(time.time())}-{n}.json"
         f.write_text(json.dumps({"from": MY_NAME, **payload}))
+        # one sleeping peer must not kill this thread, or nothing is mirrored until the next restart
         for peer in online_peers():
-            subprocess.run([TAILSCALE, "file", "cp", str(f), f"{peer}:"], capture_output=True, timeout=20, check=False)
+            try:
+                r = subprocess.run([TAILSCALE, "file", "cp", str(f), f"{peer}:"], capture_output=True, text=True, timeout=20, check=False)
+                if r.returncode:
+                    print(f"lab-continuity: {kind} to {peer} failed: {r.stderr.strip()}", file=sys.stderr, flush=True)
+            except (subprocess.TimeoutExpired, OSError) as e:
+                print(f"lab-continuity: {kind} to {peer} failed: {e}", file=sys.stderr, flush=True)
         f.unlink(missing_ok=True)
 
 
@@ -132,6 +139,32 @@ def who_is_waiting():
     return next((label for comm, label in WAITERS if comm in running), "An app")
 
 
+RETRY_HINTS = {
+    "verify-no-match": "Fingerprint not recognized, try again",
+    "verify-retry-scan": "Fingerprint not read, try again",
+    "verify-swipe-too-short": "Swipe was too short, try again",
+    "verify-finger-not-centered": "Center your finger on the reader",
+    "verify-remove-and-retry": "Lift your finger and try again",
+}
+
+
+def watch_face():
+    """howdy has no bus interface, its compare process only lives while the camera looks for a face."""
+    if not shutil.which("howdy"):
+        return
+
+    def loop():
+        seen = False
+        while True:
+            running = subprocess.run(["pgrep", "-f", "howdy/compare.py"], capture_output=True, check=False).returncode == 0
+            if running and not seen:
+                publish("auth.waiting", {"method": "face", "host": MY_NAME}, "high", 15)
+            seen = running
+            time.sleep(0.4)
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def watch_fingerprint():
     conn = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
 
@@ -142,7 +175,9 @@ def watch_fingerprint():
 
     def status(_c, _s, _p, _i, _sig, params):
         result, done = params.unpack()
-        if done:
+        if result in RETRY_HINTS:
+            publish("auth.retry", {"message": RETRY_HINTS[result]}, "high", 10)
+        elif done:
             ok = result == "verify-match"
             publish("auth.done", {"ok": ok, "host": MY_NAME}, "high", 20)
             mirror("auth", {"state": "done", "ok": ok})
@@ -219,6 +254,7 @@ def main():
     if CONF["fingerprint"]:
         try:
             keep.append(watch_fingerprint())
+            watch_face()
         except GLib.Error as e:
             print(f"lab-continuity: no system bus access for fprintd signals: {e}", file=sys.stderr, flush=True)
     GLib.MainLoop().run()

@@ -184,8 +184,9 @@ Add a row here when you add an event. Payload keys are the contract between publ
 | `scene.started` | `scene` | `name`, `title` | not shown |
 | `scene.done` | `scene` | `name`, `title`, `announce`, `failed` | title when `announce`; "Scene failed, <title>" when `failed` > 0 |
 | `palette.toggle` | `keymap` | none | opens or closes the palette (handled in `main.rs`, no card) |
-| `auth.waiting` | `continuity` | `app`, `host` | fingerprint glyph, "<App> on <host> is waiting for user authentication" for up to 15 s (high priority). Raised on the machine that waits and mirrored to the others |
-| `auth.done` | `continuity` | `ok`, `host` | "Authenticated" or "Authentication ended", replaces the waiting card |
+| `auth.waiting` | `continuity` | `app`, `host`, `method` | fingerprint glyph, "<App> on <host> is waiting for user authentication" for up to 15 s (high priority). With `method` face (howdy) the card is the face glyph and "Look at the camera" for 6 s. Raised on the machine that waits and mirrored to the others |
+| `auth.retry` | `continuity` | `message` | fingerprint glyph, the message ("Fingerprint not recognized, try again") for 2.5 s, local only |
+| `auth.done` | `continuity` | `ok`, `host` | check "Authentication successful" or ring "Authentication failed", replaces the waiting card |
 | `theme.changed` | `theme` | `name`, `title` | "Theme, <title>" |
 | `wake.progress` | `wake` | `host`, `title`, `state` (`waking`, `up`, `online`, `failed`), `reason` | spinner, check, dot or ring with "Waking <title>", "<title> is up", "<title> online" or the reason, high priority, needs ttl 400 |
 | `clipboard.received` | `continuity` | `host`, `chars` | "Clipboard from <host>" |

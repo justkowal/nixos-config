@@ -81,6 +81,18 @@ fn card_for(ev: &Value) -> Option<Card> {
             )
         }
         "focus.off" => (Glyph::FocusOff, "Focus off".to_owned(), None, 2500),
+        "auth.waiting" if p["method"].as_str() == Some("face") => {
+            (Glyph::Face, "Look at the camera".to_owned(), None, 6000)
+        }
+        "auth.retry" => (
+            Glyph::Fingerprint,
+            p["message"]
+                .as_str()
+                .unwrap_or("Fingerprint not recognized, try again")
+                .to_owned(),
+            None,
+            2500,
+        ),
         "auth.waiting" => {
             let app = p["app"].as_str().unwrap_or("An app");
             let mut app_chars = app.chars();
@@ -132,12 +144,16 @@ fn card_for(ev: &Value) -> Option<Card> {
             }
         }
         "auth.done" => {
-            let text = if p["ok"].as_bool().unwrap_or(false) {
-                "Authenticated"
+            if p["ok"].as_bool().unwrap_or(false) {
+                (
+                    Glyph::Check,
+                    "Authentication successful".to_owned(),
+                    None,
+                    1800,
+                )
             } else {
-                "Authentication ended"
-            };
-            (Glyph::Fingerprint, text.to_owned(), None, 1500)
+                (Glyph::Ring, "Authentication failed".to_owned(), None, 2500)
+            }
         }
         "theme.changed" => (Glyph::Scene, text_of("Theme", "title"), None, 2500),
         "room.saved" => (Glyph::Room, text_of("Room saved", "name"), None, 2500),
@@ -543,6 +559,14 @@ mod tests {
             "Sudo on laptop is waiting for user authentication"
         );
         let done = card_for(&json!({"name": "auth.done", "payload": {"ok": true}})).unwrap();
-        assert_eq!(done.text, "Authenticated");
+        assert_eq!(done.text, "Authentication successful");
+        let face =
+            card_for(&json!({"name": "auth.waiting", "payload": {"method": "face"}})).unwrap();
+        assert_eq!(
+            (face.glyph, face.text.as_str()),
+            (Glyph::Face, "Look at the camera")
+        );
+        let retry = card_for(&json!({"name": "auth.retry", "payload": {}})).unwrap();
+        assert_eq!(retry.text, "Fingerprint not recognized, try again");
     }
 }
