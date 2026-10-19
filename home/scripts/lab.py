@@ -201,6 +201,24 @@ def bring_online(host, name):
     return True
 
 
+def peer_windows(host):
+    try:
+        return {w["addr"]: w for w in json.load(urllib.request.urlopen(f"http://{host}:8766/windows", timeout=3))}
+    except (OSError, ValueError):
+        return {}
+
+
+def open_new_window(host, before, wait=20):
+    """The app was started over there: show its window here as a Peek viewer, which moves it into portal mode."""
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        time.sleep(0.5)
+        fresh = [w for a, w in peer_windows(host).items() if a not in before and w["workspace"] >= 0]
+        if fresh:
+            subprocess.Popen(["lab-peek", host, fresh[0]["addr"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            return
+
+
 def cmd_run(a):
     host, name = machine(a.target)
     if host is None:
@@ -210,9 +228,11 @@ def cmd_run(a):
         return 1
     if not a.app:
         return 0
+    before = peer_windows(host)
     req = urllib.request.Request(f"http://{host}:8766/run", data=json.dumps({"app": a.app}).encode(), method="POST")
     try:
         urllib.request.urlopen(req, timeout=10).read()
+        open_new_window(host, before)
     except urllib.error.HTTPError as e:
         why = "does not have that app" if e.code == 404 else f"refused it ({e.code})"
         emit("wake.progress", {"host": name, "title": name.capitalize(), "state": "failed", "reason": f"{name.capitalize()} {why}"}, "high", "wake", ttl=10)
