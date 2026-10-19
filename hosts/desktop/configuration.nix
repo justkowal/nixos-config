@@ -441,6 +441,18 @@ in {
     environment.WAYLAND_DISPLAY = "/nonexistent";
   };
 
+  # a login replaces the console framebuffer Sunshine was capturing, the stream freezes on the old picture, so
+  # Sunshine restarts when the session comes up and Moonlight can reconnect to the desktop
+  systemd.user.services.sunshine-session-restart = {
+    description = "Restart Sunshine when a login session starts";
+    wantedBy = [ "graphical-session.target" ];
+    after = [ "graphical-session.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${config.systemd.package}/bin/systemctl --user restart sunshine.service";
+    };
+  };
+
   services.tailscale = {
     enable = true;
     authKeyFile = config.sops.secrets."tailscale_auth_key".path;
