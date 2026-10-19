@@ -64,6 +64,13 @@ class Callback(unittest.TestCase):
         self.assertEqual(agh_mcp.write_token_from_callback("nothing here"), 1)
 
 
+class Grades(unittest.TestCase):
+    def test_plain_strips_moodle_icons(self):
+        raw = '<i class="icon" title="Zaliczone"></i>100,00 % (bardzo dobry - 5,0)'
+        self.assertEqual(agh_mcp.plain(raw), "100,00 % (bardzo dobry - 5,0)")
+        self.assertIsNone(agh_mcp.plain(None))
+
+
 class Protocol(unittest.TestCase):
     def test_unknown_tool(self):
         with self.assertRaises(KeyError):

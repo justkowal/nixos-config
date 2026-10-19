@@ -208,9 +208,40 @@ def t_assignments(a):
     ]
 
 
+def plain(s):
+    return squash(re.sub(r"<[^>]+>", "", s)) if isinstance(s, str) else s
+
+
+def grade_items(courseid):
+    d = moodle("gradereport_user_get_grade_items", {"courseid": str(courseid), "userid": user_id()})
+    return [
+        {"item": i.get("itemname") or "course total", "type": i.get("itemtype"), "grade": plain(i.get("gradeformatted")),
+         "raw": i.get("graderaw"), "max": i.get("grademax"), "graded": iso(i.get("gradedategraded"))}
+        for u in d.get("usergrades", [])
+        for i in u.get("gradeitems", [])
+    ]
+
+
+def t_course_grade_items(a):
+    return grade_items(a["courseid"])
+
+
 def t_course_grades(_a):
-    d = moodle("gradereport_overview_get_course_grades", {"userid": user_id()})
-    return [{"courseid": g["courseid"], "grade": g.get("grade"), "rawgrade": g.get("rawgrade")} for g in d.get("grades", [])]
+    try:
+        d = moodle("gradereport_overview_get_course_grades", {"userid": user_id()})
+        return [{"courseid": g["courseid"], "grade": g.get("grade"), "rawgrade": g.get("rawgrade")} for g in d.get("grades", [])]
+    except RuntimeError as e:
+        # moodle's overview report dies on "morethanonerecordinfetch" for some enrolments; totals still work per course
+        if "morethanonerecordinfetch" not in str(e):
+            raise
+    out = []
+    for c in t_list_courses({}):
+        try:
+            total = next((i for i in grade_items(c["id"]) if i["type"] == "course"), None)
+        except RuntimeError:
+            total = None
+        out.append({"courseid": c["id"], "course": c["fullname"], "grade": total and total["grade"], "rawgrade": total and total["raw"]})
+    return out
 
 
 def t_notifications(a):
@@ -403,6 +434,11 @@ TOOLS = {
         t_assignments,
     ),
     "course_grades": ("Show your current grade in each enrolled course.", obj(), t_course_grades),
+    "course_grade_items": (
+        "Every graded item of one course (tests, extra credit, course total) with grade, maximum and date.",
+        obj({"courseid": {"type": "integer"}}, ["courseid"]),
+        t_course_grade_items,
+    ),
     "notifications": ("Show recent Moodle notifications (grades, forum replies, messages) for you.", obj(LIMIT), t_notifications),
     "syllabus_subjects": (
         "List the subjects of the configured AGH programme (default Computer Physics, intake 2025/2026) "
