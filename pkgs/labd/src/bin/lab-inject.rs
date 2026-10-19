@@ -2,6 +2,7 @@
 //! protocols, which any Wayland client may use, so nothing needs extra privileges.
 //! Reads one JSON command per line on stdin:
 //!   {"m":[x,y,w,h]}   move the pointer to x,y inside a layout of w by h
+//!   {"r":[dx,dy]}     relative motion, for games that lock the pointer
 //!   {"b":[code,1|0]}  mouse button, evdev code (272 is the left button), 1 is down
 //!   {"a":[dx,dy]}     scroll, positive is down or right
 //!   {"k":[code,1|0]}  key, evdev code, 1 is down
@@ -166,6 +167,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 num(m, 2) as u32,
                 num(m, 3) as u32,
             );
+            pointer.frame();
+        } else if let Some(r) = cmd.get("r") {
+            pointer.motion(t, num(r, 0), num(r, 1));
             pointer.frame();
         } else if let Some(b) = cmd.get("b") {
             let state = if num(b, 1) > 0.5 {

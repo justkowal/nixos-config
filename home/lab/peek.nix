@@ -37,12 +37,31 @@
     gst-libav
   ]);
 
+  # pointer lock and relative motion for game mode, GTK4 cannot do either (home/lab/lablock.c)
+  lock = pkgs.stdenv.mkDerivation {
+    name = "lab-lock";
+    dontUnpack = true;
+    nativeBuildInputs = [pkgs.wayland-scanner pkgs.pkg-config];
+    buildInputs = [pkgs.wayland pkgs.wayland-protocols];
+    buildPhase = ''
+      p=${pkgs.wayland-protocols}/share/wayland-protocols/unstable
+      for n in pointer-constraints/pointer-constraints-unstable-v1 relative-pointer/relative-pointer-unstable-v1; do
+        b=$(basename $n)
+        wayland-scanner client-header $p/$n.xml $b-client-protocol.h
+        wayland-scanner private-code $p/$n.xml $b-protocol.c
+      done
+      cc -shared -fPIC -O2 -Wall -o liblablock.so ${./lablock.c} *-protocol.c -I. $(pkg-config --cflags --libs wayland-client)
+    '';
+    installPhase = "mkdir -p $out/lib; cp liblablock.so $out/lib/";
+  };
+
   peek = pkgs.writeShellApplication {
     name = "lab-peek";
-    runtimeInputs = [(pkgs.python3.withPackages (ps: [ps.pygobject3]))];
+    runtimeInputs = [(pkgs.python3.withPackages (ps: [ps.pygobject3 ps.evdev]))];
     text = ''
       export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
       export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPlugins}"
+      export LAB_LOCK_LIB="${lock}/lib/liblablock.so"
       export LIBVA_DRIVERS_PATH="''${LIBVA_DRIVERS_PATH:-/run/opengl-driver/lib/dri}"
       exec python3 ${src}/lab-peek.py "$@"
     '';
@@ -131,7 +150,7 @@ in {
         StartLimitIntervalSec = 0;
       };
       Service = {
-        ExecStart = "${pkgs.python3}/bin/python3 ${src}/lab-peer.py";
+        ExecStart = "${pkgs.python3.withPackages (ps: [ps.evdev])}/bin/python3 ${src}/lab-peer.py";
         # lab-capture grabs the window, ffmpeg encodes it on the GPU through VA-API, lab-inject presses the keys
         Environment = [
           "PATH=${lib.makeBinPath [pkgs.ffmpeg pkgs.glib.bin pkgs.pulseaudio peek config.lab.shell.package]}:/etc/profiles/per-user/${user}/bin:/run/current-system/sw/bin"

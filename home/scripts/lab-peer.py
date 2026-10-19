@@ -416,14 +416,21 @@ class Injector:
 
     def __init__(self):
         self.proc = None
+        self.display = None
         self.lock = threading.Lock()
 
     def send(self, obj):
         line = (json.dumps(obj) + "\n").encode()
         with self.lock:
             for _ in range(2):
+                env = session_env()
+                # a live session may have appeared since, the helper has to follow it
+                if self.proc is not None and self.display != env.get("WAYLAND_DISPLAY"):
+                    self.proc.kill()
+                    self.proc.wait()
                 if self.proc is None or self.proc.poll() is not None:
-                    self.proc = subprocess.Popen(["lab-inject"], stdin=subprocess.PIPE, env=session_env())
+                    self.display = env.get("WAYLAND_DISPLAY")
+                    self.proc = subprocess.Popen(["lab-inject"], stdin=subprocess.PIPE, env=env)
                 try:
                     self.proc.stdin.write(line)
                     self.proc.stdin.flush()
@@ -467,6 +474,17 @@ def release_later(addr):
     threading.Timer(8.0, check).start()
 
 
+def open_pad(spec):
+    """A virtual gamepad that looks exactly like the physical one, so SDL and Steam Input pick the same mapping."""
+    from evdev import AbsInfo, UInput
+
+    name, vendor, product, version, caps = spec
+    events = {}
+    for etype, codes in caps.items():
+        events[int(etype)] = [(c[0], AbsInfo(*c[1])) if isinstance(c, list) else c for c in codes]
+    return UInput(events, name=name[:60], vendor=vendor, product=product, version=version)
+
+
 class InputHandler(socketserver.StreamRequestHandler):
     def say(self, state):
         try:
@@ -488,6 +506,7 @@ class InputHandler(socketserver.StreamRequestHandler):
         conns[addr] = conns.get(addr, 0) + 1
         track = Tracker(addr)
         held_keys, held_buttons, said = set(), set(), None
+        pads = {}
         if track.info and track.info["visible"]:
             run(["hyprctl", "dispatch", "focuswindow", f"address:{addr}"], session_env())
         try:
@@ -514,6 +533,20 @@ class InputHandler(socketserver.StreamRequestHandler):
                 if "m" in ev:
                     nx, ny = max(0.0, min(1.0, float(ev["m"][0]))), max(0.0, min(1.0, float(ev["m"][1])))
                     injector.send({"m": [int(g["x"] + nx * g["w"] - box[0]), int(g["y"] + ny * g["h"] - box[1]), box[2], box[3]]})
+                elif "gpo" in ev:
+                    try:
+                        n, *spec = ev["gpo"]
+                        if n not in pads:
+                            pads[n] = open_pad(spec)
+                    except (ImportError, OSError, ValueError, TypeError):
+                        pass
+                elif "gp" in ev:
+                    n, etype, code, value = ev["gp"]
+                    if n in pads:
+                        pads[n].write(int(etype), int(code), int(value))
+                elif "r" in ev:
+                    # game mode, relative motion only, the remote pointer is not warped
+                    injector.send({"r": [float(ev["r"][0]), float(ev["r"][1])]})
                 elif "b" in ev:
                     code, down = int(ev["b"][0]), int(ev["b"][1])
                     (held_buttons.add if down else held_buttons.discard)(code)
@@ -529,6 +562,8 @@ class InputHandler(socketserver.StreamRequestHandler):
             conns[addr] = max(0, conns.get(addr, 1) - 1)
             if conns[addr] == 0:
                 release_later(addr)
+            for pad in pads.values():
+                pad.close()
             # a dropped connection must not leave a key or button held down over there
             for code in held_buttons:
                 injector.send({"b": [code, 0]})

@@ -63,6 +63,7 @@ class Sender:
     def __init__(self, host, addr, on_state):
         self.host, self.addr, self.on_state = host, addr, on_state
         self.events = []
+        self.hello = []  # gamepad announcements, sent again after every reconnect
         self.lock = threading.Lock()
         self.wake = threading.Event()
         threading.Thread(target=self.run, daemon=True).start()
@@ -71,8 +72,14 @@ class Sender:
         with self.lock:
             if "m" in ev and self.events and "m" in self.events[-1]:
                 self.events[-1] = ev
+            elif "r" in ev and self.events and "r" in self.events[-1]:
+                # relative motion adds up, replacing it would lose distance
+                last = self.events[-1]["r"]
+                self.events[-1] = {"r": [last[0] + ev["r"][0], last[1] + ev["r"][1]]}
             else:
                 self.events.append(ev)
+                if "gpo" in ev:
+                    self.hello.append(ev)
         self.wake.set()
 
     def listen(self, sock):
@@ -89,6 +96,10 @@ class Sender:
                 sock.settimeout(None)
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 sock.sendall((json.dumps({"window": self.addr}) + "\n").encode())
+                with self.lock:
+                    again = list(self.hello)
+                for h in again:
+                    sock.sendall((json.dumps(h) + "\n").encode())
                 threading.Thread(target=self.listen, args=(sock,), daemon=True).start()
                 while True:
                     self.wake.wait()
@@ -167,6 +178,55 @@ def placeholder(addr, by):
     return App().run([])
 
 
+def forward_gamepads(sender, active):
+    """Physical gamepads on this machine appear as the same gamepad over there while this window has focus.
+    Capabilities are copied, events are passed through untouched."""
+    try:
+        import evdev
+        from evdev import ecodes
+    except ImportError:
+        return
+    import select
+    import time
+
+    pads = {}
+    last_scan = 0.0
+    while True:
+        if time.time() - last_scan > 2.0:
+            last_scan = time.time()
+            for path in evdev.list_devices():
+                if path in pads:
+                    continue
+                try:
+                    dev = evdev.InputDevice(path)
+                    caps = dev.capabilities()
+                except OSError:
+                    continue
+                if ecodes.BTN_SOUTH not in caps.get(ecodes.EV_KEY, []) or ecodes.EV_ABS not in caps:
+                    dev.close()
+                    continue
+                spec = {}
+                for etype, codes in caps.items():
+                    if etype == ecodes.EV_SYN:
+                        continue
+                    spec[str(etype)] = [[c[0], list(c[1])] if isinstance(c, tuple) else c for c in codes]
+                n = len(pads)
+                pads[path] = (n, dev)
+                sender.push({"gpo": [n, dev.name, dev.info.vendor, dev.info.product, dev.info.version, spec]})
+        if not pads:
+            time.sleep(1.0)
+            continue
+        ready, _, _ = select.select([d for _, d in pads.values()], [], [], 1.0)
+        for dev in ready:
+            n = next(i for i, d in pads.values() if d is dev)
+            try:
+                for ev in dev.read():
+                    if active():
+                        sender.push({"gp": [n, ev.type, ev.code, ev.value]})
+            except OSError:
+                pads = {p: v for p, v in pads.items() if v[1] is not dev}
+
+
 def gui(host, addr, child=False):
     import subprocess
 
@@ -183,7 +243,7 @@ def gui(host, addr, child=False):
     # holds the newest frame back. Set LAB_PEEK_DECODER=vah264dec to decode on the GPU anyway (heavy video).
     want = os.environ.get("LAB_PEEK_DECODER", "avdec_h264 max-threads=1")
     decoder = want if Gst.ElementFactory.find(want.split()[0]) else "vah264dec"
-    state = {"held_keys": set(), "held_buttons": set(), "window": "ok", "portal": False, "sent_size": None}
+    state = {"held_keys": set(), "held_buttons": set(), "window": "ok", "portal": False, "sent_size": None, "capture": False}
     children = {}
     use_portal = os.environ.get("LAB_PEEK_PORTAL", "1") != "0"
 
@@ -230,6 +290,12 @@ def gui(host, addr, child=False):
             self.win.set_child(overlay)
 
             self.sender = Sender(host, addr, lambda s: GLib.idle_add(self.on_state, s))
+            if not child:
+                threading.Thread(
+                    target=forward_gamepads,
+                    args=(self.sender, lambda: self.win.is_active() and state["window"] == "ok"),
+                    daemon=True,
+                ).start()
             # the controllers sit on the overlay, so nothing drawn above the picture can swallow an event
             motion = Gtk.EventControllerMotion()
             motion.connect("motion", lambda _c, x, y: self.on_motion(x, y))
@@ -306,18 +372,86 @@ def gui(host, addr, child=False):
                 if down:
                     self.sender.push({"focus": 1})
                 return
-            self.sender.push({"m": self.norm(x, y)})
+            if not state["capture"]:
+                self.sender.push({"m": self.norm(x, y)})
             (state["held_buttons"].add if down else state["held_buttons"].discard)(code)
             self.sender.push({"b": [code, down]})
 
-        def on_key(self, _c, _keyval, keycode, _mods, down):
+        def on_key(self, _c, keyval, keycode, mods, down):
+            wanted = Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK
+            if keyval in (Gdk.KEY_g, Gdk.KEY_G) and mods & wanted == wanted:
+                if down:
+                    self.toggle_capture()
+                return True
             code = keycode - 8
             (state["held_keys"].add if down else state["held_keys"].discard)(code)
             self.sender.push({"k": [code, down]})
             return True
 
+        def toggle_capture(self):
+            """Game mode: the local pointer is locked to this window and only relative motion goes over there."""
+            if state["capture"]:
+                return self.release_capture()
+            import ctypes
+
+            path = os.environ.get("LAB_LOCK_LIB")
+            if not path or not os.path.exists(path):
+                return self.say("Mouse capture is not available here.")
+            gi.require_version("GdkWayland", "4.0")
+            from gi.repository import GdkWayland
+
+            display = Gdk.Display.get_default()
+            if not isinstance(display, GdkWayland.WaylandDisplay):
+                return self.say("Mouse capture needs Wayland.")
+            # the wl_ handles are not in the introspection data, so ask GTK's C functions for them
+            gtk = ctypes.CDLL("libgtk-4.so.1")
+            ctypes.pythonapi.PyCapsule_GetPointer.restype = ctypes.c_void_p
+            ctypes.pythonapi.PyCapsule_GetPointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
+            for fn in ("gdk_wayland_display_get_wl_display", "gdk_wayland_surface_get_wl_surface", "gdk_wayland_device_get_wl_pointer"):
+                getattr(gtk, fn).restype = ctypes.c_void_p
+                getattr(gtk, fn).argtypes = [ctypes.c_void_p]
+
+            def handle(obj):
+                return ctypes.pythonapi.PyCapsule_GetPointer(obj.__gpointer__, None)
+
+            callback_type = ctypes.CFUNCTYPE(None, ctypes.c_double, ctypes.c_double)
+            lib = ctypes.CDLL(path)
+            lib.lab_lock_init.argtypes = [ctypes.c_void_p]
+            lib.lab_lock_enable.argtypes = [ctypes.c_void_p, ctypes.c_void_p, callback_type]
+            lib.lab_lock_enable.restype = ctypes.c_int
+            lib.lab_lock_ready.restype = ctypes.c_int
+            self.lock_lib = lib
+            lib.lab_lock_init(gtk.gdk_wayland_display_get_wl_display(handle(display)))
+            self.lock_cb = callback_type(lambda dx, dy: self.sender.push({"r": [dx, dy]}))
+            tries = [0]
+
+            def attach():
+                tries[0] += 1
+                if not lib.lab_lock_ready():
+                    return tries[0] < 40
+                surface = gtk.gdk_wayland_surface_get_wl_surface(handle(self.win.get_surface()))
+                pointer = gtk.gdk_wayland_device_get_wl_pointer(handle(display.get_default_seat().get_pointer()))
+                if pointer and lib.lab_lock_enable(surface, pointer, self.lock_cb):
+                    state["capture"] = True
+                    self.win.set_cursor_from_name("none")
+                    self.say("Mouse captured. Ctrl+Alt+G releases it.")
+                else:
+                    self.say("Mouse capture failed, the compositor refused the lock.")
+                return False
+
+            GLib.timeout_add(25, attach)
+
+        def release_capture(self):
+            if getattr(self, "lock_lib", None):
+                self.lock_lib.lab_lock_disable()
+            state["capture"] = False
+            self.win.set_cursor(None)
+            self.say("")
+
         def on_focus(self, win, _p):
             if not win.is_active():
+                if state["capture"]:
+                    self.release_capture()
                 # nothing stays pressed over there while this window is not receiving input
                 for code in list(state["held_keys"]):
                     self.sender.push({"k": [code, 0]})
