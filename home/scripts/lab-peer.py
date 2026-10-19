@@ -402,8 +402,10 @@ def portal_window(addr, w, h, by):
             run(["hyprctl", "dispatch", "resizewindowpixel", f"exact {w} {h},address:{addr}"], env)
             run(["hyprctl", "dispatch", "movewindowpixel", f"exact {mon['x']} {mon['y']},address:{addr}"], env)
         # the placeholder takes the place the window left, floating where it floated
-        rule = "float;size {w} {h};move {x} {y};".format(**{"w": info["w"], "h": info["h"], "x": info["x"], "y": info["y"]}) if info["floating"] else ""
-        run(["hyprctl", "dispatch", "exec", f"[{rule}workspace {info['workspace']} silent] {shutil.which('lab-peek') or 'lab-peek'} --placeholder {addr} {by}"], env)
+        # nobody looks at the stage, so no placeholder there
+        if not env.get("LAB_STAGE"):
+            rule = "float;size {w} {h};move {x} {y};".format(**{"w": info["w"], "h": info["h"], "x": info["x"], "y": info["y"]}) if info["floating"] else ""
+            run(["hyprctl", "dispatch", "exec", f"[{rule}workspace {info['workspace']} silent] {shutil.which('lab-peek') or 'lab-peek'} --placeholder {addr} {by}"], env)
         return True
 
 
