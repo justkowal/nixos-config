@@ -135,8 +135,10 @@
 in {
   options.lab.peek.sessionless = lib.mkOption {
     type = lib.types.bool;
-    default = !laptop;
-    description = "Run the headless stage so this machine answers Peek and Run on machine with nobody logged in. Needs users.users.<name>.linger on the NixOS side.";
+    # off: with the stage running, the login session of the desktop cannot take the display (libseat "device or
+    # resource busy") and Hyprland ends up nested in the stage, so a login by Moonlight dies. Not understood yet.
+    default = false;
+    description = "Run the headless stage so this machine answers Peek and Run on machine with nobody logged in. Needs users.users.<name>.linger on the NixOS side. Known to break logging in on the desktop, see the comment in the module.";
   };
 
   options.lab.peek.enable = lib.mkOption {

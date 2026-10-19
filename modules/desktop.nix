@@ -51,9 +51,11 @@
   services.greetd = {
     enable = true;
     settings.default_session = {
-      # the headless stage (home/lab/peek.nix) owns wayland-0, and a Hyprland that finds a Wayland display nests
-      # inside it instead of using the screen, so the session is told there is none
-      command = builtins.replaceStrings [ "--cmd Hyprland" ] [ "--cmd 'env WAYLAND_DISPLAY=/nonexistent Hyprland'" ] config.lab.greeter.command;
+      # Sunshine captures the screen through KMS at the login screen, and Hyprland then fails to take the display
+      # ("Could not take device: Device or resource busy"), so Sunshine lets go first. It comes back through
+      # sunshine-session-restart once the session is up. The session also sees no Wayland display, so Hyprland
+      # never nests inside a headless compositor.
+      command = builtins.replaceStrings [ "--cmd Hyprland" ] [ "--cmd 'sh -c \"${config.systemd.package}/bin/systemctl --user stop sunshine.service; exec env WAYLAND_DISPLAY=/nonexistent Hyprland\"'" ] config.lab.greeter.command;
       user = "greeter";
     };
   };
