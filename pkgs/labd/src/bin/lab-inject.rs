@@ -150,6 +150,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let start = Instant::now();
     let mut held_mods = 0u32;
+    // touchpads send many small deltas, only whole notches go out so a swipe scrolls at a sane speed
+    let mut scroll_rest = [0.0f64; 2];
     for line in stdin().lock().lines() {
         let Ok(cmd) = serde_json::from_str::<Value>(&line?) else {
             continue;
@@ -175,20 +177,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             pointer.frame();
         } else if let Some(a) = cmd.get("a") {
             pointer.axis_source(wl_pointer::AxisSource::Wheel);
-            for (axis, v) in [
-                (wl_pointer::Axis::HorizontalScroll, num(a, 0)),
-                (wl_pointer::Axis::VerticalScroll, num(a, 1)),
-            ] {
-                if v != 0.0 {
-                    pointer.axis_discrete(
-                        t,
-                        axis,
-                        v * 15.0,
-                        v.signum() as i32 * (v.abs().ceil() as i32),
-                    );
+            let mut sent = false;
+            for (i, axis) in [wl_pointer::Axis::HorizontalScroll, wl_pointer::Axis::VerticalScroll]
+                .into_iter()
+                .enumerate()
+            {
+                scroll_rest[i] += num(a, i);
+                let notches = scroll_rest[i].trunc();
+                if notches != 0.0 {
+                    scroll_rest[i] -= notches;
+                    pointer.axis_discrete(t, axis, notches * 15.0, notches as i32);
+                    sent = true;
                 }
             }
-            pointer.frame();
+            if sent {
+                pointer.frame();
+            }
         } else if let Some(k) = cmd.get("k") {
             let code = num(k, 0) as u32;
             let down = num(k, 1) > 0.5;

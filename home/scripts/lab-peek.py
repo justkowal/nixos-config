@@ -234,13 +234,11 @@ def gui(host, addr, child=False):
             motion = Gtk.EventControllerMotion()
             motion.connect("motion", lambda _c, x, y: self.on_motion(x, y))
             overlay.add_controller(motion)
-            click = Gtk.GestureClick(button=0)
-            click.connect("pressed", self.on_button, 1)
-            click.connect("released", self.on_button, 0)
-            overlay.add_controller(click)
-            scroll = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.BOTH_AXES)
-            scroll.connect("scroll", lambda _c, dx, dy: (self.sender.push({"a": [dx, dy]}), True)[1])
-            overlay.add_controller(scroll)
+            # raw events: a gesture drops the release once the pointer moves far, which broke dragging, and a
+            # scroll controller misses some touchpad events
+            legacy = Gtk.EventControllerLegacy()
+            legacy.connect("event", self.on_raw)
+            overlay.add_controller(legacy)
             keys = Gtk.EventControllerKey()
             keys.connect("key-pressed", self.on_key, 1)
             keys.connect("key-released", self.on_key, 0)
@@ -266,7 +264,25 @@ def gui(host, addr, child=False):
             return [(x - (w - dw) / 2) / dw, (y - (h - dh) / 2) / dh]
 
         def on_motion(self, x, y):
+            self.last = (x, y)
             self.sender.push({"m": self.norm(x, y)})
+
+        def on_raw(self, _c, ev):
+            kind = ev.get_event_type()
+            if kind in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.BUTTON_RELEASE):
+                x, y = getattr(self, "last", (0, 0))
+                self.on_button(ev.get_button(), x, y, int(kind == Gdk.EventType.BUTTON_PRESS))
+                return True
+            if kind == Gdk.EventType.SCROLL:
+                direction = ev.get_direction()
+                if direction == Gdk.ScrollDirection.SMOOTH:
+                    dx, dy = ev.get_deltas()
+                else:
+                    dx, dy = {Gdk.ScrollDirection.UP: (0, -1), Gdk.ScrollDirection.DOWN: (0, 1), Gdk.ScrollDirection.LEFT: (-1, 0), Gdk.ScrollDirection.RIGHT: (1, 0)}.get(direction, (0, 0))
+                if dx or dy:
+                    self.sender.push({"a": [dx, dy]})
+                return True
+            return False
 
         def on_state(self, s):
             state["window"] = s
@@ -281,8 +297,8 @@ def gui(host, addr, child=False):
             self.note.set_label(text)
             self.note.set_visible(bool(text))
 
-        def on_button(self, gesture, _n, x, y, down):
-            code = BUTTONS.get(gesture.get_current_button())
+        def on_button(self, button, x, y, down):
+            code = BUTTONS.get(button)
             if code is None:
                 return
             if state["window"] == "hidden":
@@ -321,6 +337,9 @@ def gui(host, addr, child=False):
                 proc.terminate()
             if getattr(self, "pipeline", None):
                 self.pipeline.set_state(Gst.State.NULL)
+            self.closing = True
+            if getattr(self, "audio", None):
+                self.audio.set_state(Gst.State.NULL)
             return False
 
         def enter_portal(self):
@@ -349,7 +368,29 @@ def gui(host, addr, child=False):
             self.seen = size
             return True
 
+        def start_audio(self):
+            """The remote app's sound, opus over http into the local sound server. Dialogs share the main window's."""
+            if child or getattr(self, "closing", False) or os.environ.get("LAB_PEEK_AUDIO", "1") == "0":
+                return False
+            self.audio = Gst.parse_launch(
+                f"souphttpsrc location=http://{host}:{PORT}/window/{addr}/audio is-live=true do-timestamp=true ! "
+                f"oggdemux ! opusdec ! audioconvert ! audioresample ! "
+                f"pulsesink buffer-time=40000 latency-time=10000 sync=false"
+            )
+            bus = self.audio.get_bus()
+            bus.add_signal_watch()
+            bus.connect("message::error", lambda *_: self.retry_audio())
+            bus.connect("message::eos", lambda *_: self.retry_audio())
+            self.audio.set_state(Gst.State.PLAYING)
+            return False
+
+        def retry_audio(self):
+            self.audio.set_state(Gst.State.NULL)
+            GLib.timeout_add(3000, self.start_audio)
+
         def start_video(self):
+            if not getattr(self, "audio", None):
+                self.start_audio()
             self.pipeline = Gst.parse_launch(
                 f"souphttpsrc location=http://{host}:{PORT}/window/{addr}/video is-live=true do-timestamp=true ! "
                 f"h264parse ! {decoder} ! videoconvert ! video/x-raw,format=BGRx ! "

@@ -142,6 +142,112 @@ def windows():
             for c in hypr_json("clients") if c.get("mapped") and not c.get("hidden") and c.get("title")]
 
 
+# ── audio ────────────────────────────────────────────────────────────────────
+# Every viewer gets its own null sink. The audio of the window's process (and its children, which is
+# where browsers and games play from) is moved onto it, encoded as low delay Opus and streamed. When the
+# viewer leaves, the streams go back to the default sink and the null sink is removed.
+
+SINK_PREFIX = "lab_peek_"
+
+
+def pactl(*args):
+    return run(["pactl", *args], dict(os.environ), timeout=5)
+
+
+def ancestors(pid, depth=8):
+    out = []
+    for _ in range(depth):
+        try:
+            pid = int(Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+        if pid <= 1:
+            break
+        out.append(pid)
+    return out
+
+
+def same_app(stream_pid, window_pid):
+    return stream_pid == window_pid or window_pid in ancestors(stream_pid) or stream_pid in ancestors(window_pid)
+
+
+def sink_inputs():
+    try:
+        return json.loads(pactl("-f", "json", "list", "sink-inputs").stdout)
+    except ValueError:
+        return []
+
+
+def default_sink_name():
+    return pactl("get-default-sink").stdout.decode().strip()
+
+
+def recover_audio():
+    """Streams stranded on a null sink of a peer that died go back to the default sink."""
+    mods = pactl("list", "short", "modules").stdout.decode().splitlines()
+    ours = [m.split("\t") for m in mods if SINK_PREFIX in m]
+    if not ours:
+        return
+    default = default_sink_name()
+    names = {m[2].split("sink_name=")[1].split()[0] for m in ours if "sink_name=" in m[2]}
+    sinks = {s.split("\t")[0]: s.split("\t")[1] for s in pactl("list", "short", "sinks").stdout.decode().splitlines() if "\t" in s}
+    for si in sink_inputs():
+        if sinks.get(str(si.get("sink"))) in names and default:
+            pactl("move-sink-input", str(si["index"]), default)
+    for m in ours:
+        pactl("unload-module", m[0])
+
+
+class AudioPortal:
+    def __init__(self, addr):
+        self.addr = addr
+        self.name = f"{SINK_PREFIX}{addr[2:10]}"
+        self.module = None
+        self.moved = set()
+        self.stop = threading.Event()
+
+    def start(self):
+        out = pactl("load-module", "module-null-sink", f"sink_name={self.name}", "rate=48000", "channels=2",
+                    f"sink_properties=device.description=Peek-{self.name}")
+        if out.returncode != 0:
+            return False
+        self.module = out.stdout.decode().strip()
+        threading.Thread(target=self.follow, daemon=True).start()
+        return True
+
+    def follow(self):
+        while not self.stop.is_set():
+            g = window_info(self.addr)
+            if g is not None:
+                for si in sink_inputs():
+                    props = si.get("properties", {})
+                    try:
+                        pid = int(props.get("application.process.id", 0))
+                    except ValueError:
+                        pid = 0
+                    if pid and si["index"] not in self.moved and same_app(pid, g["pid"]):
+                        if pactl("move-sink-input", str(si["index"]), self.name).returncode == 0:
+                            self.moved.add(si["index"])
+            self.stop.wait(0.4)
+
+    def close(self):
+        self.stop.set()
+        default = default_sink_name()
+        for si in sink_inputs():
+            if si["index"] in self.moved and default:
+                pactl("move-sink-input", str(si["index"]), default)
+        if self.module:
+            pactl("unload-module", self.module)
+
+
+def audio_command(sink):
+    # the pulse input reads in small fragments, the encoder emits 10 ms frames and ogg pages follow at once
+    return ["ffmpeg", "-nostdin", "-loglevel", "error", "-fflags", "nobuffer", "-flags", "low_delay",
+            "-f", "pulse", "-fragment_size", "1920", "-i", f"{sink}.monitor",
+            "-c:a", "libopus", "-application", "lowdelay", "-frame_duration", "10", "-b:a", "96k",
+            "-f", "ogg", "-page_duration", "10000", "-flush_packets", "1", "pipe:1"]
+
+
 def related(addr):
     """Other windows of the same process, which is how dialogs and popups of an app show up."""
     me = window_info(addr)
@@ -528,6 +634,37 @@ class Handler(BaseHTTPRequestHandler):
         self.json(403, {"error": "not one of your devices"})
         return False
 
+    def audio(self, addr):
+        if window_info(addr) is None:
+            return self.json(404, {"error": "gone"})
+        portal = AudioPortal(addr)
+        if not portal.start():
+            return self.json(503, {"error": "no audio server"})
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/ogg")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        enc = subprocess.Popen(audio_command(portal.name), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        try:
+            while enc.poll() is None:
+                ready, _, _ = select.select([enc.stdout], [], [], 0.5)
+                if ready:
+                    chunk = os.read(enc.stdout.fileno(), 4096)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                elif window_info(addr) is None:
+                    break
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            enc.kill()
+            enc.wait()
+            portal.close()
+
     def video(self, addr):
         g = window_info(addr)
         if g is None:
@@ -590,11 +727,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(200, {"host": socket.gethostname()})
         if self.path == "/windows":
             return self.json(200, windows())
-        m = re.fullmatch(r"/window/(0x[0-9a-f]{1,16})/(video|info|related)", self.path)
+        m = re.fullmatch(r"/window/(0x[0-9a-f]{1,16})/(video|audio|info|related)", self.path)
         if m:
             addr, what = m.groups()
             if what == "video":
                 return self.video(addr)
+            if what == "audio":
+                return self.audio(addr)
             if what == "related":
                 return self.json(200, related(addr))
             info = window_info(addr)
@@ -644,6 +783,7 @@ def main():
     global ME
     ME = my_user_id()
     recover_portals()
+    recover_audio()
     ip = run([TAILSCALE, "ip", "-4"]).stdout.decode().split()[0]
     threading.Thread(target=ThreadedTCP((ip, INPUT_PORT), InputHandler).serve_forever, daemon=True).start()
     http = ThreadingHTTPServer((ip, HTTP_PORT), Handler)
