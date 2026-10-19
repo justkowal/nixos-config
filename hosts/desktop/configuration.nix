@@ -77,22 +77,42 @@ in {
   boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
 
   # ── Distributed Builds (Laptop Assist) ─────────────────────────────────
-  # Allows the Laptop (ThinkPad T14s) to assist with parallel x86_64 compilation
-  # when available over Tailscale/LAN. Capped at 2 jobs and x86_64 only so it
-  # never starves the Desktop or takes slow QEMU ARM64 emulation tasks.
-
-  nix.buildMachines = [
-    {
-      hostName = "thinkpad-t14s-gen1-amd.lab";
-      systems = [ "x86_64-linux" ];
-      sshUser = "justkowal";
-      sshKey = "/home/justkowal/.ssh/id_ed25519";
-      publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSVAxQzFtTDVzRzFwVXBHVjJjR2daWHRKWHNLTm1ndmxBM1JvbU16NDFiSi8=";
-      maxJobs = 2;
-      speedFactor = 1;
-      supportedFeatures = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
-    }
-  ];
+  # The desktop is the faster box, so the laptop is only listed as a builder
+  # while it is reachable AND on AC. Nix tries remote slots before local ones,
+  # so an always-listed laptop slows builds down. /etc/nix/machines is read on
+  # every build and rewritten by this timer.
+  systemd.services.laptop-builder-probe = {
+    description = "List the laptop as a remote builder only while it is on AC";
+    path = [ pkgs.openssh pkgs.coreutils ];
+    serviceConfig.Type = "oneshot";
+    script = let
+      host = "thinkpad-t14s-gen1-amd.lab";
+      hostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSVAxQzFtTDVzRzFwVXBHVjJjR2daWHRKWHNLTm1ndmxBM1JvbU16NDFiSi8=";
+      key = "/home/justkowal/.ssh/id_ed25519";
+    in ''
+      kh=$(mktemp)
+      trap 'rm -f "$kh"' EXIT
+      echo "${host} $(echo ${hostKey} | base64 -d)" > "$kh"
+      ac=$(ssh -i ${key} -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=3 \
+        -o UserKnownHostsFile="$kh" -o StrictHostKeyChecking=yes \
+        justkowal@${host} 'cat /sys/class/power_supply/A*/online' 2>/dev/null || true)
+      want=""
+      if [ "$ac" = 1 ]; then
+        want="ssh://justkowal@${host} x86_64-linux ${key} 1 1 nixos-test,benchmark,big-parallel,kvm - ${hostKey}"
+      fi
+      if [ "$(cat /etc/nix/machines 2>/dev/null)" != "$want" ]; then
+        echo "$want" > /etc/nix/machines.tmp
+        mv /etc/nix/machines.tmp /etc/nix/machines
+      fi
+    '';
+  };
+  systemd.timers.laptop-builder-probe = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "30s";
+      OnUnitActiveSec = "60s";
+    };
+  };
 
   # ── Bootloader: systemd-boot (UEFI / bcachefs compatible) ───────────────
   boot.loader.systemd-boot = {
@@ -439,6 +459,8 @@ in {
     wants = lib.mkForce [ ];
     after = lib.mkForce [ ];
     environment.WAYLAND_DISPLAY = "/nonexistent";
+    # without a session type Sunshine treats the missing Wayland display as fatal and never reaches KMS
+    environment.XDG_SESSION_TYPE = "tty";
   };
 
   # a login replaces the console framebuffer Sunshine was capturing, the stream freezes on the old picture, so
