@@ -51,6 +51,10 @@
   # machine can open and stream windows with nobody logged in. A live session, when there is one, is
   # preferred by lab-peer and the stage idles behind it. It has no real output, so no screen is exposed.
   stageHyprland = pkgs.writeText "lab-stage-hyprland.conf" ''
+    # fixed rules: without them Hyprland re-applies an automatic scale of 2 when another headless output appears,
+    # which breaks the pointer mapping of lab-peer
+    monitor = LAB-STAGE, 1920x1080@60, 0x0, 1
+    monitor = , preferred, auto, 1
     misc {
       disable_hyprland_logo = true
       disable_splash_rendering = true
@@ -67,7 +71,7 @@
   stageKeymap = pkgs.runCommand "lab-stage-keymap" {nativeBuildInputs = [pkgs.libxkbcommon];} ''
     xkbcli compile-keymap --layout pl > $out
   '';
-  stageLabwc =pkgs.writeTextDir "rc.xml" ''<?xml version="1.0"?><labwc_config/>'';
+  stageLabwc = pkgs.writeTextDir "rc.xml" ''<?xml version="1.0"?><labwc_config/>'';
 
   # the nested Hyprland needs the socket of our labwc, not the one of a live session
   stageRun = pkgs.writeShellApplication {
@@ -101,7 +105,6 @@
       done
       export HYPRLAND_INSTANCE_SIGNATURE=$sig
       /run/current-system/sw/bin/hyprctl output create headless LAB-STAGE
-      /run/current-system/sw/bin/hyprctl keyword monitor "LAB-STAGE,1920x1080@60,0x0,1"
     '';
   };
 in {
