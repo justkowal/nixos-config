@@ -8,7 +8,8 @@
 //! Keys use the keymap of the real keyboard, so the layout matches without any setup.
 
 use std::io::{stdin, BufRead};
-use std::os::fd::{AsFd, OwnedFd};
+use std::io::Write;
+use std::os::fd::{AsFd, FromRawFd, OwnedFd};
 use std::process::ExitCode;
 use std::time::Instant;
 
@@ -85,6 +86,22 @@ delegate_noop!(State: ZwlrVirtualPointerV1);
 delegate_noop!(State: ZwpVirtualKeyboardManagerV1);
 delegate_noop!(State: ZwpVirtualKeyboardV1);
 
+/// A headless compositor has no keyboard to copy a keymap from, so a compiled one can be handed in
+/// through LAB_INJECT_KEYMAP (xkbcli compile-keymap output), which also gives the seat a keyboard
+/// so that apps get keyboard focus and treat their window as active.
+fn fallback_keymap() -> Option<(u32, OwnedFd, u32)> {
+    let mut text = std::fs::read(std::env::var_os("LAB_INJECT_KEYMAP")?).ok()?;
+    text.push(0);
+    let name = std::ffi::CString::new("lab-keymap").ok()?;
+    let raw = unsafe { libc::memfd_create(name.as_ptr(), 0) };
+    if raw < 0 {
+        return None;
+    }
+    let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+    std::fs::File::from(fd.try_clone().ok()?).write_all(&text).ok()?;
+    Some((1, fd, text.len() as u32))
+}
+
 /// evdev key code to the xkb modifier bit it holds, for the usual evdev keymaps.
 fn modifier_bit(code: u32) -> u32 {
     match code {
@@ -113,6 +130,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _real_keyboard = state.has_keyboard.then(|| seat.get_keyboard(&qh, ()));
     queue.roundtrip(&mut state)?;
     queue.roundtrip(&mut state)?;
+    if state.keymap.is_none() {
+        state.keymap = fallback_keymap();
+    }
 
     let pointer = pointer_manager.create_virtual_pointer(Some(&seat), &qh, ());
     let keyboard = match &state.keymap {

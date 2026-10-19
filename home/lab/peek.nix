@@ -63,7 +63,11 @@
       disable_logs = true
     }
   '';
-  stageLabwc = pkgs.writeTextDir "rc.xml" ''<?xml version="1.0"?><labwc_config/>'';
+  # the stage has no keyboard to copy a keymap from, lab-inject uses this one (Polish programmer layout)
+  stageKeymap = pkgs.runCommand "lab-stage-keymap" {nativeBuildInputs = [pkgs.libxkbcommon];} ''
+    xkbcli compile-keymap --layout pl > $out
+  '';
+  stageLabwc =pkgs.writeTextDir "rc.xml" ''<?xml version="1.0"?><labwc_config/>'';
 
   # the nested Hyprland needs the socket of our labwc, not the one of a live session
   stageRun = pkgs.writeShellApplication {
@@ -130,7 +134,7 @@ in {
           "PATH=${lib.makeBinPath [pkgs.ffmpeg pkgs.glib.bin peek config.lab.shell.package]}:/etc/profiles/per-user/${user}/bin:/run/current-system/sw/bin"
           "TAILSCALE=/run/current-system/sw/bin/tailscale"
           "LIBVA_DRIVERS_PATH=/run/opengl-driver/lib/dri"
-        ];
+        ] ++ lib.optional cfg.sessionless "LAB_INJECT_KEYMAP=${stageKeymap}";
         Restart = "always";
         RestartSec = 5;
       };
