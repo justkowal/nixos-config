@@ -113,6 +113,8 @@ let
     '';
   };
   accubattery = pkgs.callPackage ../pkgs/accubattery {};
+  agh-mcp = pkgs.callPackage ../pkgs/agh-mcp {};
+  labd = pkgs.callPackage ../pkgs/labd {};
 
   batmon = pkgs.writeShellApplication {
     name = "batmon";
@@ -313,6 +315,27 @@ in {
       code-review-graph = {
         command = "uvx";
         args = ["code-review-graph" "serve"];
+      };
+      # UPeL tools plus the syllabus of one programme. token lives in ~/.config/upel/token, sign-in is
+      # handled by the server. the syllabus ids default to Computer Physics, intake 2025/2026; change
+      # them here (AGH_SYLLABUS_YEAR, _FORM, _LEVEL, _FACULTY, _MAJOR) to follow another programme.
+      agh = {
+        command = "${agh-mcp}/bin/agh-mcp";
+        args = [];
+        env = {
+          AGH_SYLLABUS_YEAR = "21";
+          AGH_SYLLABUS_FORM = "1";
+          AGH_SYLLABUS_LEVEL = "4";
+          AGH_SYLLABUS_FACULTY = "17";
+          AGH_SYLLABUS_MAJOR = "236";
+        };
+      };
+      # the desk: bus reads plus lab, focus, room, lock and power actions. power calls refuse without
+      # confirm = true. the CLIs it shells out to live in the user profile, which the app's PATH lacks.
+      kowallab = {
+        command = "${labd}/bin/lab-mcp";
+        args = [];
+        env.PATH = "/etc/profiles/per-user/${config.home.username}/bin:/run/current-system/sw/bin";
       };
       # only connects while freecad runs its rpc addon; mcp 2.x dropped the fastmcp module it imports
       freecad = {

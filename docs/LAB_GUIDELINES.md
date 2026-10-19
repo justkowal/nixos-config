@@ -160,6 +160,8 @@ Visual changes need a screenshot check: trigger the state, capture with `grim`, 
 - The OSD wrappers `home/scripts/volume-osd.sh` and `home/scripts/brightness-osd.sh` are legacy. Do not add to them.
 - Matugen templates in `home/matugen/templates/` are the colour source and stay that way.
 
+- **MCP server** (`pkgs/labd/src/bin/lab-mcp.rs`, registered as `kowallab` in `home/apps.nix`): stdio MCP for Claude Desktop. Reads go to the bus socket (`lab_status`, `lab_events`, `lab_roster`), the rest shells out to the same CLIs the palette runs (`lab doctor|keys|scene|theme`, `focus`, `room`, `loginctl`, `systemctl`), so scenes, the island and the LED layer react as they would to a keypress. It adds no events of its own. `lab_power` (suspend, reboot, poweroff) refuses unless `confirm: true` is passed and is annotated destructive, so the client prompts before it runs. A new Lab CLI that should be drivable from Claude gets a tool in `call()` and `tools()`.
+
 ## 10. Event catalog
 
 Add a row here when you add an event. Payload keys are the contract between publisher and `card_for` in `island.rs`.
