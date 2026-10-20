@@ -132,6 +132,7 @@ in {
     ./containers.nix
     ./mcp-gateway.nix
     ./notes-backup.nix
+    ./storage.nix
     ./apps.nix
     ../../modules/monitoring.nix
     ../../modules/fleet-health.nix
