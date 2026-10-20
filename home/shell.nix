@@ -10,6 +10,9 @@
       $env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}"
       $env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
 
+      # stderred only colours writes to a tty, pipes and redirects stay clean
+      $env.LD_PRELOAD = "${pkgs.stderred}/lib/libstderred.so"
+
       $env.config = {
         show_banner: false
         completions: {
