@@ -274,8 +274,9 @@
   # the consume folder sits under the user's home, which is mode 700. Paperless only needs to walk
   # through it (x, no listing); the folders below are already open. Without this the pre-start
   # check fails with PermissionError and the unit loops, which also stalls every activation.
+  # the explicit mask is needed: a named ACL entry alone is ignored while the mask is ---.
   systemd.tmpfiles.rules = [
-    "a+ /home/justkowal - - - - u:paperless:--x"
+    "a+ /home/justkowal - - - - u:paperless:--x,m::--x"
   ];
 
   # ── Blocky: Fast DNS Proxy, Ad-Blocker & Homelab Split-DNS ─────────────
