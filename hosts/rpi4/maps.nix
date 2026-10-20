@@ -23,6 +23,18 @@
   # measured on the desktop: 800 MB heap with the serial collector serves the pruned graph in about 0.95 GiB
   otpJvm = "-Xmx800m -XX:+UseSerialGC -Xss512k -XX:MaxMetaspaceSize=128m -XX:TieredStopAtLevel=1";
 
+  # public halves of the two keys that live on the desktop; each can do exactly one thing on this Pi
+  pushKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICrFdQ1fwh/LchoaYQCDAGVOs1NzX6XxApMWx+bxzfgG maps_push@nixos-desktop";
+  pullKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL8AqKUWoQ7lPLJVQddb6EbvGlKz9AyiIKCi1aHzNZV8 maps_pull@nixos-desktop";
+  from = "100.109.222.110,192.168.1.0/24";
+  stateDir = "/var/lib/mcp-gateway/state";
+
+  graphWatch = pkgs.writeShellApplication {
+    name = "graph-watch";
+    runtimeInputs = with pkgs; [jq curl podman coreutils findutils gawk gnugrep systemd];
+    text = builtins.readFile ./scripts/graph-watch.sh;
+  };
+
   common = [
     "--network=mcp-internal"
     "--log-driver=json-file"
@@ -32,6 +44,46 @@
     "--health-start-period=120s"
   ];
 in {
+  # desktop push key: write-only into graph/upload, no shell, no forwarding. desktop pull key: read-only on the export folder.
+  users.groups.maps-push = {};
+  users.groups.maps-pull = {};
+  users.users.maps-push = {
+    isSystemUser = true;
+    group = "maps-push";
+    shell = pkgs.bash;
+    home = "/var/empty";
+    openssh.authorizedKeys.keys = [''restrict,from="${from}",command="${pkgs.rrsync}/bin/rrsync -wo ${data}/graph/upload" ${pushKey}''];
+  };
+  users.users.maps-pull = {
+    isSystemUser = true;
+    group = "maps-pull";
+    shell = pkgs.bash;
+    home = "/var/empty";
+    openssh.authorizedKeys.keys = [''restrict,from="${from}",command="${pkgs.rrsync}/bin/rrsync -ro ${data}/export" ${pullKey}''];
+  };
+  environment.systemPackages = [pkgs.rsync];
+
+  # the registry and local feed files are copied into a folder the pull key can read, so it never touches the real state directory
+  systemd.services.maps-export-sync = {
+    description = "Copy the feed registry into the export folder";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "maps-export-sync" ''
+        set -eu
+        [ -f ${stateDir}/feeds.yaml ] && ${pkgs.rsync}/bin/rsync -a --chown=maps-pull:maps-pull ${stateDir}/feeds.yaml ${data}/export/
+        [ -d ${stateDir}/feeds-local ] && ${pkgs.rsync}/bin/rsync -a --delete --chown=maps-pull:maps-pull ${stateDir}/feeds-local/ ${data}/export/feeds-local/
+        exit 0
+      '';
+    };
+  };
+  systemd.timers.maps-export-sync = {
+    wantedBy = ["timers.target"];
+    timerConfig = {
+      OnBootSec = "1min";
+      OnUnitActiveSec = "1min";
+    };
+  };
+
   # 4 GB behind the zram swap; the disk is slow, so it only catches spikes
   swapDevices = [
     {
@@ -47,7 +99,9 @@ in {
     "d ${data}/graph 0755 root root -"
     "d ${data}/graph/current 0755 root root -"
     "d ${data}/graph/previous 0755 root root -"
-    "d ${data}/graph/upload 0755 root root -"
+    "d ${data}/graph/upload 0750 maps-push maps-push -"
+    "d ${data}/export 0755 root root -"
+    "d ${data}/export/adapters 0755 root root -"
     "d ${data}/adapters 0755 root root -"
     "d ${data}/osm 0755 root root -"
   ];
@@ -110,7 +164,7 @@ in {
           "--pids-limit=128"
           "--cap-drop=ALL"
           "--security-opt=no-new-privileges"
-          ("--health-cmd=" + builtins.toJSON ["bash" "-c" "exec 3<>/dev/tcp/127.0.0.1/8080; printf 'GET /otp/actuators/health HTTP/1.0\\r\\n\\r\\n' >&3; head -1 <&3 | grep -q 200"])
+          ("--health-cmd=" + builtins.toJSON ["bash" "-c" "exec 3<>/dev/tcp/127.0.0.1/8080; printf 'GET /otp HTTP/1.0\\r\\n\\r\\n' >&3; head -1 <&3 | grep -q 200"])
         ];
     };
   };
@@ -125,5 +179,24 @@ in {
     unitConfig.ConditionPathExists = "${data}/graph/current/graph.obj";
     requires = ["podman-network-mcp.service"];
     after = ["podman-network-mcp.service" "srv-data.mount"];
+  };
+
+  # the desktop pushes into graph/upload and touches READY last; this verifies, stage-tests and swaps it in
+  systemd.services.graph-watch = {
+    description = "Verify, stage-test and swap in a pushed routing graph";
+    environment = {
+      DATA = data;
+      OTP_IMAGE = "opentripplanner/opentripplanner@sha256:8d54e5c589186707ee365417f2202dc878c451fa3001b8edff07019531100933";
+      JAVA_OPTS = otpJvm;
+    };
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = lib.getExe graphWatch;
+      TimeoutStartSec = "20min";
+    };
+  };
+  systemd.paths.graph-watch = {
+    wantedBy = ["multi-user.target"];
+    pathConfig.PathExistsGlob = "${data}/graph/upload/*/READY";
   };
 }
