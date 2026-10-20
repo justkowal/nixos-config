@@ -219,8 +219,8 @@ in {
 
               blur {
                   enabled = true
-                  size = 8
-                  passes = 3
+                  size = 4
+                  passes = 2
                   new_optimizations = true
                   vibrancy = 0.2
                   vibrancy_darkness = 0.2
