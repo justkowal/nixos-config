@@ -148,7 +148,7 @@ in {
         CATALOG_FILE = "/state/catalog.json";
         MAIL_STATE = "/state/sends.json";
         MAIL_SEND_LIMIT = "20";
-        SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+        SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
         AGH_SYLLABUS_YEAR = "21";
         AGH_SYLLABUS_FORM = "1";
         AGH_SYLLABUS_LEVEL = "4";
