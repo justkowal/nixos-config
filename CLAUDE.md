@@ -35,3 +35,16 @@ shellcheck home/scripts/*.sh
 - Keep diffs tight. Show changes as minimal snippets, not whole files.
 - Do not run recursive grep over the whole repo. Target files by path or use `git grep` on a specific directory.
 - Commits use Conventional Commits: `<type>(<scope>): <subject>`, lowercase, no trailing period.
+
+## Tool use
+
+MCP tools are deferred: load schemas with one ToolSearch call before first use, batching every tool you expect to need. Prefer a dedicated tool over shell text munging.
+
+- **Find code with the graph first.** Before `grep`, `find`, `ls -R`, `sed` or `awk` to explore, load and call `code-review-graph`: `select:mcp__code-review-graph__semantic_search_nodes_tool,mcp__code-review-graph__query_graph_tool,mcp__code-review-graph__get_minimal_context_tool,mcp__code-review-graph__get_impact_radius_tool`. Use `get_impact_radius_tool` before changing a shared symbol and `detect_changes_tool` before declaring a diff done. If the graph looks stale, run `build_or_update_graph_tool` once, then retry.
+- **Graph gaps.** The graph covers Rust (`pkgs/labd`), Python and shell well, `.nix` poorly. For `.nix` use `git grep -n <pattern> -- home/ hosts/ modules/` on a named directory. Never recurse over the whole repo.
+- **Read narrowly.** Use `Read` with `offset` and `limit` on the lines you need. Do not `cat` or `sed -n` a file you could `Read`, and do not re-read a file you just edited.
+- **Nix facts come from the nixos MCP.** Package names, option paths, channels and versions: `mcp__nixos__nix` and `nix_versions`, not `nix search` or guessing. Library and API docs: `context7`.
+- **Lab runtime state comes from the kowallab MCP** (`lab_status`, `lab_doctor`, `lab_events`), not by tailing logs or poking the socket.
+- **Parallelise.** Independent reads and searches go in one message. Run slow builds (`nh os build .`, `nix flake check`) in the background and keep working.
+- **Subagents get the same rules.** A spawned agent only knows its prompt. Put the graph tool names and the ToolSearch line in it, name the files or directory to look at, and say what the answer should look like. Do not spawn one for a lookup that takes two tool calls.
+- **Verify cheaply.** After an edit run the narrowest check that covers it (`python -m py_compile <file>`, `shellcheck <file>`, `nix eval` on the option) and run the full `nix flake check` once at the end.
