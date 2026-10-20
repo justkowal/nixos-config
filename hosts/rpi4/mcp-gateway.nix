@@ -87,7 +87,8 @@
     "--log-opt=max-file=3"
     "--health-interval=60s"
   ];
-  healthCmd = "--health-cmd=python3 -c \"import urllib.request as u;u.urlopen('http://127.0.0.1:8080/healthz',timeout=3)\"";
+  # exec form: the nix-built images have no /bin/sh
+  healthCmd = "--health-cmd=" + builtins.toJSON ["/bin/python3" "-c" "import urllib.request as u;u.urlopen('http://127.0.0.1:8080/healthz',timeout=3)"];
 in {
   systemd.services.podman-network-mcp = {
     description = "Podman networks for the MCP gateway";
