@@ -579,6 +579,9 @@ in {
     };
   };
 
+  # no polkit agent was running, so pkexec, fingerprint and password prompts had nowhere to appear
+  services.hyprpolkitagent.enable = true;
+
   services.hypridle = {
     enable = true;
     settings = {
