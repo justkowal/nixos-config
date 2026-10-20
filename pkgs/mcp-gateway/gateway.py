@@ -292,7 +292,10 @@ class H(BaseHTTPRequestHandler):
         with fails_lock:
             fails[ip].append(now)
             n = len(fails[ip])
-        audit(event="auth", status="failed", ip=ip, count=n, **({"alert": "repeated_auth_failure"} if n >= 3 else {}))
+        # shape only, never the value: enough to tell a missing header from a wrong one
+        hdr = "absent" if not got else f"scheme={got.split(' ')[0][:10]} len_ok={len(got) == len(TOKEN) + 7}"
+        audit(event="auth", status="failed", ip=ip, count=n, method=self.command, path=self.path.split("?")[0][:60],
+              header=hdr, ua=self.headers.get("User-Agent", "")[:40], **({"alert": "repeated_auth_failure"} if n >= 3 else {}))
         self.reply(401, b'{"error":"unauthorized"}', extra={"WWW-Authenticate": "Bearer"})
         return False
 
@@ -300,8 +303,16 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/healthz":
             code, body = health()
             return self.reply(code, body, "text/plain")
+        if self.path.startswith("/.well-known/"):  # no OAuth here: say so instead of 401 so clients do not start a sign-in flow
+            return self.reply(404, b'{"error":"no oauth"}')
         if self.authed():
             self.reply(405, b"", extra={"Allow": "POST"})
+
+    def do_HEAD(self):
+        self.reply(200 if self.path == "/healthz" else 405, b"", "text/plain")
+
+    def do_OPTIONS(self):
+        self.reply(204, b"", extra={"Allow": "POST, GET, OPTIONS"})
 
     def do_DELETE(self):
         if self.authed():
