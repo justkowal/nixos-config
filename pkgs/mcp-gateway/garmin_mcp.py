@@ -265,10 +265,15 @@ def invoke(name, kw):
             except gc.GarminConnectAuthenticationError as e:
                 set_state("reauth", type(e).__name__)
                 raise RuntimeError("re-authentication needed: run the interactive garmin login on the Pi")
-            except (gc.GarminConnectTooManyRequestsError, gc.GarminConnectConnectionError) as e:
+            except gc.GarminConnectTooManyRequestsError:
                 if attempt == 3:
-                    raise RuntimeError("rate limited or Garmin unreachable, retry later")
+                    raise RuntimeError("rate limited, retry later")
                 time.sleep(2 ** (attempt + 1) + random.random() * 2)
+            except gc.GarminConnectConnectionError as e:
+                # a failing request is retried once, never four times: Garmin's private API should not be hammered
+                if attempt >= 1:
+                    raise RuntimeError(f"Garmin refused or failed the request: {str(e)[:100]}")
+                time.sleep(2 + random.random() * 2)
             except (gc.GarminConnectNotFoundError, gc.GarminConnectInvalidFileFormatError) as e:
                 raise RuntimeError(type(e).__name__)
     raise RuntimeError("unreachable")
@@ -298,6 +303,11 @@ def smoke(tools):
             else:
                 args = None
                 break
+        if args is not None:  # optional range ends make some endpoints refuse their defaults
+            if "end" in props:
+                args["end"] = today
+            if "start" in props and "end" in props:
+                args["start"] = (datetime.date.fromisoformat(today) - datetime.timedelta(days=6)).isoformat()
         if args is None:
             rows.append((n, "skip", "needs an id"))
             continue
