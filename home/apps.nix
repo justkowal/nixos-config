@@ -113,6 +113,7 @@ let
     '';
   };
   accubattery = pkgs.callPackage ../pkgs/accubattery {};
+  thunderbird-mcp = pkgs.callPackage ../pkgs/thunderbird-mcp {};
   agh-mcp = pkgs.callPackage ../pkgs/agh-mcp {};
   labd = pkgs.callPackage ../pkgs/labd {};
 
@@ -342,6 +343,39 @@ in {
         command = "uvx";
         args = ["--from" "freecad-robust-mcp" "--with" "mcp<2" "freecad-mcp" "--mode" "xmlrpc"];
       };
+      # talks to the running kicad over its ipc api (enable it in kicad preferences). same mcp 2.x breakage as freecad.
+      kicad = {
+        command = "uvx";
+        args = ["--from" "kicad-mcp" "--with" "mcp<2" "kicad-mcp" "--editor-type" "pcb"];
+      };
+      # file based, works without a running kicad: erc, drc, schematic and gerber exports
+      kicad-files = {
+        command = "uvx";
+        args = ["mcp-server-kicad"];
+      };
+      nixos = {
+        command = "uvx";
+        args = ["mcp-nixos"];
+      };
+      context7 = {
+        command = "npx";
+        args = ["-y" "@upstash/context7-mcp@4.4.2"];
+      };
+      # file based, no obsidian plugin or running app needed. same server is registered for the claude code cli below.
+      everything = {
+        command = "npx";
+        args = ["-y" "@bitbonsai/mcpvault@0.16.0" "${config.home.homeDirectory}/Sync/Notes/Everything"];
+      };
+      # read-only and send-off by default. flip the env vars here, not in the app.
+      # profile comes from ~/.thunderbird, which points at the xdg profile dir (see below).
+      thunderbird = {
+        command = "${thunderbird-mcp}/bin/thunderbird-mcp";
+        args = [];
+        env = {
+          THUNDERBIRD_READ_ONLY = "true";
+          THUNDERBIRD_ALLOW_SEND = "false";
+        };
+      };
     });
   in
     lib.hm.dag.entryAfter ["writeBoundary"] ''
@@ -352,6 +386,74 @@ in {
         [ -n "''${DRY_RUN:-}" ] || { printf '%s\n' "$merged" > "$f" && chmod 600 "$f"; }
       else
         warnEcho "claude_desktop_config.json is not valid json, skipped setting mcpServers"
+      fi
+    '';
+
+  # the "Everything" vault: shared agent memory. it lives under Sync/Notes so syncthing carries it to every host.
+  # seeded once, never overwritten. the cli gets only this server; claude code rewrites ~/.claude.json, so merge one key.
+  home.activation.everythingVault = let
+    vault = "${config.home.homeDirectory}/Sync/Notes/Everything";
+    readme = pkgs.writeText "everything-readme.md" ''
+      # Everything
+
+      Shared memory for every agent on every host. Obsidian opens this folder as a vault.
+
+      ## Layout
+
+      - `Manuals/` how the owner wants a kind of task done. One manual per task type.
+      - `Memory/` one fact per file. Filename is a kebab-case slug.
+      - `Projects/<name>/` longer notes that belong to one project.
+      - `Reference/` pointers to docs, dashboards, tickets.
+
+      ## Memory note format
+
+      ```
+      ---
+      type: user | feedback | project | reference
+      project: <repo or "global">
+      updated: YYYY-MM-DD
+      ---
+      the fact. for feedback and project add Why: and How to apply: lines.
+      link related notes with [[slug]].
+      ```
+
+      ## Manual format
+
+      `Manuals/<task-slug>.md`, named after the task ("commit-changes", "add-nix-module", "write-email").
+
+      ```
+      ---
+      task: one line, what this manual covers
+      triggers: [words a request for this task would contain]
+      updated: YYYY-MM-DD
+      ---
+      imperative steps and preferences, shortest form that is still unambiguous.
+      ## Do
+      ## Don't
+      ## Examples (only when a rule is hard to state)
+      ```
+
+      A manual is procedure ("how to do X"). A memory note is a fact ("Y is true"). Rules that apply to every task belong in CLAUDE.md, not here.
+
+      ## Rules
+
+      - Search before writing. Update an existing note instead of adding a duplicate.
+      - One fact per file. Never keep a shared index file: syncthing conflicts on it.
+      - No secrets, tokens or .env contents. Secrets go through sops-nix.
+      - Do not store what the repo already records (code structure, git history).
+      - Convert relative dates to absolute ones.
+    '';
+  in
+    lib.hm.dag.entryAfter ["writeBoundary"] ''
+      run mkdir -p "${vault}/Manuals" "${vault}/Memory" "${vault}/Projects" "${vault}/Reference"
+      [ -e "${vault}/README.md" ] || run install -m 644 ${readme} "${vault}/README.md"
+
+      f="${config.home.homeDirectory}/.claude.json"
+      [ -s "$f" ] || echo '{}' > "$f"
+      if merged=$(${pkgs.jq}/bin/jq '.mcpServers.everything = {type: "stdio", command: "npx", args: ["-y", "@bitbonsai/mcpvault@0.16.0", "${vault}"], env: {}}' "$f" 2>/dev/null); then
+        [ -n "''${DRY_RUN:-}" ] || { printf '%s\n' "$merged" > "$f" && chmod 600 "$f"; }
+      else
+        warnEcho "~/.claude.json is not valid json, skipped registering the everything mcp server"
       fi
     '';
 
@@ -395,6 +497,8 @@ in {
   };
 
   home.file.".steam/root/compatibilitytools.d/proton-ge-custom".source = "${pkgs.proton-ge-bin}";
+  # thunderbird-mcp only looks in ~/.thunderbird; thunderbird itself keeps its profile under xdg
+  home.file.".thunderbird".source = config.lib.file.mkOutOfStoreSymlink "${config.xdg.configHome}/thunderbird";
 
   home.pointerCursor = {
     enable = true;
@@ -536,6 +640,16 @@ in {
     Install.WantedBy = [ "graphical-session.target" ];
   };
 
+  # UPeL sign-in callback for the agh mcp, it only writes ~/.config/upel/token
+  xdg.desktopEntries.upel-connector = {
+    name = "UPeL moodlemobile callback";
+    exec = "${agh-mcp}/bin/agh-mcp callback %u";
+    terminal = false;
+    type = "Application";
+    noDisplay = true;
+    mimeType = [ "x-scheme-handler/moodlemobile" ];
+  };
+
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
@@ -589,6 +703,7 @@ in {
       "application/vnd.ms-excel" = [ "libreoffice-calc.desktop" ];
       "application/vnd.openxmlformats-officedocument.presentationml.presentation" = [ "libreoffice-impress.desktop" ];
       "x-scheme-handler/lycheeslicer" = [ "Lychee Slicer.desktop" ];
+      "x-scheme-handler/moodlemobile" = [ "upel-connector.desktop" ];
     };
   };
 }
