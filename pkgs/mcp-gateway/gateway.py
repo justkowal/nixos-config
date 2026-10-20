@@ -287,13 +287,15 @@ class H(BaseHTTPRequestHandler):
                 self.reply(429, b'{"error":"too many failures"}')
                 return False
         got = self.headers.get("Authorization", "")
-        if hmac.compare_digest(got.encode(), f"Bearer {TOKEN}".encode()):
+        # the connector dialog sends the value verbatim, so tolerate "Bearer<t>" and a bare token as well; the secret is still required
+        cand = (got[6:] if got[:6].lower() == "bearer" else got).strip()
+        if hmac.compare_digest(cand.encode(), TOKEN.encode()):
             return True
         with fails_lock:
             fails[ip].append(now)
             n = len(fails[ip])
         # shape only, never the value: enough to tell a missing header from a wrong one
-        hdr = "absent" if not got else f"scheme={got.split(' ')[0][:10]} len_ok={len(got) == len(TOKEN) + 7}"
+        hdr = "absent" if not got else f"scheme={got.split(' ')[0][:10]} len_ok={len(cand) == len(TOKEN)}"
         audit(event="auth", status="failed", ip=ip, count=n, method=self.command, path=self.path.split("?")[0][:60],
               header=hdr, ua=self.headers.get("User-Agent", "")[:40], **({"alert": "repeated_auth_failure"} if n >= 3 else {}))
         self.reply(401, b'{"error":"unauthorized"}', extra={"WWW-Authenticate": "Bearer"})
