@@ -15,6 +15,7 @@ in {
       ./waybar.nix
       ./shell.nix
       ./apps.nix
+      ./claude-skills.nix
       ./theming.nix
       ./rooms.nix
       ./handoff.nix
