@@ -31,7 +31,7 @@ CACHE = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cac
 
 CSS = """
 window.dw-window { background: none; font-family: "%UI%"; }
-.dw-desk { padding: 8px 4px; }
+.dw-desk { padding: 22px 24px; background: alpha(black, 0.22); border-radius: %XL%px; }
 .dw-desk label { color: white; text-shadow: 0 1px 3px rgba(0,0,0,0.75); }
 .dw-desk .dw-dim { color: rgba(255,255,255,0.72); }
 .dw-desk progressbar trough { background: rgba(255,255,255,0.18); }

@@ -165,6 +165,8 @@ in {
       exec-once = systemctl --user start deskwidgets
       layerrule = blur 1, match:namespace ^(deskwidgets-dashboard)$
       layerrule = ignore_alpha 0.3, match:namespace ^(deskwidgets-dashboard)$
+      layerrule = blur 1, match:namespace ^(deskwidgets)$
+      layerrule = ignore_alpha 0.15, match:namespace ^(deskwidgets)$
       layerrule = no_anim 1, match:namespace ^(deskwidgets)$
     '';
   };
