@@ -5,7 +5,10 @@
   ...
 }: let
   app = pkgs.callPackage ../../pkgs/mcp-gateway {};
-  py = "${pkgs.python3}/bin/python3";
+  # the gateway python carries the postgres driver (osm) and yaml (routing feed registry)
+  pyGw = pkgs.python3.withPackages (p: [p.pg8000 p.pyyaml]);
+  py = "${pyGw}/bin/python3";
+  mapsData = "/srv/data/kowal-lab-maps";
   pyYaml = pkgs.python3.withPackages (p: [p.pyyaml]);
   host = "mcp.23012006.xyz";
   dir = "/var/lib/mcp-gateway";
@@ -55,6 +58,21 @@
       url = "http://mcp-vault:8080/mcp";
       token_env = "INTERNAL_TOKEN";
       log = ["path" "paths" "new_path" "folder"];
+    }
+    {
+      # location data: the audit log keeps tool, class and status only, never an argument value
+      name = "osm";
+      cmd = [py "/app/osm_mcp.py"];
+      env = ["NOMINATIM_URL" "NOMINATIM_PGHOST" "GRAPH_MANIFEST"];
+      log = [];
+    }
+    {
+      # the feed admin tools are writes and stay hidden until enabled by name
+      name = "routing";
+      cmd = [py "/app/routing_mcp.py"];
+      env = ["OTP_URL" "NOMINATIM_URL" "STATE_DIR" "GRAPH_MANIFEST" "FEED_CONTACT" "ROUTING_PER_MINUTE"];
+      classes = ["read"];
+      log = [];
     }
   ];
 
@@ -137,7 +155,7 @@ in {
     mcp-gateway = {
       imageFile = mkImage {
         name = "mcp-gateway";
-        paths = [pkgs.python3 pkgs.openssh];
+        paths = [pyGw pkgs.openssh];
       };
       image = "mcp-gateway:local";
       user = "65534:65534";
@@ -156,6 +174,12 @@ in {
         AGH_SYLLABUS_FACULTY = "17";
         AGH_SYLLABUS_MAJOR = "236";
         FLEET_WAKE_URL = "http://host.containers.internal:9100/hooks";
+        NOMINATIM_URL = "http://mcp-nominatim:8080";
+        NOMINATIM_PGHOST = "mcp-nominatim";
+        OTP_URL = "http://mcp-otp:8080";
+        STATE_DIR = "/state";
+        GRAPH_MANIFEST = "/maps/graph/manifest.json";
+        FEED_CONTACT = "hopkuba@gmail.com";
         FLEET_HOSTS = builtins.toJSON {
           desktop = {ip = "100.109.222.110"; wake = "wake-wol";};
           laptop = {ip = "100.69.154.81";};
@@ -163,6 +187,7 @@ in {
       };
       volumes = [
         codeMount
+        "${mapsData}/graph/current:/maps/graph:ro"
         "${dir}/policy:/policy:ro"
         "${dir}/state:/state:rw"
       ];
@@ -262,6 +287,7 @@ in {
     "d ${dir}/policy 0755 root root -"
     "f ${dir}/policy/tools.json 0644 root root - {\"disabled\":[],\"enable\":[],\"classes\":{\"garmin\":[]}}"
     "d ${dir}/state 0700 65534 65534 -"
+    "d ${dir}/state/feeds-local 0700 65534 65534 -"
     "f ${secrets} 0600 root root -"
     "d ${garminDir} 0750 root root -"
     "d ${garminDir}/tokens 0700 10001 10001 -"
