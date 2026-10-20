@@ -15,6 +15,7 @@ import threading
 import time
 import types
 import typing
+import zoneinfo
 
 import garminconnect as gc
 from garminconnect import Garmin
@@ -285,7 +286,7 @@ def enabled_reads(tools):
 
 
 def smoke(tools):
-    today = datetime.date.today().isoformat()
+    today = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Warsaw")).date().isoformat()  # the container runs in UTC
     rows = []
     for n in enabled_reads(tools):
         props = tools[n]["schema"]["properties"]
