@@ -57,6 +57,7 @@ in {
     ../../modules/dns-fallback.nix
     ../../modules/stream-host.nix
     ../../modules/offpeak-client.nix
+    ../../modules/fleet-agent.nix
     ../../modules/impermanence.nix
     ../../modules/snapshots.nix
   ];

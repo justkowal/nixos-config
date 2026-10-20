@@ -1,0 +1,10 @@
+FROM docker.io/library/python@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-deps --require-hashes --only-binary=:all: -r /tmp/requirements.txt && rm /tmp/requirements.txt
+COPY app/ /app/
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin garmin
+USER 10001
+WORKDIR /app
+ENV PYTHONPATH=/app GARMINTOKENS=/garmin/tokens
+CMD ["python", "/app/gateway.py"]

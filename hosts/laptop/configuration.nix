@@ -35,6 +35,7 @@ in {
     ../../modules/fleet-health.nix
     ../../modules/dns-fallback.nix
     ../../modules/offpeak-client.nix
+    ../../modules/fleet-agent.nix
     ../../modules/battery-schedule.nix
     ../../modules/impermanence.nix
     ../../modules/snapshots.nix

@@ -130,6 +130,8 @@ in {
     ../../modules/lab-hosts.nix
     ./ingress.nix
     ./containers.nix
+    ./mcp-gateway.nix
+    ./notes-backup.nix
     ./apps.nix
     ../../modules/monitoring.nix
     ../../modules/fleet-health.nix
