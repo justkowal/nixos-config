@@ -164,6 +164,10 @@ in {
   # Uses the upstream argononed daemon (maintained by DarkElvenAngel) via Nixpkgs'
   # native services.hardware.argonone module, enabling I2C bus and device-tree overlays.
   services.hardware.argonone.enable = true;
+  # default temp read (/dev/vcio) fails here, so the daemon sees 0°C. USE_SYSFS reads hwmon0 (cpu_thermal).
+  environment.etc."argononed.conf".text = ''
+    flags = 0x04
+  '';
 
   # ── Front-panel OLED Dashboard ─────────────────────────────────────────
   # Drives the 128×64 monochrome I2C OLED (SSD1306/SH1106) on /dev/i2c-1.
