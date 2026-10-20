@@ -15,12 +15,13 @@
   garminDir = "/var/lib/mcp-garmin";
   garminVersion = "0.3.19";
 
-  # garmin builds from a hash-pinned pip lock; the tag carries the context hash so edits rebuild it
+  # the code is mounted read-only from the store, so editing it restarts the containers without rebuilding any image.
+  # garmin builds from a hash-pinned pip lock only; the tag carries the context hash so dependency edits rebuild it
+  codeMount = "${app}/app:/app:ro";
   garminCtx = pkgs.runCommand "mcp-garmin-context" {} ''
-    mkdir -p $out/app
+    mkdir -p $out
     cp ${./../../pkgs/mcp-gateway/garmin/Containerfile} $out/Containerfile
     cp ${./../../pkgs/mcp-gateway/garmin/requirements.txt} $out/requirements.txt
-    for f in gateway stdio_mcp garmin_mcp garmin_login; do cp ${app}/app/$f.py $out/app/; done
   '';
   garminTag = "${garminVersion}-${builtins.substring 11 8 (builtins.baseNameOf garminCtx)}";
 
@@ -63,8 +64,8 @@
       tag = "local";
       copyToRoot = pkgs.buildEnv {
         name = "${name}-root";
-        paths = paths ++ [pkgs.cacert pkgs.dockerTools.fakeNss app];
-        pathsToLink = ["/bin" "/app" "/etc"];
+        paths = paths ++ [pkgs.cacert pkgs.dockerTools.fakeNss];
+        pathsToLink = ["/bin" "/etc"];
       };
       config = {
         Cmd = ["/bin/python3" "/app/gateway.py"];
@@ -161,6 +162,7 @@ in {
         };
       };
       volumes = [
+        codeMount
         "${dir}/policy:/policy:ro"
         "${dir}/state:/state:rw"
       ];
@@ -199,6 +201,7 @@ in {
         MCP_POLICY = "/policy/tools.json";
       };
       volumes = [
+        codeMount
         "${garminDir}/tokens:/garmin/tokens:rw"
         "${garminDir}/output:/output:rw"
         "${garminDir}/upload:/upload:ro"
@@ -231,7 +234,7 @@ in {
         # narrow mode: comma-separated folders, for example "ai,inbox". empty means the whole vault
         VAULT_WRITABLE = "";
       };
-      volumes = ["${vaultDir}:/vault:rw"];
+      volumes = [codeMount "${vaultDir}:/vault:rw"];
       extraOptions = ["--network=mcp-internal" healthCmd] ++ hardening "128m";
     };
   };

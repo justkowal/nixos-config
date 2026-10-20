@@ -65,12 +65,13 @@ The gateway does not start while `secrets.env` is empty, the vault does not star
 
 ```bash
 sudo podman run -it --rm --user 10001:10001 --network=mcp \
+  -v "$(sudo podman inspect mcp-garmin --format '{{range .Mounts}}{{if eq .Destination "/app"}}{{.Source}}{{end}}{{end}}'):/app:ro" \
   -v /var/lib/mcp-garmin/tokens:/garmin/tokens:rw \
-  -e GARMINTOKENS=/garmin/tokens mcp-garmin:<tag> python /app/garmin_login.py
+  -e GARMINTOKENS=/garmin/tokens "$(sudo podman inspect mcp-garmin --format '{{.ImageName}}')" python /app/garmin_login.py
 sudo systemctl restart podman-mcp-garmin
 ```
 
-`<tag>` is shown by `sudo podman images mcp-garmin`. You type the email, password and MFA code yourself. Only the token file is stored. There is no login tool over MCP.
+The code is mounted read-only from the Nix store, so the one-off container needs the same `/app` mount as the running one (the first `$(...)` finds it). You type the email, password and MFA code yourself. Only the token file is stored. There is no login tool over MCP.
 Re-authenticate with the same command when `podman healthcheck run mcp-garmin` reports "re-authentication needed".
 Revoke: delete `/var/lib/mcp-garmin/tokens/garmin_tokens.json`, then end the session in Garmin account settings.
 Smoke test (enabled read tools, one call each): `sudo podman exec mcp-garmin python /app/garmin_mcp.py smoke`. It also runs daily inside the container.
