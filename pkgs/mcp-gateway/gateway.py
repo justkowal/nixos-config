@@ -208,7 +208,8 @@ def call(name, args, ip):
         return None
     child, tool, sensitive, cls = entry
     args = dict(args or {})
-    confirmed = args.pop("confirm", False) is True
+    # only sensitive tools use the gateway's confirm flag; other tools keep whatever arguments they define
+    confirmed = (args.pop("confirm", False) is True) if sensitive else True
     summary = summarize(args, child.spec.get("log"))
     extra = {"class": cls} if cls else {}
     if sensitive and not confirmed and not PASSTHRU:

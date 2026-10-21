@@ -216,8 +216,12 @@ def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=Fals
     elif depart_at:
         when = f'dateTime:{{earliestDeparture:"{parse_dt(depart_at).isoformat()}"}}'
     modes = f"modes:{{direct:[{direct}]}}" if direct else ""
+    if direct:
+        n = 1  # a street search yields exactly one itinerary; asking for more makes OTP return none
     q = f"{{ planConnection(origin:{coord_input(a)} destination:{coord_input(b)} {when} {modes} first:{max(1, min(int(n), 3))}) {{ edges {{ node {{ start end duration numberOfTransfers {LEG} }} }} }} }}"
     edges = gql(q)["planConnection"]["edges"]
+    if not edges:
+        raise RuntimeError("no route found: the destination may lie outside the covered area (Silesia, Lesser Poland and a 10 km border), or be unreachable by this mode")
     its = [{"start": e["node"]["start"][11:16], "end": e["node"]["end"][11:16], "duration_min": round(e["node"]["duration"] / 60),
             "transfers": e["node"]["numberOfTransfers"], "distance_m": round(sum(l["distance"] for l in e["node"]["legs"])),
             "legs": [leg_out(l) for l in e["node"]["legs"]]} for e in edges]
@@ -475,9 +479,9 @@ def t_feed_add(a):
         check_url(u, tuple(ports))
     res = validate_zip(fetch_static(a.get("static", ""), tuple(ports)))
     findings = {**res, "rt_urls_checked": list(rt)}
-    if res["errors"] or a.get("confirm") is not True:
+    if res["errors"] or a.get("confirmed") is not True:
         return {"added": False, "findings": findings,
-                "next": "fix the errors" if res["errors"] else "review the findings, then call again with confirm=true"}
+                "next": "fix the errors" if res["errors"] else "review the findings, then call again with confirmed=true"}
     entry = {"id": fid, "name": a.get("name", fid), "static": a["static"], "update_check_hours": 24, "realtime": rt or None,
              "poll_seconds": max(int(a.get("poll_seconds", 30)), 30), "auth": a.get("auth"), "allow_ports": ports,
              "license": a.get("license", "unclear"), "attribution": a.get("attribution", ""), "enabled": True, "internal_adapter": False}
@@ -490,8 +494,8 @@ def t_feed_remove(a):
     feeds = load_feeds()
     if not any(f.get("id") == a.get("id") for f in feeds):
         raise RuntimeError("unknown feed id")
-    if a.get("confirm") is not True:
-        return {"removed": False, "next": "call again with confirm=true"}
+    if a.get("confirmed") is not True:
+        return {"removed": False, "next": "call again with confirmed=true"}
     save_feeds([f for f in feeds if f.get("id") != a["id"]])
     request_rebuild(f"feed {a['id']} removed")
     return {"removed": True}
@@ -531,12 +535,12 @@ TOOLS = {
     "feed_list": dict(desc="The transit feed registry (secrets are never shown).", **R, schema=obj(), fn=t_feed_list),
     "feed_validate": dict(desc="Download a candidate GTFS zip safely and report its contents. Changes nothing.", **R,
                           schema=obj({"url": {"type": "string"}, "allow_ports": {"type": "array", "items": {"type": "string"}}}, ["url"]), fn=t_feed_validate),
-    "feed_add": dict(desc="Add a feed to the registry after validating it. Needs confirm=true after you have seen the findings.", **W,
+    "feed_add": dict(desc="Add a feed to the registry after validating it. Needs confirmed=true after you have seen the findings.", **W,
                      schema=obj({"id": {"type": "string"}, "name": {"type": "string"}, "static": {"type": "string"}, "trip_updates": {"type": "string"},
                                  "vehicle_positions": {"type": "string"}, "service_alerts": {"type": "string"}, "poll_seconds": {"type": "integer"},
                                  "auth": {"type": "string", "description": "NAME of a docker secret"}, "license": {"type": "string"}, "attribution": {"type": "string"},
-                                 "allow_ports": {"type": "array", "items": {"type": "string"}}, "confirm": {"type": "boolean"}}, ["id", "static"]), fn=t_feed_add),
-    "feed_remove": dict(desc="Remove a feed from the registry.", **W, schema=obj({"id": {"type": "string"}, "confirm": {"type": "boolean"}}, ["id"]), fn=t_feed_remove),
+                                 "allow_ports": {"type": "array", "items": {"type": "string"}}, "confirmed": {"type": "boolean", "description": "true after the findings were reviewed"}}, ["id", "static"]), fn=t_feed_add),
+    "feed_remove": dict(desc="Remove a feed from the registry.", **W, schema=obj({"id": {"type": "string"}, "confirmed": {"type": "boolean", "description": "true after the findings were reviewed"}}, ["id"]), fn=t_feed_remove),
     "feed_set_enabled": dict(desc="Enable or disable a feed.", **W, schema=obj({"id": {"type": "string"}, "enabled": {"type": "boolean"}}, ["id", "enabled"]), fn=t_feed_enabled),
     "graph_rebuild_request": dict(desc="Record a request to rebuild the graph on the desktop.", **W, schema=obj({"reason": {"type": "string"}}), fn=t_rebuild),
 }
