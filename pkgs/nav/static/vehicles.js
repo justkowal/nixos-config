@@ -226,7 +226,7 @@
     const b = map.getBounds(), m = 0.25 * Math.max(b.getEast() - b.getWest(), 1e-4);
     const x0 = mercX(b.getWest() - m), x1 = mercX(b.getEast() + m), y1 = mercY(b.getSouth() - m), y0 = mercY(b.getNorth() + m);
     scene.beginFrame();
-    const live = simLive();
+    const live = simLive(), dark = scene.light.night, lights = dark > 0.12 ? Math.min(1, (dark - 0.1) / 0.5) : 0, bh = scene.batches.get("b_head")?.batch, bt = scene.batches.get("b_tail")?.batch;
     const routeOn = hi.size > 0, dotAlpha = z < Z_MESH + 0.5 ? 1 : Math.max(0, 1 - (z - (Z_MESH + 0.5)) / 1.2);
     const dotSize = z < 12 ? 7 : z < 14 ? 10 : 14, labels = z >= Z_LABEL && z < 17.6, meshes = z >= Z_MESH;
     for (const v of V.values()) {
@@ -248,8 +248,14 @@
           const cd = cars[i];
           let cx = dx, cy = dy, fx = v.hx, fy = v.hy;
           if (bend) { poseAt(sh, v.s + cd.c); cx = (pose[0] - ox) / k; cy = (oy - pose[1]) / k; fx = pose[2]; fy = pose[3]; }
+          const tx = fx, ty = fy;  // the direction of travel, before a reversed car is turned round
           if (cd.flip) { fx = -fx; fy = -fy; }
           scene.batches.get(cd.mesh).batch.push(cx, cy, fx, fy, v.liv, al, 0, tn[0], tn[1], tn[2], 255);
+          if (lights && bh) {  // headlight cones at the front of the first car, tail cones at the back of the last
+            const hl = (window.Fleet.LEN[cd.mesh] || 10) / 2;
+            if (i === cars.length - 1) bh.push(cx + tx * hl, cy + ty * hl, tx, ty, 0, Math.round(190 * lights * alpha), 0, 255, 246, 214, 255);
+            if (i === 0) bt.push(cx - tx * hl, cy - ty * hl, tx, ty, 0, Math.round(170 * lights * alpha), 0, 255, 34, 22, 255);
+          }
         }
       }
     }
@@ -257,10 +263,30 @@
       const A = roofs.anchor, ax = mercX(A.lon), ay = mercY(A.lat), rx = (ax - ox) / k, ry = (oy - ay) / k;
       for (const [hex, rgb] of roofs.meshes) scene.batches.get("roof:" + hex)?.batch.push(rx, ry, 1, 0, 0, 255, 0, rgb[0], rgb[1], rgb[2], 255);
     }
+    if (decor.items && ambient && z >= 16) {
+      const night = scene.light.night, mpp = (78271.517 * Math.cos((c.lat * Math.PI) / 180)) / Math.pow(2, z), glow = night > 0.2 ? Math.min(1, (night - 0.2) / 0.5) : 0;
+      for (const list of ["trees", "lamps", "benches", "bins", "stops"]) for (const o of decor.items[list]) {
+        if (o.mx < x0 || o.mx > x1 || o.my < y0 || o.my > y1) continue;
+        const dx = (o.mx - ox) / k, dy = (oy - o.my) / k, tinted = o.kind.startsWith("tree") || o.kind === "bin";
+        scene.batches.get("w_" + o.kind)?.batch.push(dx, dy, o.fx, o.fy, decor.liv[o.kind], 255, 0, o.tint[0], o.tint[1], o.tint[2], tinted ? 255 : 0);
+        if (glow && o.kind === "lamp") {  // a cone of light from the lamp head down to a pool on the road, plus a small halo at the lamp
+          scene.batches.get("b_lamp")?.batch.push(dx, dy, o.fx, o.fy, 0, Math.round(190 * glow), 0, 255, 188, 96, 255);
+          scene.dots.push(dx - o.fy * 1.4, dy + o.fx * 1.4, 255, 200, 120, Math.round(70 * glow), -Math.min(60, 3.2 / mpp), -1);
+        } else if (glow && o.kind === "busstop") scene.dots.push(dx, dy, 255, 200, 120, Math.round(60 * glow), -Math.min(60, 4 / mpp), -1);
+      }
+    }
     if (traffic && ambient && meshes) {
       traffic.setHour(window.Daylight ? window.Daylight.clockHour() : new Date().getHours());
       traffic.step(dt);
-      traffic.write(ox, oy, k, x0, x1, y0, y1, (type, dx, dy, fx, fy, a, tn) => scene.batches.get("car_" + type).batch.push(dx, dy, fx, fy, 0, Math.round(255 * a), 0, tn[0], tn[1], tn[2], 255));
+      const bhc = bh, btc = bt;
+      traffic.write(ox, oy, k, x0, x1, y0, y1, (type, dx, dy, fx, fy, a, tn, len) => {
+        scene.batches.get("car_" + type).batch.push(dx, dy, fx, fy, 0, Math.round(255 * a), 0, tn[0], tn[1], tn[2], 255);
+        if (lights && bhc) {
+          const hl = len / 2;
+          bhc.push(dx + fx * hl, dy + fy * hl, fx, fy, 0, Math.round(170 * lights * a), 0, 255, 246, 214, 255);
+          btc.push(dx - fx * hl, dy - fy * hl, fx, fy, 0, Math.round(150 * lights * a), 0, 255, 34, 22, 255);
+        }
+      });
     }
     scene.setFrame({ ox, oy, k, zoom: z, dpr: window.devicePixelRatio || 1 });
     window.Daylight?.apply(scene, map);
@@ -459,6 +485,16 @@
     for (const t of S3.ROAD_TYPES) meshes["car_" + t] = S3.roadVehicleMesh(t);
     const caps = { car_hatch: 512, car_sedan: 512, car_suv: 512, car_van: 256, car_truck: 192, bus12: 1024, busMid: 512, bus18F: 512, bus18R: 512, bellowsBus: 512, coach12: 128, tram105: 256, tramEnd: 512, tramMid: 512, bellowsTram: 1024, railEnd: 256, railMid: 512, icCoach: 256, loco: 128 };
     for (const [name, mesh] of Object.entries(meshes)) { scene.registerMesh(name, mesh); scene.addBatch(name, name, caps[name]); }
+    if (window.World) {
+      const caps = { tree_round: 4000, tree_cone: 2500, tree_bare: 4000, lamp: 2600, bench: 800, bin: 700, busstop: 320 };
+      const lv = { tree_round: ["#5b4636", "#3f7a3a", "#2f5d2c", "#4a8a40"], tree_cone: ["#5b4636", "#2f5d3a", "#2f5d2c", "#4a8a40"], tree_bare: ["#5b4a3c", "#5b4a3c", "#5b4a3c", "#5b4a3c"],
+        lamp: ["#3a3f45", "#3a3f45", "#3a3f45", "#3a3f45"], bench: ["#3a3d42", "#3a3d42", "#9a7650", "#8a6a45"], bin: ["#3a3d42", "#345c40", "#3a3d42", "#3a3d42"], busstop: ["#3a3f45", "#3a3f45", "#a07a50", "#6b7480"] };
+      for (const [name, make] of Object.entries(window.World.MESHES)) {
+        scene.registerMesh("w_" + name, make()); scene.addBatch("w_" + name, "w_" + name, caps[name]);
+        const l = lv[name]; decor.liv[name] = scene.palette.id({ skirt: l[0], body: l[1], stripe: l[2], roof: l[3] });
+      }
+    }
+    if (window.World) for (const [name, make] of Object.entries(window.World.BEAMS)) { scene.registerMesh("b_" + name, make()); scene.addBatch("b_" + name, "b_" + name, name === "lamp" ? 3000 : 4000, { beam: true }); }
     scene.meshZoom = Z_MESH;
   }
   // riding: the passenger's own GPS is fresher and closer than the vehicle feed (which lags by 10 to 30 s), so while aboard it is fed in as a zero-age report
@@ -476,6 +512,30 @@
     const now = Date.now() / 1000;
     ingest([{ id: v.id, lat: fix.lat, lon: fix.lon, hd: fix.heading, sp: fix.speed != null && fix.speed >= 0 ? fix.speed : null, ts: now, line: v.line, mode: v.mode, ag: v.ag, to: v.to, trip: v.trip, st: v.st, sn: v.sn }], now);
     return true;
+  }
+  // street details: trees, lamps, benches, bins and bus stops, placed on the traffic lanes and kept off buildings
+  const decor = { items: null, liv: {}, lanesAt: null };
+  const ring2local = (ring, A, kx) => ring.map(([lo, la]) => [(lo - A.lon) * kx, (la - A.lat) * 111320]);
+  function buildDecor(anchor, lanes) {
+    if (!window.World || !map.getSource("openmaptiles")) { decor.items = null; return; }
+    const kx = 111320 * Math.cos((anchor.lat * Math.PI) / 180), rings = [], parks = [], stops = [], seen = new Set();
+    const polys = (g) => (g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : []);
+    const q = (layer) => { try { return map.querySourceFeatures("openmaptiles", { sourceLayer: layer }); } catch { return []; } };
+    for (const f of q("building")) for (const p of polys(f.geometry)) { const id = p[0][0].join(",") + p[0].length; if (!seen.has(id)) { seen.add(id); rings.push(ring2local(p[0], anchor, kx)); } }
+    for (const layer of ["park", "landcover", "landuse"]) for (const f of q(layer)) {
+      const c = f.properties.class;
+      if (!(layer === "park" || (layer === "landcover" && (c === "wood" || c === "forest")) || (layer === "landuse" && (c === "park" || c === "garden" || c === "cemetery")))) continue;
+      for (const p of polys(f.geometry)) { const id = "p" + p[0][0].join(",") + p[0].length; if (!seen.has(id) && p[0].length < 400) { seen.add(id); parks.push(ring2local(p[0], anchor, kx)); } }
+    }
+    for (const f of q("poi")) { const p = f.properties; if (f.geometry.type === "Point" && (p.subclass === "bus_stop" || p.subclass === "tram_stop")) { const id = "s" + f.geometry.coordinates.join(","); if (!seen.has(id)) { seen.add(id); stops.push([(f.geometry.coordinates[0] - anchor.lon) * kx, (f.geometry.coordinates[1] - anchor.lat) * 111320]); } } }
+    let h = 0; for (const l of lanes) h = (h * 31 + l.len) | 0;  // the same streets give the same trees
+    const rnd = () => { h = (Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) + 0x9e3779b9) | 0; return ((h ^ (h >>> 13)) >>> 0) / 4294967296; };
+    const month = (window.Daylight ? window.Daylight.time() : new Date()).getMonth() + 1;
+    const res = window.World.place({ lanes, rings, parks, stops, rnd, month });
+    decor.inputs = { lanes, rings };
+    const kA = 1 / (40075016.686 * Math.cos((anchor.lat * Math.PI) / 180)), ax = mercX(anchor.lon), ay = mercY(anchor.lat);
+    for (const list of Object.values(res)) for (const o of list) { o.mx = ax + o.x * kA; o.my = ay - o.y * kA; }
+    decor.items = res; decor.month = month;
   }
   // roof shapes from OSM (roof:shape): streamed in 0.01 degree cells, built into one mesh per colour around a fixed anchor
   const roofs = { cells: new Map(), ways: new Map(), anchor: null, meshes: new Map(), busy: false, key: "" };
@@ -539,19 +599,22 @@
   let laneKey = "";
   function loadLanes() {
     if (!ambient || !map || !map.getSource("openmaptiles") || map.getZoom() < Z_MESH) return;
-    const c = map.getCenter(), key = c.lng.toFixed(3) + "," + c.lat.toFixed(3) + "," + Math.round(map.getZoom());
+    const c = map.getCenter(), STEP = 0.0025, key = Math.round(c.lng / STEP) + "," + Math.round(c.lat / STEP) + "," + Math.round(map.getZoom());  // rebuilding costs a few hundred ms, so only after a real move
     if (key === laneKey) return;
     laneKey = key;
     let feats = [];
     try { feats = map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation" }); } catch (e) { return; }
-    const b = map.getBounds(), m = 0.3 * (b.getEast() - b.getWest());
+    const b = map.getBounds(), m = 0.6 * (b.getEast() - b.getWest());
     const inside = feats.filter((f) => { const g = f.geometry, p = g.type === "LineString" ? g.coordinates[0] : g.coordinates?.[0]?.[0]; return p && p[0] > b.getWest() - m && p[0] < b.getEast() + m && p[1] > b.getSouth() - m && p[1] < b.getNorth() + m; });
     const anchor = { lon: +c.lng.toFixed(2), lat: +c.lat.toFixed(2) };
-    traffic.setLanes(window.Traffic.lanesFromFeatures(inside, anchor), anchor);
+    const lanes = window.Traffic.lanesFromFeatures(inside, anchor);
+    traffic.setLanes(lanes, anchor);
+    buildDecor(anchor, lanes);
   }
   function setAmbient(on) {
     ambient = !!on;
     refreshSched();
+    if (!ambient) decor.items = null;
     if (ambient && !traffic) traffic = new window.Traffic.Traffic();
     laneKey = "";
     if (ambient) loadLanes();
@@ -580,7 +643,7 @@
 
   window.Vehicles = {
     init, follow, followTrip, stopFollow, set3d, is3d: () => threeD, scene: () => scene,
-    rideSync, loadRoofs, roofs: () => roofs, setAmbient, ambient: () => ambient, traffic: () => traffic,
+    decor: () => decor, rideSync, loadRoofs, roofs: () => roofs, setAmbient, ambient: () => ambient, traffic: () => traffic,
     setContext: (c) => { ctx = !!c; syncVisibility(); if (shown()) refresh(); }, setForce: (f) => { force = !!f; syncVisibility(); if (shown()) refresh(); },
     highlight: (ids) => { hi = new Set(ids || []); },
     stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on: shown(), threeD, zoom: map ? +map.getZoom().toFixed(1) : null, render: scene?.stats }),

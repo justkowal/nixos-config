@@ -51,7 +51,7 @@
       ox[i] = X[i] + dy * off; oy[i] = Y[i] - dx * off;  // right-hand traffic
     }
     for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(ox[i] - ox[i - 1], oy[i] - oy[i - 1]);
-    return { key, cls, X: ox, Y: oy, cum, len: cum[n - 1], veh: [], acc: 0, seg: 0 };
+    return { key, cls, off, X: ox, Y: oy, cum, len: cum[n - 1], veh: [], acc: 0, seg: 0 };
   }
   function lanesFromFeatures(features, anchor) {
     const out = [], seen = new Set();
@@ -149,7 +149,7 @@
           if (mx < x0 || mx > x1 || my < y0 || my > y1) continue;
           const edge = Math.min(s, l.len - s), alpha = edge < 12 ? Math.max(0, edge / 12) : 1;  // fade in and out at lane ends
           if (alpha <= 0.02) continue;
-          emit(c.type, (mx - ox) / k, (oy - my) / k, ux, uy, alpha, c.tint);
+          emit(c.type, (mx - ox) / k, (oy - my) / k, ux, uy, alpha, c.tint, c.len);
         }
       }
     }

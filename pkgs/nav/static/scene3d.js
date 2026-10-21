@@ -217,18 +217,36 @@ void main() {
 precision mediump float;
 in vec3 v_col; out vec4 o;
 void main() { o = vec4(pow(v_col, vec3(1.0 / 2.2)), 1.0); }`;
+  // light cones: additive, no lighting, intensity comes from the vertex (a_part), colour and strength from the instance
+  const VS_BEAM = `#version 300 es
+precision highp float;
+uniform mat4 u_matrix;
+in vec3 a_pos; in vec3 a_nrm; in float a_part;
+in vec2 i_pos; in vec2 i_dir; in vec4 i_meta; in vec4 i_tint;
+out vec3 v_col;
+void main() {
+  vec2 f = i_dir, l = vec2(-f.y, f.x);
+  gl_Position = u_matrix * vec4(vec3(i_pos + f * a_pos.x + l * a_pos.y, a_pos.z), 1.0);
+  v_col = i_tint.rgb * (i_meta.y / 255.0) * a_part;
+}`;
+  const FS_BEAM = `#version 300 es
+precision mediump float;
+uniform float u_night;
+in vec3 v_col; out vec4 o;
+void main() { o = vec4(v_col * u_night, 1.0); }`;
   const VS_DOT = `#version 300 es
 precision highp float;
 uniform mat4 u_matrix; uniform float u_dpr;
 in vec2 i_pos; in vec4 i_col; in float i_size;
-out vec4 v_col;
-void main() { gl_Position = u_matrix * vec4(i_pos, 0.0, 1.0); gl_PointSize = i_size * u_dpr; v_col = i_col; }`;
+out vec4 v_col; out float v_soft;
+void main() { gl_Position = u_matrix * vec4(i_pos, 0.0, 1.0); gl_PointSize = abs(i_size) * u_dpr; v_col = i_col; v_soft = i_size < 0.0 ? 1.0 : 0.0; }`;
   const FS_DOT = `#version 300 es
 precision mediump float;
-in vec4 v_col; out vec4 o;
+in vec4 v_col; in float v_soft; out vec4 o;
 void main() {
   float d = length(gl_PointCoord - 0.5) * 2.0;
   if (d > 1.0) discard;
+  if (v_soft > 0.5) { float f = 1.0 - d; o = vec4(v_col.rgb, v_col.a * f * f); return; }  // a negative size is a soft glow instead of a dot
   float edge = smoothstep(1.0, 0.9, d);
   float ring = smoothstep(0.66, 0.74, d);
   o = vec4(mix(v_col.rgb, vec3(1.0), ring), v_col.a * edge);
@@ -255,6 +273,7 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
   function program(gl, vs, fs) {
     const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
     const p = gl.createProgram();
+    ["a_pos", "a_nrm", "a_part", "i_pos", "i_dir", "i_meta", "i_tint"].forEach((n, i) => gl.bindAttribLocation(p, i, n));  // the mesh and beam programs share their vertex arrays
     gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
     return p;
@@ -282,10 +301,10 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
     const S = {
       id: opts.id || "scene3d", map: null, gl: null, meshes: new Map(), batches: new Map(), palette: new Palette(), labels: new Labels(),
       frame: { ox: 0, oy: 0, k: 1, zoom: 10, dpr: 1 }, light: { sun: [0, 0, 1], sunColor: [1, 1, 1], ambient: [0.5, 0.5, 0.5], night: 0, bg: [0.9, 0.9, 0.9] },
-      dots: new DotBatch(2048), labelInst: new Float32Array(2048 * 4), labelCount: 0, showDots: true, showMeshes: true, showLabels: true, stats: { draws: 0, triangles: 0, instances: 0 },
+      dots: new DotBatch(8192), labelInst: new Float32Array(2048 * 4), labelCount: 0, showDots: true, showMeshes: true, showLabels: true, stats: { draws: 0, triangles: 0, instances: 0 },
     };
     S.registerMesh = (name, mesh) => { S.meshes.set(name, { mesh, gpu: null }); };
-    S.addBatch = (name, mesh, capacity) => { const b = new InstanceBatch(capacity); S.batches.set(name, { mesh, batch: b, gpu: null }); return b; };
+    S.addBatch = (name, mesh, capacity, opts) => { const b = new InstanceBatch(capacity); S.batches.set(name, { mesh, batch: b, gpu: null, beam: !!(opts && opts.beam) }); return b; };
     S.setFrame = (f) => Object.assign(S.frame, f);
     S.setLight = (l) => Object.assign(S.light, l);
 
@@ -319,7 +338,7 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
     };
     function initGL(gl) {
       S.gl = gl;
-      S.progMesh = program(gl, VS_MESH, FS_MESH); S.progDot = program(gl, VS_DOT, FS_DOT); S.progLabel = program(gl, VS_LABEL, FS_LABEL);
+      S.progMesh = program(gl, VS_MESH, FS_MESH); S.progDot = program(gl, VS_DOT, FS_DOT); S.progBeam = program(gl, VS_BEAM, FS_BEAM); S.uBeam = { u_matrix: gl.getUniformLocation(S.progBeam, "u_matrix"), u_night: gl.getUniformLocation(S.progBeam, "u_night") }; S.progLabel = program(gl, VS_LABEL, FS_LABEL);
       S.uMesh = Object.fromEntries(["u_matrix", "u_sun", "u_sunColor", "u_ambient", "u_night", "u_bg", "u_liv"].map((n) => [n, gl.getUniformLocation(S.progMesh, n)]));
       S.uDot = Object.fromEntries(["u_matrix", "u_dpr"].map((n) => [n, gl.getUniformLocation(S.progDot, n)]));
       S.uLabel = Object.fromEntries(["u_matrix", "u_viewport", "u_atlas", "u_cell", "u_dpr", "u_tex"].map((n) => [n, gl.getUniformLocation(S.progLabel, n)]));
@@ -373,13 +392,26 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
           gl.uniform1f(S.uMesh.u_night, L.night); gl.uniform3fv(S.uMesh.u_bg, L.bg); gl.uniform3fv(S.uMesh.u_liv, S.palette.colors);
           gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CCW);
           for (const b of S.batches.values()) {
-            if (!b.batch.count || !b.gpu) continue;
+            if (b.beam || !b.batch.count || !b.gpu) continue;
             gl.bindVertexArray(b.gpu.vao);
             gl.bindBuffer(gl.ARRAY_BUFFER, b.gpu.inst); gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.batch.view());
             gl.drawElementsInstanced(gl.TRIANGLES, b.gpu.triangles * 3, gl.UNSIGNED_SHORT, 0, b.batch.count);
             draws++; tris += b.gpu.triangles * b.batch.count; inst += b.batch.count;
           }
           gl.disable(gl.CULL_FACE);
+          if (L.night > 0.03) {  // light cones over the lit scene: additive, hidden by buildings but not hiding anything behind them
+            gl.useProgram(S.progBeam);
+            gl.uniformMatrix4fv(S.uBeam.u_matrix, false, m32); gl.uniform1f(S.uBeam.u_night, Math.min(1, L.night));
+            gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false);
+            for (const b of S.batches.values()) {
+              if (!b.beam || !b.batch.count || !b.gpu) continue;
+              gl.bindVertexArray(b.gpu.vao);
+              gl.bindBuffer(gl.ARRAY_BUFFER, b.gpu.inst); gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.batch.view());
+              gl.drawElementsInstanced(gl.TRIANGLES, b.gpu.triangles * 3, gl.UNSIGNED_SHORT, 0, b.batch.count);
+              draws++; inst += b.batch.count;
+            }
+            gl.depthMask(true); gl.disable(gl.BLEND);
+          }
         }
         if (S.showDots && S.dots.count) {
           gl.useProgram(S.progDot); gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
