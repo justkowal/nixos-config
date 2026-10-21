@@ -1,0 +1,26 @@
+{
+ "generatedAt": "2026-10-21T00:00:00Z",
+ "totalCount": 4,
+ "returnedCount": 4,
+ "page": 1,
+ "pageSize": 5000,
+ "totalPages": 1,
+ "stations": [
+  {
+   "id": 900001,
+   "name": "Kraków Główny"
+  },
+  {
+   "id": 900002,
+   "name": "Miechów"
+  },
+  {
+   "id": 900003,
+   "name": "Zawiercie"
+  },
+  {
+   "id": 900004,
+   "name": "Częstochowa"
+  }
+ ]
+}

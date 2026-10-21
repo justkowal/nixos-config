@@ -1,0 +1,37 @@
+[source]
+user_agent = "kowal-lab-maps-adapter/0.1 (personal use; contact hopkuba@gmail.com)"
+# public share token from the operator's own link, not a secret
+share_base = "https://mpk.czest.pl/public/cloud/public.php/webdav"
+share_token = "uutbhxukj2pYM6T"
+share_dir = "Dane rozkładowe"
+live_base = "https://live.mpk.czest.pl"
+
+[server]
+port = 8080
+
+[breaker]
+cooldown_s = 21600
+error_run = 5
+kill_file = "/data/KILL"
+
+# static: mpk.czest.pl share. live: live.mpk.czest.pl (REST and websocket handshakes).
+[limits.static]
+spacing_s = 5
+jitter_s = 3
+hourly_budget = 100
+
+[limits.live]
+spacing_s = 5
+jitter_s = 3
+hourly_budget = 100
+
+[static]
+refresh_interval_s = 86400
+max_bytes = 30000000
+
+[realtime]
+max_position_age_s = 300
+stale_after_s = 120
+silence_reconnect_s = 45
+discover_interval_s = 300
+vehicle_list_refresh_s = 21600

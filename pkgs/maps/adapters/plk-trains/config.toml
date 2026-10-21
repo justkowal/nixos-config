@@ -1,0 +1,81 @@
+# Everything tunable lives here. Mount over /app/config.toml to override.
+
+[api]
+base_url = "https://pdp-api.plk-sa.pl"
+api_version = "1.0"
+key_file = "/run/secrets/plk_api_key"
+user_agent = "kowal-lab-maps-adapter/0.1 (personal use; contact hopkuba@gmail.com)"
+timeout_s = 30
+
+[quota]
+# Fractions of the owner's tier that this adapter may use. The rest is the
+# reserve for static refreshes and interactive queries.
+hourly_fraction = 0.6
+daily_fraction = 0.7
+# Static refreshes may dip into the reserve, but never below this fraction left.
+static_floor_fraction = 0.1
+# Used until the first response reveals the real limits via X-RateLimit-* headers.
+assume_tier = "Basic"
+min_spacing_s = 3.0
+jitter_s = 2.0
+backoff_base_s = 30
+backoff_max_s = 1800
+error_run_limit = 5
+breaker_hours = 6
+# First Tuesday of the month 20:00-24:00 Warsaw time is PLK maintenance (terms 5.3).
+maintenance_margin_min = 15
+
+[tiers]
+Basic = { hourly = 100, daily = 1000 }
+Standard = { hourly = 500, daily = 5000 }
+Premium = { hourly = 2000, daily = 20000 }
+
+[corridor]
+# Optional carrier filter. Empty means all carriers (the pair filter already
+# narrows the result). Names are matched against /dictionaries/carriers.
+carrier_codes = []
+carrier_names = []
+
+# Stop type IDs (from /dictionaries/stop-types) that are pass-through points.
+# Stops whose stopTypeName contains "bez zatrzym" are skipped as well.
+pass_through_stop_type_ids = []
+
+# Each pair is queried in both directions with fromStations/toStations, which
+# makes the API return trains running from one group to the other, trimmed to
+# that section. Entries are exact station names (resolved once from
+# /dictionaries/stations and cached) or numeric station IDs.
+# These names are UNVERIFIED defaults: check the unresolved list in /health.
+[[corridor.pairs]]
+from = ["Kraków Główny"]
+to = ["Częstochowa", "Częstochowa Stradom"]
+
+[static]
+window_days = 31
+# Re-pull the timetable when fewer than this many days are covered.
+min_remaining_days = 7
+check_interval_hours = 6
+
+[realtime]
+poll_min_s = 30
+poll_max_s = 900
+# Warsaw local time. No operations polling in this window.
+quiet_start = "00:30"
+quiet_end = "04:00"
+full_routes = false
+page_size = 2000
+max_pages = 3
+# Snapshots older than this are not published.
+max_snapshot_age_s = 1800
+alerts_enabled = true
+alerts_interval_s = 1800
+
+[geocode]
+base_url = "http://mcp-nominatim:8080"
+min_spacing_s = 0.5
+timeout_s = 15
+
+[paths]
+data_dir = "/data"
+# Optional JSON {"<stationId>": [lat, lon]} that wins over geocoding.
+stop_overrides = "/data/stop_overrides.json"
+kill_file = "/data/KILL"

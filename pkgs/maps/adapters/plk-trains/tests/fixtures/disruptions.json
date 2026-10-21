@@ -1,0 +1,42 @@
+{
+ "_fixture": "synthetic-from-spec: invented values, shapes from PLK OpenAPI v1.1.4, not recorded",
+ "generatedAt": "2026-10-21T08:00:00Z",
+ "disruptionTypes": {
+  "utr_32": "Utrudnienie: prace torowe"
+ },
+ "stations": {
+  "900001": "Kraków Główny"
+ },
+ "disruptions": [
+  {
+   "disruptionId": 1,
+   "disruptionTypeCode": "utr_32",
+   "startStationId": 900001,
+   "endStationId": 900002,
+   "message": "Prace torowe, mozliwe opoznienia.",
+   "affectedRoutes": [
+    {
+     "scheduleId": 26,
+     "orderId": 111111,
+     "operatingDate": "2026-10-21",
+     "stationId": 900001,
+     "sequenceNumber": 1
+    }
+   ]
+  },
+  {
+   "disruptionId": 2,
+   "disruptionTypeCode": "utr_32",
+   "message": "Inna trasa.",
+   "affectedRoutes": [
+    {
+     "scheduleId": 26,
+     "orderId": 999,
+     "operatingDate": "2026-10-21",
+     "stationId": 900001,
+     "sequenceNumber": 1
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,4 @@
+route_id,agency_id,route_short_name,route_long_name,route_desc,route_type,route_url,route_color,route_text_color
+1486,1,1,KUCELIN - FIELDORFA-NILA-1,,0,,008000,F5F5F5
+687,1,80,KUKUCZKI - RAKÓW - DWORZEC PKP-80,,3,,000000,F5F5F5
+1282,1,80,RAKÓW - DWORZEC PKP - KUKUCZKI-80,,3,,000000,F5F5F5

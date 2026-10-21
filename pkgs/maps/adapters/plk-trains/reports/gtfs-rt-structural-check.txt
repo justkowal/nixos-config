@@ -1,0 +1,2 @@
+/tmp/plk-trains-scratch/samples/trip-updates.pb: 3 entities, 0 errors, 0 warnings
+/tmp/plk-trains-scratch/samples/alerts.pb: 1 entities, 0 errors, 0 warnings

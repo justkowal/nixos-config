@@ -1,0 +1,36 @@
+[trip_updates] entities=3 bytes=1979
+  PASS version 2.0
+  PASS FULL_DATASET
+  PASS header timestamp set
+  PASS unique entity ids
+  PASS tu-97634 trip_id in static
+  PASS tu-97634 route_id matches static
+  PASS tu-97634 start_date service active
+  PASS tu-97634 stop_sequence/stop_id pairs exist in static
+  PASS tu-97634 stop_sequence strictly increasing
+  PASS tu-97620 trip_id in static
+  PASS tu-97620 route_id matches static
+  PASS tu-97620 start_date service active
+  PASS tu-97620 stop_sequence/stop_id pairs exist in static
+  PASS tu-97620 stop_sequence strictly increasing
+  PASS tu-97621 trip_id in static
+  PASS tu-97621 route_id matches static
+  PASS tu-97621 start_date service active
+  PASS tu-97621 stop_sequence/stop_id pairs exist in static
+  PASS tu-97621 stop_sequence strictly increasing
+[vehicle_positions] entities=3 bytes=263
+  PASS version 2.0
+  PASS FULL_DATASET
+  PASS header timestamp set
+  PASS unique entity ids
+  PASS vp-39 trip_id in static
+  PASS vp-39 route_id matches static
+  PASS vp-39 start_date service active
+  PASS vp-77 trip_id in static
+  PASS vp-77 route_id matches static
+  PASS vp-77 start_date service active
+  PASS vp-158 trip_id in static
+  PASS vp-158 route_id matches static
+  PASS vp-158 start_date service active
+match stats: {'vehicles': 3, 'matched': 3, 'unmatched': {}}
+RESULT: OK

@@ -1,0 +1,712 @@
+{
+ "_source": "pdp-api.plk-sa.pl /swagger/v1/swagger.json, API vv1.1.4, fetched 2026-10-21, full spec sha256 620d7e48f465712c9736360d0ffc3a55ed08726ff858edbd5cae394e69c9b0df. Descriptions stripped.",
+ "schemas": {
+  "AffectedRouteDto": {
+   "additionalProperties": false,
+   "properties": {
+    "operatingDate": {
+     "format": "date",
+     "type": "string"
+    },
+    "orderId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "scheduleId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "sequenceNumber": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "stationId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "trainOrderId": {
+     "format": "int32",
+     "nullable": true,
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "CarrierDto": {
+   "additionalProperties": false,
+   "properties": {
+    "code": {
+     "nullable": true,
+     "type": "string"
+    },
+    "name": {
+     "nullable": true,
+     "type": "string"
+    },
+    "validFrom": {
+     "format": "date-time",
+     "nullable": true,
+     "type": "string"
+    },
+    "validTo": {
+     "format": "date-time",
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "CarrierUsageInfo": {
+   "additionalProperties": false,
+   "properties": {
+    "examples": {
+     "items": {
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "array"
+    }
+   },
+   "type": "object"
+  },
+  "CarriersResponse": {
+   "additionalProperties": false,
+   "properties": {
+    "carriers": {
+     "items": {
+      "$ref": "#/components/schemas/CarrierDto"
+     },
+     "nullable": true,
+     "type": "array"
+    },
+    "generatedAt": {
+     "format": "date-time",
+     "type": "string"
+    },
+    "usage": {
+     "$ref": "#/components/schemas/CarrierUsageInfo"
+    }
+   },
+   "type": "object"
+  },
+  "ConnectionDto": {
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "nullable": true,
+     "type": "string"
+    },
+    "operatingDates": {
+     "items": {
+      "format": "date",
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "array"
+    },
+    "stationId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "train1DayOffset": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "train1OrderId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "train1StationOrder": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "train2DayOffset": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "train2OrderId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "train2StationOrder": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "typeCode": {
+     "nullable": true,
+     "type": "string"
+    },
+    "typeName": {
+     "nullable": true,
+     "type": "string"
+    },
+    "wagonNumbers": {
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "DataVersionResponse": {
+   "additionalProperties": false,
+   "properties": {
+    "dataVersion": {
+     "format": "uuid",
+     "nullable": true,
+     "type": "string"
+    },
+    "operationsVersion": {
+     "format": "uuid",
+     "nullable": true,
+     "type": "string"
+    },
+    "schedulesVersion": {
+     "format": "uuid",
+     "nullable": true,
+     "type": "string"
+    },
+    "timestamp": {
+     "format": "date-time",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "DatePeriodDto": {
+   "additionalProperties": false,
+   "properties": {
+    "from": {
+     "format": "date-time",
+     "nullable": true,
+     "type": "string"
+    },
+    "to": {
+     "format": "date-time",
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "DictionariesDto": {
+   "additionalProperties": false,
+   "properties": {
+    "carriers": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "object"
+    },
+    "commercialCategories": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "object"
+    },
+    "connectionTypes": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "object"
+    },
+    "services": {
+     "additionalProperties": {
+      "$ref": "#/components/schemas/ServiceDictionaryDto"
+     },
+     "nullable": true,
+     "type": "object"
+    },
+    "stations": {
+     "additionalProperties": {
+      "$ref": "#/components/schemas/StationDictionaryDto"
+     },
+     "nullable": true,
+     "type": "object"
+    },
+    "stopTypes": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "object"
+    }
+   },
+   "type": "object"
+  },
+  "DisruptionDto": {
+   "additionalProperties": false,
+   "properties": {
+    "affectedRoutes": {
+     "items": {
+      "$ref": "#/components/schemas/AffectedRouteDto"
+     },
+     "nullable": true,
+     "type": "array"
+    },
+    "disruptionId": {
+     "format": "int64",
+     "type": "integer"
+    },
+    "disruptionTypeCode": {
+     "nullable": true,
+     "type": "string"
+    },
+    "endStationId": {
+     "format": "int32",
+     "nullable": true,
+     "type": "integer"
+    },
+    "message": {
+     "nullable": true,
+     "type": "string"
+    },
+    "startStationId": {
+     "format": "int32",
+     "nullable": true,
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "DisruptionResponseDto": {
+   "additionalProperties": false,
+   "properties": {
+    "disruptionTypes": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "object"
+    },
+    "disruptions": {
+     "items": {
+      "$ref": "#/components/schemas/DisruptionDto"
+     },
+     "nullable": true,
+     "type": "array"
+    },
+    "generatedAt": {
+     "format": "date-time",
+     "type": "string"
+    },
+    "stations": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "object"
+    }
+   },
+   "type": "object"
+  },
+  "OperationResponseDto": {
+   "additionalProperties": false,
+   "properties": {
+    "generatedAt": {
+     "format": "date-time",
+     "type": "string"
+    },
+    "pagination": {
+     "$ref": "#/components/schemas/PaginationInfoDto"
+    },
+    "stations": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "object"
+    },
+    "trains": {
+     "items": {
+      "$ref": "#/components/schemas/TrainOperationDto"
+     },
+     "nullable": true,
+     "type": "array"
+    }
+   },
+   "type": "object"
+  },
+  "OperationStationDto": {
+   "additionalProperties": false,
+   "properties": {
+    "actualArrival": {
+     "format": "date-time",
+     "nullable": true,
+     "type": "string"
+    },
+    "actualDeparture": {
+     "format": "date-time",
+     "nullable": true,
+     "type": "string"
+    },
+    "actualSequenceNumber": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "arrivalDelayMinutes": {
+     "format": "int32",
+     "nullable": true,
+     "type": "integer"
+    },
+    "departureDelayMinutes": {
+     "format": "int32",
+     "nullable": true,
+     "type": "integer"
+    },
+    "isCancelled": {
+     "type": "boolean"
+    },
+    "isConfirmed": {
+     "type": "boolean"
+    },
+    "plannedArrival": {
+     "format": "date-time",
+     "nullable": true,
+     "type": "string"
+    },
+    "plannedArrivalTime": {
+     "format": "duration",
+     "nullable": true,
+     "type": "string"
+    },
+    "plannedDeparture": {
+     "format": "date-time",
+     "nullable": true,
+     "type": "string"
+    },
+    "plannedDepartureTime": {
+     "format": "duration",
+     "nullable": true,
+     "type": "string"
+    },
+    "plannedSequenceNumber": {
+     "format": "int32",
+     "nullable": true,
+     "type": "integer"
+    },
+    "stationId": {
+     "format": "int32",
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "PaginationInfoDto": {
+   "additionalProperties": false,
+   "properties": {
+    "hasNextPage": {
+     "type": "boolean"
+    },
+    "hasPreviousPage": {
+     "type": "boolean"
+    },
+    "page": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "pageSize": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "totalCount": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "totalPages": {
+     "format": "int32",
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "RouteDto": {
+   "additionalProperties": false,
+   "properties": {
+    "carrierCode": {
+     "nullable": true,
+     "type": "string"
+    },
+    "commercialCategorySymbol": {
+     "nullable": true,
+     "type": "string"
+    },
+    "connections": {
+     "items": {
+      "$ref": "#/components/schemas/ConnectionDto"
+     },
+     "nullable": true,
+     "type": "array"
+    },
+    "internationalArrivalNumber": {
+     "nullable": true,
+     "type": "string"
+    },
+    "internationalDepartureNumber": {
+     "nullable": true,
+     "type": "string"
+    },
+    "name": {
+     "nullable": true,
+     "type": "string"
+    },
+    "nationalNumber": {
+     "nullable": true,
+     "type": "string"
+    },
+    "operatingDates": {
+     "items": {
+      "format": "date",
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "array"
+    },
+    "orderId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "scheduleId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "stations": {
+     "items": {
+      "$ref": "#/components/schemas/StationOnRouteDto"
+     },
+     "nullable": true,
+     "type": "array"
+    },
+    "trainOrderId": {
+     "format": "int32",
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "ScheduleResponseDto": {
+   "additionalProperties": false,
+   "properties": {
+    "dictionaries": {
+     "$ref": "#/components/schemas/DictionariesDto"
+    },
+    "generatedAt": {
+     "format": "date-time",
+     "type": "string"
+    },
+    "period": {
+     "$ref": "#/components/schemas/DatePeriodDto"
+    },
+    "routes": {
+     "items": {
+      "$ref": "#/components/schemas/RouteDto"
+     },
+     "nullable": true,
+     "type": "array"
+    }
+   },
+   "type": "object"
+  },
+  "ServiceDictionaryDto": {
+   "additionalProperties": false,
+   "properties": {
+    "code": {
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "StationDictionaryDto": {
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "name": {
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "StationDto": {
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "name": {
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "StationOnRouteDto": {
+   "additionalProperties": false,
+   "properties": {
+    "arrivalCommercialCategory": {
+     "nullable": true,
+     "type": "string"
+    },
+    "arrivalDay": {
+     "format": "int32",
+     "nullable": true,
+     "type": "integer"
+    },
+    "arrivalPlatform": {
+     "nullable": true,
+     "type": "string"
+    },
+    "arrivalTime": {
+     "format": "duration",
+     "nullable": true,
+     "type": "string"
+    },
+    "arrivalTrack": {
+     "nullable": true,
+     "type": "string"
+    },
+    "arrivalTrainNumber": {
+     "nullable": true,
+     "type": "string"
+    },
+    "departureCommercialCategory": {
+     "nullable": true,
+     "type": "string"
+    },
+    "departureDay": {
+     "format": "int32",
+     "nullable": true,
+     "type": "integer"
+    },
+    "departurePlatform": {
+     "nullable": true,
+     "type": "string"
+    },
+    "departureTime": {
+     "format": "duration",
+     "nullable": true,
+     "type": "string"
+    },
+    "departureTrack": {
+     "nullable": true,
+     "type": "string"
+    },
+    "departureTrainNumber": {
+     "nullable": true,
+     "type": "string"
+    },
+    "orderNumber": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "stationId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "stopTypeId": {
+     "format": "int32",
+     "nullable": true,
+     "type": "integer"
+    },
+    "stopTypeName": {
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "StationUsageInfo": {
+   "additionalProperties": false,
+   "properties": {
+    "examples": {
+     "items": {
+      "type": "string"
+     },
+     "nullable": true,
+     "type": "array"
+    }
+   },
+   "type": "object"
+  },
+  "StationsResponse": {
+   "additionalProperties": false,
+   "properties": {
+    "generatedAt": {
+     "format": "date-time",
+     "type": "string"
+    },
+    "page": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "pageSize": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "returnedCount": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "stations": {
+     "items": {
+      "$ref": "#/components/schemas/StationDto"
+     },
+     "nullable": true,
+     "type": "array"
+    },
+    "totalCount": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "totalPages": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "usage": {
+     "$ref": "#/components/schemas/StationUsageInfo"
+    }
+   },
+   "type": "object"
+  },
+  "TrainOperationDto": {
+   "additionalProperties": false,
+   "properties": {
+    "operatingDate": {
+     "format": "date",
+     "type": "string"
+    },
+    "orderId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "scheduleId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "stations": {
+     "items": {
+      "$ref": "#/components/schemas/OperationStationDto"
+     },
+     "nullable": true,
+     "type": "array"
+    },
+    "trainOrderId": {
+     "format": "int32",
+     "type": "integer"
+    },
+    "trainStatus": {
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "type": "object"
+  }
+ }
+}

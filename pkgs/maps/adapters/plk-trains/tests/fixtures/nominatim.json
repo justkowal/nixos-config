@@ -1,0 +1,40 @@
+{
+ "Kraków Główny": [
+  {
+   "category": "building",
+   "type": "yes",
+   "lat": "50.0",
+   "lon": "19.0"
+  },
+  {
+   "category": "railway",
+   "type": "station",
+   "lat": "50.0679",
+   "lon": "19.9477"
+  }
+ ],
+ "Miechów": [
+  {
+   "category": "railway",
+   "type": "station",
+   "lat": "50.3578",
+   "lon": "20.0289"
+  }
+ ],
+ "Zawiercie": [
+  {
+   "category": "railway",
+   "type": "station",
+   "lat": "50.4903",
+   "lon": "19.4126"
+  }
+ ],
+ "Częstochowa": [
+  {
+   "category": "railway",
+   "type": "station",
+   "lat": "50.8118",
+   "lon": "19.1203"
+  }
+ ]
+}

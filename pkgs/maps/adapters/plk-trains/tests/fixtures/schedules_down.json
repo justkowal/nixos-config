@@ -1,0 +1,284 @@
+{
+ "_fixture": "synthetic-from-spec: invented values, shapes from PLK OpenAPI v1.1.4, not recorded",
+ "generatedAt": "2026-10-21T00:30:00Z",
+ "period": {
+  "from": "2026-10-21T00:00:00",
+  "to": "2026-11-20T00:00:00"
+ },
+ "routes": [
+  {
+   "scheduleId": 26,
+   "orderId": 111111,
+   "name": "REYMONT",
+   "carrierCode": "IC",
+   "nationalNumber": "5310",
+   "commercialCategorySymbol": "IC",
+   "operatingDates": [
+    "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23",
+    "2026-10-24",
+    "2026-10-25",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-29",
+    "2026-10-30",
+    "2026-10-31",
+    "2026-11-01",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+    "2026-11-17",
+    "2026-11-18",
+    "2026-11-19",
+    "2026-11-20"
+   ],
+   "stations": [
+    {
+     "stationId": 900001,
+     "orderNumber": 1,
+     "arrivalTime": null,
+     "arrivalDay": null,
+     "departureTime": "08:00:00",
+     "departureDay": 0,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    },
+    {
+     "stationId": 900002,
+     "orderNumber": 2,
+     "arrivalTime": "08:35:00",
+     "arrivalDay": 0,
+     "departureTime": "08:36:00",
+     "departureDay": 0,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    },
+    {
+     "stationId": 900003,
+     "orderNumber": 3,
+     "arrivalTime": "09:15:00",
+     "arrivalDay": 0,
+     "departureTime": "09:16:00",
+     "departureDay": 0,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    },
+    {
+     "stationId": 900004,
+     "orderNumber": 4,
+     "arrivalTime": "09:50:00",
+     "arrivalDay": 0,
+     "departureTime": null,
+     "departureDay": null,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    }
+   ],
+   "connections": []
+  },
+  {
+   "scheduleId": 26,
+   "orderId": 222222,
+   "name": null,
+   "carrierCode": "KS",
+   "nationalNumber": "90123",
+   "commercialCategorySymbol": "R",
+   "operatingDates": [
+    "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23",
+    "2026-10-24",
+    "2026-10-25",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-29",
+    "2026-10-30",
+    "2026-10-31",
+    "2026-11-01",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+    "2026-11-17",
+    "2026-11-18",
+    "2026-11-19",
+    "2026-11-20"
+   ],
+   "stations": [
+    {
+     "stationId": 900001,
+     "orderNumber": 1,
+     "arrivalTime": null,
+     "arrivalDay": null,
+     "departureTime": "22:40:00",
+     "departureDay": 0,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    },
+    {
+     "stationId": 900002,
+     "orderNumber": 2,
+     "arrivalTime": "23:20:00",
+     "arrivalDay": 0,
+     "departureTime": "23:21:00",
+     "departureDay": 0,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    },
+    {
+     "stationId": 900003,
+     "orderNumber": 3,
+     "arrivalTime": "00:10:00",
+     "arrivalDay": 1,
+     "departureTime": "00:11:00",
+     "departureDay": 1,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    },
+    {
+     "stationId": 900004,
+     "orderNumber": 4,
+     "arrivalTime": "00:45:00",
+     "arrivalDay": 1,
+     "departureTime": null,
+     "departureDay": null,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    }
+   ],
+   "connections": []
+  },
+  {
+   "scheduleId": 26,
+   "orderId": 333333,
+   "name": null,
+   "carrierCode": "KS",
+   "nationalNumber": "90125",
+   "commercialCategorySymbol": "R",
+   "operatingDates": [
+    "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23",
+    "2026-10-24",
+    "2026-10-25",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-29",
+    "2026-10-30",
+    "2026-10-31",
+    "2026-11-01",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+    "2026-11-17",
+    "2026-11-18",
+    "2026-11-19",
+    "2026-11-20"
+   ],
+   "stations": [
+    {
+     "stationId": 900001,
+     "orderNumber": 1,
+     "arrivalTime": null,
+     "arrivalDay": null,
+     "departureTime": "12:00:00",
+     "departureDay": 0,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    },
+    {
+     "stationId": 900002,
+     "orderNumber": 2,
+     "arrivalTime": "12:30:00",
+     "arrivalDay": 0,
+     "departureTime": "12:31:00",
+     "departureDay": 0,
+     "stopTypeId": 9,
+     "stopTypeName": "Przejazd bez zatrzymania"
+    },
+    {
+     "stationId": 900004,
+     "orderNumber": 3,
+     "arrivalTime": "13:40:00",
+     "arrivalDay": 0,
+     "departureTime": null,
+     "departureDay": null,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    }
+   ],
+   "connections": [],
+   "trainOrderId": 333334
+  }
+ ],
+ "dictionaries": {
+  "stations": {
+   "900001": {
+    "id": 900001,
+    "name": "Kraków Główny"
+   },
+   "900002": {
+    "id": 900002,
+    "name": "Miechów"
+   },
+   "900003": {
+    "id": 900003,
+    "name": "Zawiercie"
+   },
+   "900004": {
+    "id": 900004,
+    "name": "Częstochowa"
+   }
+  },
+  "services": {},
+  "connectionTypes": {},
+  "commercialCategories": {},
+  "stopTypes": {},
+  "carriers": {
+   "IC": "PKP Intercity S.A.",
+   "KS": "Koleje Slaskie sp. z o.o."
+  }
+ }
+}

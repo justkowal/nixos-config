@@ -1,0 +1,37 @@
+[
+ {
+  "regNo": "SC 5001M",
+  "sideNo": "1",
+  "vehicleID": "f0f91905-8ea2-469b-8ae1-14b575b4fdfa"
+ },
+ {
+  "regNo": "SC 5002M",
+  "sideNo": "2",
+  "vehicleID": "f96b5dd6-1b48-4c2e-9cb0-18505e1e71d3"
+ },
+ {
+  "regNo": "SC 5003M",
+  "sideNo": "3",
+  "vehicleID": "27c97d1f-86b8-4bec-b9b4-92a399fe88be"
+ },
+ {
+  "regNo": "SC 5004M",
+  "sideNo": "4",
+  "vehicleID": "c7163864-028e-45d2-96f6-7a565ace0847"
+ },
+ {
+  "regNo": "SC 2539S",
+  "sideNo": "39",
+  "vehicleID": "725a1f1e-206e-4511-94b3-54abe8b68fed"
+ },
+ {
+  "regNo": "SC 2577S",
+  "sideNo": "77",
+  "vehicleID": "96fec712-7d5f-4812-b374-985da53ef3d8"
+ },
+ {
+  "regNo": "SC 2458V",
+  "sideNo": "158",
+  "vehicleID": "361b22be-797d-442d-962a-7dca09932f54"
+ }
+]

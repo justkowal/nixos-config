@@ -1,0 +1,1156 @@
+{
+ "received_at": 1792543009.7498317,
+ "vehicles": [
+  {
+   "vehicleID": "725a1f1e-206e-4511-94b3-54abe8b68fed",
+   "currentRun": {
+    "day": "2026-10-19T22:00:00.000Z",
+    "direction": null,
+    "name": "80-01 [S]/5/5",
+    "lineID": "afc38a38-e1ce-439f-b198-477009bdd505",
+    "runID": "f52cf922-17dd-44ef-9700-4ef2702a559b",
+    "foreignID": "97634",
+    "start": "2026-10-21T00:08:00.000Z",
+    "vehicleID": "725a1f1e-206e-4511-94b3-54abe8b68fed",
+    "end": "2026-10-21T00:45:00.000Z",
+    "runStops": [
+     {
+      "distance": null,
+      "extraInfo": null,
+      "locationID": "f416cd5e-8f54-4cec-9ac2-c463331e83f1",
+      "stopOrder": null,
+      "time": "2026-10-21T00:08:00.000Z",
+      "arrivalTime": "2026-10-21T00:08:12.000Z",
+      "departureTime": "2026-10-21T00:08:53.000Z"
+     },
+     {
+      "distance": 470,
+      "extraInfo": null,
+      "locationID": "ccee4d8d-2499-44a5-9c17-1ae9bc13cede",
+      "stopOrder": 1,
+      "time": "2026-10-21T00:09:00.000Z",
+      "arrivalTime": "2026-10-21T00:10:13.000Z",
+      "departureTime": "2026-10-21T00:10:13.000Z"
+     },
+     {
+      "distance": 565,
+      "extraInfo": null,
+      "locationID": "056dbbc8-2394-44a4-a14c-31c2d3a2d7e9",
+      "stopOrder": 2,
+      "time": "2026-10-21T00:10:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 330,
+      "extraInfo": null,
+      "locationID": "0b81636d-fd66-4c9d-805e-1fee9ec8b451",
+      "stopOrder": 3,
+      "time": "2026-10-21T00:11:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 417,
+      "extraInfo": null,
+      "locationID": "f8329977-b3a1-413b-8abd-2e7d4cac9a07",
+      "stopOrder": 4,
+      "time": "2026-10-21T00:12:00.000Z",
+      "arrivalTime": "2026-10-21T00:12:34.000Z",
+      "departureTime": "2026-10-21T00:12:34.000Z"
+     },
+     {
+      "distance": 620,
+      "extraInfo": null,
+      "locationID": "b9c5af68-bea4-432e-bb4d-d2c0e6aaaca9",
+      "stopOrder": 5,
+      "time": "2026-10-21T00:13:00.000Z",
+      "arrivalTime": "2026-10-21T00:13:34.000Z",
+      "departureTime": "2026-10-21T00:13:34.000Z"
+     },
+     {
+      "distance": 138,
+      "extraInfo": null,
+      "locationID": "00137bbc-9ab4-4e94-868a-084189d2dac9",
+      "stopOrder": 6,
+      "time": "2026-10-21T00:14:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 304,
+      "extraInfo": null,
+      "locationID": "36f752d4-2377-4549-8c7c-2cdee76425ca",
+      "stopOrder": 7,
+      "time": "2026-10-21T00:15:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 303,
+      "extraInfo": null,
+      "locationID": "7e618420-09b4-4987-8a78-87d476f8d6d8",
+      "stopOrder": 8,
+      "time": "2026-10-21T00:16:00.000Z",
+      "arrivalTime": "2026-10-21T00:14:44.000Z",
+      "departureTime": "2026-10-21T00:14:44.000Z"
+     },
+     {
+      "distance": 596,
+      "extraInfo": null,
+      "locationID": "57e2f957-5d58-4531-bc4b-db19e9426360",
+      "stopOrder": 9,
+      "time": "2026-10-21T00:17:00.000Z",
+      "arrivalTime": "2026-10-21T00:15:55.000Z",
+      "departureTime": "2026-10-21T00:15:55.000Z"
+     },
+     {
+      "distance": 404,
+      "extraInfo": null,
+      "locationID": "e17c9d4f-eeb2-4eab-8eb8-af1bedb926f4",
+      "stopOrder": 10,
+      "time": "2026-10-21T00:18:00.000Z",
+      "arrivalTime": "2026-10-21T00:16:46.000Z",
+      "departureTime": "2026-10-21T00:16:46.000Z"
+     },
+     {
+      "distance": 388,
+      "extraInfo": null,
+      "locationID": "f5a23be5-f63f-43ac-8f01-523458149422",
+      "stopOrder": 11,
+      "time": "2026-10-21T00:19:00.000Z",
+      "arrivalTime": "2026-10-21T00:17:27.000Z",
+      "departureTime": "2026-10-21T00:17:37.000Z"
+     },
+     {
+      "distance": 575,
+      "extraInfo": null,
+      "locationID": "65e6b264-8830-4792-b6a3-ca71dcba8272",
+      "stopOrder": 12,
+      "time": "2026-10-21T00:20:00.000Z",
+      "arrivalTime": "2026-10-21T00:18:58.000Z",
+      "departureTime": "2026-10-21T00:18:58.000Z"
+     },
+     {
+      "distance": 450,
+      "extraInfo": null,
+      "locationID": "68ce3ac2-4493-419b-a6be-db458fbcbd9a",
+      "stopOrder": 13,
+      "time": "2026-10-21T00:21:00.000Z",
+      "arrivalTime": "2026-10-21T00:19:49.000Z",
+      "departureTime": "2026-10-21T00:19:49.000Z"
+     },
+     {
+      "distance": 262,
+      "extraInfo": null,
+      "locationID": "23b25ddc-09d6-44d6-bf7d-a06cc354a891",
+      "stopOrder": 14,
+      "time": "2026-10-21T00:22:00.000Z",
+      "arrivalTime": "2026-10-21T00:20:29.000Z",
+      "departureTime": "2026-10-21T00:20:29.000Z"
+     },
+     {
+      "distance": 238,
+      "extraInfo": null,
+      "locationID": "48cb3ffa-44e3-43ed-8665-859f0b53ea34",
+      "stopOrder": 15,
+      "time": "2026-10-21T00:23:00.000Z",
+      "arrivalTime": "2026-10-21T00:21:39.000Z",
+      "departureTime": "2026-10-21T00:21:59.000Z"
+     },
+     {
+      "distance": 353,
+      "extraInfo": null,
+      "locationID": "ff9f08e0-91ec-42e3-9278-1a2820695273",
+      "stopOrder": 16,
+      "time": "2026-10-21T00:24:00.000Z",
+      "arrivalTime": "2026-10-21T00:22:39.000Z",
+      "departureTime": "2026-10-21T00:22:39.000Z"
+     },
+     {
+      "distance": 478,
+      "extraInfo": null,
+      "locationID": "b9dc2423-54e5-49cb-bd0c-52039c8a4b99",
+      "stopOrder": 17,
+      "time": "2026-10-21T00:25:00.000Z",
+      "arrivalTime": "2026-10-21T00:23:41.000Z",
+      "departureTime": "2026-10-21T00:23:41.000Z"
+     },
+     {
+      "distance": 571,
+      "extraInfo": null,
+      "locationID": "f421ae83-1d4b-4e4f-a500-8d50d0aee13e",
+      "stopOrder": 18,
+      "time": "2026-10-21T00:26:00.000Z",
+      "arrivalTime": "2026-10-21T00:25:11.000Z",
+      "departureTime": "2026-10-21T00:25:11.000Z"
+     },
+     {
+      "distance": 1102,
+      "extraInfo": null,
+      "locationID": "ec7361ff-b601-4091-b324-25e238af88d0",
+      "stopOrder": 19,
+      "time": "2026-10-21T00:28:00.000Z",
+      "arrivalTime": "2026-10-21T00:27:13.000Z",
+      "departureTime": "2026-10-21T00:27:35.000Z"
+     },
+     {
+      "distance": 477,
+      "extraInfo": null,
+      "locationID": "bbbb6b89-6362-4639-8336-3ce8d951fbfd",
+      "stopOrder": 20,
+      "time": "2026-10-21T00:29:00.000Z",
+      "arrivalTime": "2026-10-21T00:28:25.000Z",
+      "departureTime": "2026-10-21T00:28:45.000Z"
+     },
+     {
+      "distance": 795,
+      "extraInfo": null,
+      "locationID": "99a343a3-e729-4f8c-b621-b25fed7a9b1b",
+      "stopOrder": 21,
+      "time": "2026-10-21T00:30:00.000Z",
+      "arrivalTime": "2026-10-21T00:29:55.000Z",
+      "departureTime": "2026-10-21T00:30:15.000Z"
+     },
+     {
+      "distance": 552,
+      "extraInfo": null,
+      "locationID": "800ead01-2de4-4c3b-a945-8b6121d45ab7",
+      "stopOrder": 22,
+      "time": "2026-10-21T00:31:00.000Z",
+      "arrivalTime": "2026-10-21T00:31:45.000Z",
+      "departureTime": "2026-10-21T00:31:45.000Z"
+     },
+     {
+      "distance": 471,
+      "extraInfo": null,
+      "locationID": "0baf592e-9171-4d5c-9d18-7256a0773bac",
+      "stopOrder": 23,
+      "time": "2026-10-21T00:32:00.000Z",
+      "arrivalTime": "2026-10-21T00:32:45.000Z",
+      "departureTime": "2026-10-21T00:33:05.000Z"
+     },
+     {
+      "distance": 458,
+      "extraInfo": null,
+      "locationID": "5773d5db-6242-4d61-a050-997ef257b726",
+      "stopOrder": 24,
+      "time": "2026-10-21T00:33:00.000Z",
+      "arrivalTime": "2026-10-21T00:33:46.000Z",
+      "departureTime": "2026-10-21T00:34:07.000Z"
+     },
+     {
+      "distance": 435,
+      "extraInfo": null,
+      "locationID": "b4bde061-de39-42ea-b7fa-e4561d449c20",
+      "stopOrder": 25,
+      "time": "2026-10-21T00:34:00.000Z",
+      "arrivalTime": "2026-10-21T00:34:47.000Z",
+      "departureTime": "2026-10-21T00:34:47.000Z"
+     },
+     {
+      "distance": 432,
+      "extraInfo": null,
+      "locationID": "9bc01a3f-0f3b-4ea6-b576-bf26f2b19153",
+      "stopOrder": 26,
+      "time": "2026-10-21T00:35:00.000Z",
+      "arrivalTime": "2026-10-21T00:35:37.000Z",
+      "departureTime": "2026-10-21T00:35:37.000Z"
+     },
+     {
+      "distance": 506,
+      "extraInfo": null,
+      "locationID": "e42ba424-42df-4da1-b52b-b0e0cdf89e0c",
+      "stopOrder": 27,
+      "time": "2026-10-21T00:36:00.000Z",
+      "arrivalTime": "2026-10-21T00:36:27.000Z",
+      "departureTime": "2026-10-21T00:36:37.000Z"
+     },
+     {
+      "distance": 458,
+      "extraInfo": null,
+      "locationID": "3d9ae837-c2dc-4e8c-9989-c9ab28c3f493",
+      "stopOrder": 28,
+      "time": "2026-10-21T00:37:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 460,
+      "extraInfo": null,
+      "locationID": "7e30d6e5-9802-4a65-96f7-522415f8558f",
+      "stopOrder": 29,
+      "time": "2026-10-21T00:38:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 423,
+      "extraInfo": null,
+      "locationID": "fb2bc2b6-2a13-4cd7-a993-c6d21735fefa",
+      "stopOrder": 30,
+      "time": "2026-10-21T00:39:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 301,
+      "extraInfo": null,
+      "locationID": "ec2f1d35-d4b6-42bb-86a6-f3264cb1c150",
+      "stopOrder": 31,
+      "time": "2026-10-21T00:40:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 386,
+      "extraInfo": null,
+      "locationID": "0539eed2-dd5e-4dde-9659-94a15512379f",
+      "stopOrder": 32,
+      "time": "2026-10-21T00:41:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 556,
+      "extraInfo": null,
+      "locationID": "6d87fb8a-5b3c-409b-97ec-3a8f9952c59c",
+      "stopOrder": 33,
+      "time": "2026-10-21T00:42:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 304,
+      "extraInfo": null,
+      "locationID": "71205b0a-70ad-4c47-92a7-fb2e5fe6cbf0",
+      "stopOrder": 34,
+      "time": "2026-10-21T00:43:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 721,
+      "extraInfo": null,
+      "locationID": "3483856e-e80d-4ec6-b61c-2f8cfe39467e",
+      "stopOrder": 35,
+      "time": "2026-10-21T00:45:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     }
+    ]
+   },
+   "delayMinutes": -0.6166666666666667,
+   "runID": "f52cf922-17dd-44ef-9700-4ef2702a559b",
+   "delaySeconds": -37,
+   "lastPosition": {
+    "dateTime": "2026-10-21T00:36:37.000Z",
+    "longitude": 19.12190055847168,
+    "latitude": 50.836490631103516,
+    "lineNo": "80",
+    "direction": "KUKUCZKI",
+    "taborNo": 39
+   }
+  },
+  {
+   "vehicleID": "96fec712-7d5f-4812-b374-985da53ef3d8",
+   "currentRun": {
+    "day": "2026-10-19T22:00:00.000Z",
+    "direction": true,
+    "name": "80-03 [S]/5/5",
+    "lineID": "afc38a38-e1ce-439f-b198-477009bdd505",
+    "runID": "1f9b4109-7357-4510-8377-5dc6c07ff6a5",
+    "foreignID": "97620",
+    "start": "2026-10-21T00:17:00.000Z",
+    "vehicleID": "96fec712-7d5f-4812-b374-985da53ef3d8",
+    "end": "2026-10-21T00:50:00.000Z",
+    "runStops": [
+     {
+      "distance": null,
+      "extraInfo": null,
+      "locationID": "e24600ca-27fa-47ce-900f-617f2aa97de8",
+      "stopOrder": null,
+      "time": "2026-10-21T00:17:00.000Z",
+      "arrivalTime": "2026-10-21T00:17:06.000Z",
+      "departureTime": "2026-10-21T00:18:57.000Z"
+     },
+     {
+      "distance": 429,
+      "extraInfo": null,
+      "locationID": "50295e4f-fd48-41f8-914c-4150be788606",
+      "stopOrder": 1,
+      "time": "2026-10-21T00:18:00.000Z",
+      "arrivalTime": "2026-10-21T00:19:59.000Z",
+      "departureTime": "2026-10-21T00:19:59.000Z"
+     },
+     {
+      "distance": 563,
+      "extraInfo": null,
+      "locationID": "120fba6c-490c-4cfe-a4ae-d1f2c6d990ac",
+      "stopOrder": 2,
+      "time": "2026-10-21T00:19:00.000Z",
+      "arrivalTime": "2026-10-21T00:21:19.000Z",
+      "departureTime": "2026-10-21T00:21:19.000Z"
+     },
+     {
+      "distance": 467,
+      "extraInfo": null,
+      "locationID": "5c7c322c-9721-4aa0-acad-04177b78e2e4",
+      "stopOrder": 3,
+      "time": "2026-10-21T00:20:00.000Z",
+      "arrivalTime": "2026-10-21T00:22:19.000Z",
+      "departureTime": "2026-10-21T00:22:19.000Z"
+     },
+     {
+      "distance": 419,
+      "extraInfo": null,
+      "locationID": "2289c184-ac50-4a50-889d-2b4b0634b3fd",
+      "stopOrder": 4,
+      "time": "2026-10-21T00:21:00.000Z",
+      "arrivalTime": "2026-10-21T00:23:10.000Z",
+      "departureTime": "2026-10-21T00:23:10.000Z"
+     },
+     {
+      "distance": 315,
+      "extraInfo": null,
+      "locationID": "9b87faba-1f81-4b13-9e44-ac09c640afa4",
+      "stopOrder": 5,
+      "time": "2026-10-21T00:22:00.000Z",
+      "arrivalTime": "2026-10-21T00:23:50.000Z",
+      "departureTime": "2026-10-21T00:23:50.000Z"
+     },
+     {
+      "distance": 586,
+      "extraInfo": null,
+      "locationID": "d6f54bf6-2cb7-46a3-9e63-a56ee418fa7a",
+      "stopOrder": 6,
+      "time": "2026-10-21T00:23:00.000Z",
+      "arrivalTime": "2026-10-21T00:25:10.000Z",
+      "departureTime": "2026-10-21T00:25:10.000Z"
+     },
+     {
+      "distance": 529,
+      "extraInfo": null,
+      "locationID": "2c223cc7-ced8-49b3-8db6-a8def86897e3",
+      "stopOrder": 7,
+      "time": "2026-10-21T00:24:00.000Z",
+      "arrivalTime": "2026-10-21T00:26:11.000Z",
+      "departureTime": "2026-10-21T00:26:11.000Z"
+     },
+     {
+      "distance": 585,
+      "extraInfo": null,
+      "locationID": "3fb0978f-ac28-467b-bb71-f81d950dcb1b",
+      "stopOrder": 8,
+      "time": "2026-10-21T00:25:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 275,
+      "extraInfo": null,
+      "locationID": "5568fe0d-d022-4c3e-aacf-687524f18d59",
+      "stopOrder": 9,
+      "time": "2026-10-21T00:26:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 432,
+      "extraInfo": null,
+      "locationID": "70738d2b-2b68-4179-afa5-6b6868ea75aa",
+      "stopOrder": 10,
+      "time": "2026-10-21T00:27:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 415,
+      "extraInfo": null,
+      "locationID": "e6e67f91-63e4-4284-b17f-68760d324e03",
+      "stopOrder": 11,
+      "time": "2026-10-21T00:28:00.000Z",
+      "arrivalTime": "2026-10-21T00:30:03.000Z",
+      "departureTime": "2026-10-21T00:30:03.000Z"
+     },
+     {
+      "distance": 534,
+      "extraInfo": null,
+      "locationID": "0aa706f1-024e-4458-8edc-d067fcb068bf",
+      "stopOrder": 12,
+      "time": "2026-10-21T00:29:00.000Z",
+      "arrivalTime": "2026-10-21T00:31:34.000Z",
+      "departureTime": "2026-10-21T00:31:34.000Z"
+     },
+     {
+      "distance": 645,
+      "extraInfo": null,
+      "locationID": "621dd03b-95f8-40c8-add1-1d4bdc4bdc5b",
+      "stopOrder": 13,
+      "time": "2026-10-21T00:30:00.000Z",
+      "arrivalTime": "2026-10-21T00:32:44.000Z",
+      "departureTime": "2026-10-21T00:32:44.000Z"
+     },
+     {
+      "distance": 198,
+      "extraInfo": null,
+      "locationID": "38162a45-855a-4531-a587-66aac67b01ca",
+      "stopOrder": 14,
+      "time": "2026-10-21T00:31:00.000Z",
+      "arrivalTime": "2026-10-21T00:33:06.000Z",
+      "departureTime": "2026-10-21T00:33:06.000Z"
+     },
+     {
+      "distance": 486,
+      "extraInfo": null,
+      "locationID": "5ed931f8-5e86-459c-81f6-b6567c3d31fc",
+      "stopOrder": 15,
+      "time": "2026-10-21T00:32:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 559,
+      "extraInfo": null,
+      "locationID": "8014fe1b-3f72-4cd6-a838-8ca4581852fc",
+      "stopOrder": 16,
+      "time": "2026-10-21T00:33:00.000Z",
+      "arrivalTime": "2026-10-21T00:34:46.000Z",
+      "departureTime": "2026-10-21T00:34:56.000Z"
+     },
+     {
+      "distance": 1013,
+      "extraInfo": null,
+      "locationID": "8a1667e6-7e8a-408e-bef0-ad0cdae37148",
+      "stopOrder": 17,
+      "time": "2026-10-21T00:35:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 570,
+      "extraInfo": null,
+      "locationID": "25b9c12e-0fa3-480a-9316-35236efe34aa",
+      "stopOrder": 18,
+      "time": "2026-10-21T00:36:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 472,
+      "extraInfo": null,
+      "locationID": "b595724b-639a-4911-8d27-236df1d4b7b8",
+      "stopOrder": 19,
+      "time": "2026-10-21T00:37:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 381,
+      "extraInfo": null,
+      "locationID": "bc92a1ce-ea65-48ef-9a2e-05eaf5044013",
+      "stopOrder": 20,
+      "time": "2026-10-21T00:38:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 431,
+      "extraInfo": null,
+      "locationID": "933e9cd1-93f6-4ad3-8ebb-c1b96b21a320",
+      "stopOrder": 21,
+      "time": "2026-10-21T00:39:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 498,
+      "extraInfo": null,
+      "locationID": "c3c3d8d1-0193-4afc-aace-7d2c8c49ebc2",
+      "stopOrder": 22,
+      "time": "2026-10-21T00:40:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 466,
+      "extraInfo": null,
+      "locationID": "94f3d518-0b8e-4510-8001-b0aa1e0aa5c0",
+      "stopOrder": 23,
+      "time": "2026-10-21T00:41:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 503,
+      "extraInfo": null,
+      "locationID": "f9d7bb87-8e4c-46a4-ab45-111f9b6364e0",
+      "stopOrder": 24,
+      "time": "2026-10-21T00:42:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 449,
+      "extraInfo": null,
+      "locationID": "8a993170-f777-49d2-8173-b695f9389569",
+      "stopOrder": 25,
+      "time": "2026-10-21T00:43:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 458,
+      "extraInfo": null,
+      "locationID": "9e27f3f2-7604-47d7-8b48-d6725c27f382",
+      "stopOrder": 26,
+      "time": "2026-10-21T00:44:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 314,
+      "extraInfo": null,
+      "locationID": "482e60af-c75d-42c9-b6e0-d6415ef6b9a6",
+      "stopOrder": 27,
+      "time": "2026-10-21T00:45:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 446,
+      "extraInfo": null,
+      "locationID": "ccbafd91-843c-4070-aa74-f480f9c0bdfc",
+      "stopOrder": 28,
+      "time": "2026-10-21T00:46:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 806,
+      "extraInfo": null,
+      "locationID": "807dec32-8fc4-4c13-8a77-43c6ba1e1132",
+      "stopOrder": 29,
+      "time": "2026-10-21T00:47:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 546,
+      "extraInfo": null,
+      "locationID": "38c9edbd-a21c-4d0e-bf86-fbdb3f68496f",
+      "stopOrder": 30,
+      "time": "2026-10-21T00:48:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 553,
+      "extraInfo": null,
+      "locationID": "f0530835-0fe6-4311-95b6-cb877dd6de06",
+      "stopOrder": 31,
+      "time": "2026-10-21T00:49:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 396,
+      "extraInfo": null,
+      "locationID": "f416cd5e-8f54-4cec-9ac2-c463331e83f1",
+      "stopOrder": 32,
+      "time": "2026-10-21T00:50:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     }
+    ]
+   },
+   "delayMinutes": -1.9333333333333333,
+   "runID": "1f9b4109-7357-4510-8377-5dc6c07ff6a5",
+   "delaySeconds": -116,
+   "lastPosition": {
+    "dateTime": "2026-10-21T00:36:36.000Z",
+    "longitude": 19.126880645751953,
+    "latitude": 50.79328918457031,
+    "lineNo": "80",
+    "direction": "RAKÓW\nDWORZEC PKP",
+    "taborNo": 77
+   }
+  },
+  {
+   "vehicleID": "361b22be-797d-442d-962a-7dca09932f54",
+   "currentRun": {
+    "day": "2026-10-19T22:00:00.000Z",
+    "direction": true,
+    "name": "80-02 [S]/4/4",
+    "lineID": "afc38a38-e1ce-439f-b198-477009bdd505",
+    "runID": "db9f010e-60d4-49bf-875d-ed7f009a69cb",
+    "foreignID": "97621",
+    "start": "2026-10-20T23:47:00.000Z",
+    "vehicleID": "361b22be-797d-442d-962a-7dca09932f54",
+    "end": "2026-10-21T00:20:00.000Z",
+    "runStops": [
+     {
+      "distance": null,
+      "extraInfo": null,
+      "locationID": "e24600ca-27fa-47ce-900f-617f2aa97de8",
+      "stopOrder": null,
+      "time": "2026-10-20T23:47:00.000Z",
+      "arrivalTime": "2026-10-20T23:51:25.000Z",
+      "departureTime": "2026-10-20T23:51:25.000Z"
+     },
+     {
+      "distance": 429,
+      "extraInfo": null,
+      "locationID": "50295e4f-fd48-41f8-914c-4150be788606",
+      "stopOrder": 1,
+      "time": "2026-10-20T23:48:00.000Z",
+      "arrivalTime": "2026-10-20T23:52:45.000Z",
+      "departureTime": "2026-10-20T23:52:45.000Z"
+     },
+     {
+      "distance": 563,
+      "extraInfo": null,
+      "locationID": "120fba6c-490c-4cfe-a4ae-d1f2c6d990ac",
+      "stopOrder": 2,
+      "time": "2026-10-20T23:49:00.000Z",
+      "arrivalTime": "2026-10-20T23:54:06.000Z",
+      "departureTime": "2026-10-20T23:54:06.000Z"
+     },
+     {
+      "distance": 467,
+      "extraInfo": null,
+      "locationID": "5c7c322c-9721-4aa0-acad-04177b78e2e4",
+      "stopOrder": 3,
+      "time": "2026-10-20T23:50:00.000Z",
+      "arrivalTime": "2026-10-20T23:55:16.000Z",
+      "departureTime": "2026-10-20T23:55:16.000Z"
+     },
+     {
+      "distance": 419,
+      "extraInfo": null,
+      "locationID": "2289c184-ac50-4a50-889d-2b4b0634b3fd",
+      "stopOrder": 4,
+      "time": "2026-10-20T23:51:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 315,
+      "extraInfo": null,
+      "locationID": "9b87faba-1f81-4b13-9e44-ac09c640afa4",
+      "stopOrder": 5,
+      "time": "2026-10-20T23:52:00.000Z",
+      "arrivalTime": "2026-10-20T23:56:56.000Z",
+      "departureTime": "2026-10-20T23:57:16.000Z"
+     },
+     {
+      "distance": 586,
+      "extraInfo": null,
+      "locationID": "d6f54bf6-2cb7-46a3-9e63-a56ee418fa7a",
+      "stopOrder": 6,
+      "time": "2026-10-20T23:53:00.000Z",
+      "arrivalTime": "2026-10-20T23:58:17.000Z",
+      "departureTime": "2026-10-20T23:58:17.000Z"
+     },
+     {
+      "distance": 529,
+      "extraInfo": null,
+      "locationID": "2c223cc7-ced8-49b3-8db6-a8def86897e3",
+      "stopOrder": 7,
+      "time": "2026-10-20T23:54:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 585,
+      "extraInfo": null,
+      "locationID": "3fb0978f-ac28-467b-bb71-f81d950dcb1b",
+      "stopOrder": 8,
+      "time": "2026-10-20T23:55:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 275,
+      "extraInfo": null,
+      "locationID": "5568fe0d-d022-4c3e-aacf-687524f18d59",
+      "stopOrder": 9,
+      "time": "2026-10-20T23:56:00.000Z",
+      "arrivalTime": "2026-10-21T00:00:42.000Z",
+      "departureTime": "2026-10-21T00:01:02.000Z"
+     },
+     {
+      "distance": 432,
+      "extraInfo": null,
+      "locationID": "70738d2b-2b68-4179-afa5-6b6868ea75aa",
+      "stopOrder": 10,
+      "time": "2026-10-20T23:57:00.000Z",
+      "arrivalTime": "2026-10-21T00:02:32.000Z",
+      "departureTime": "2026-10-21T00:02:32.000Z"
+     },
+     {
+      "distance": 415,
+      "extraInfo": null,
+      "locationID": "e6e67f91-63e4-4284-b17f-68760d324e03",
+      "stopOrder": 11,
+      "time": "2026-10-20T23:58:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 534,
+      "extraInfo": null,
+      "locationID": "0aa706f1-024e-4458-8edc-d067fcb068bf",
+      "stopOrder": 12,
+      "time": "2026-10-20T23:59:00.000Z",
+      "arrivalTime": "2026-10-21T00:04:55.000Z",
+      "departureTime": "2026-10-21T00:04:55.000Z"
+     },
+     {
+      "distance": 645,
+      "extraInfo": null,
+      "locationID": "621dd03b-95f8-40c8-add1-1d4bdc4bdc5b",
+      "stopOrder": 13,
+      "time": "2026-10-21T00:00:00.000Z",
+      "arrivalTime": "2026-10-21T00:06:07.000Z",
+      "departureTime": "2026-10-21T00:06:07.000Z"
+     },
+     {
+      "distance": 198,
+      "extraInfo": null,
+      "locationID": "38162a45-855a-4531-a587-66aac67b01ca",
+      "stopOrder": 14,
+      "time": "2026-10-21T00:01:00.000Z",
+      "arrivalTime": "2026-10-21T00:06:47.000Z",
+      "departureTime": "2026-10-21T00:07:07.000Z"
+     },
+     {
+      "distance": 486,
+      "extraInfo": null,
+      "locationID": "5ed931f8-5e86-459c-81f6-b6567c3d31fc",
+      "stopOrder": 15,
+      "time": "2026-10-21T00:02:00.000Z",
+      "arrivalTime": "2026-10-21T00:08:07.000Z",
+      "departureTime": "2026-10-21T00:08:17.000Z"
+     },
+     {
+      "distance": 559,
+      "extraInfo": null,
+      "locationID": "8014fe1b-3f72-4cd6-a838-8ca4581852fc",
+      "stopOrder": 16,
+      "time": "2026-10-21T00:03:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 1013,
+      "extraInfo": null,
+      "locationID": "8a1667e6-7e8a-408e-bef0-ad0cdae37148",
+      "stopOrder": 17,
+      "time": "2026-10-21T00:05:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 570,
+      "extraInfo": null,
+      "locationID": "25b9c12e-0fa3-480a-9316-35236efe34aa",
+      "stopOrder": 18,
+      "time": "2026-10-21T00:06:00.000Z",
+      "arrivalTime": "2026-10-21T00:11:19.000Z",
+      "departureTime": "2026-10-21T00:11:19.000Z"
+     },
+     {
+      "distance": 472,
+      "extraInfo": null,
+      "locationID": "b595724b-639a-4911-8d27-236df1d4b7b8",
+      "stopOrder": 19,
+      "time": "2026-10-21T00:07:00.000Z",
+      "arrivalTime": "2026-10-21T00:11:59.000Z",
+      "departureTime": "2026-10-21T00:11:59.000Z"
+     },
+     {
+      "distance": 381,
+      "extraInfo": null,
+      "locationID": "bc92a1ce-ea65-48ef-9a2e-05eaf5044013",
+      "stopOrder": 20,
+      "time": "2026-10-21T00:08:00.000Z",
+      "arrivalTime": "2026-10-21T00:12:39.000Z",
+      "departureTime": "2026-10-21T00:12:39.000Z"
+     },
+     {
+      "distance": 431,
+      "extraInfo": null,
+      "locationID": "933e9cd1-93f6-4ad3-8ebb-c1b96b21a320",
+      "stopOrder": 21,
+      "time": "2026-10-21T00:09:00.000Z",
+      "arrivalTime": "2026-10-21T00:13:20.000Z",
+      "departureTime": "2026-10-21T00:13:20.000Z"
+     },
+     {
+      "distance": 498,
+      "extraInfo": null,
+      "locationID": "c3c3d8d1-0193-4afc-aace-7d2c8c49ebc2",
+      "stopOrder": 22,
+      "time": "2026-10-21T00:10:00.000Z",
+      "arrivalTime": "2026-10-21T00:15:00.000Z",
+      "departureTime": "2026-10-21T00:15:20.000Z"
+     },
+     {
+      "distance": 466,
+      "extraInfo": null,
+      "locationID": "94f3d518-0b8e-4510-8001-b0aa1e0aa5c0",
+      "stopOrder": 23,
+      "time": "2026-10-21T00:11:00.000Z",
+      "arrivalTime": "2026-10-21T00:16:00.000Z",
+      "departureTime": "2026-10-21T00:16:00.000Z"
+     },
+     {
+      "distance": 503,
+      "extraInfo": null,
+      "locationID": "f9d7bb87-8e4c-46a4-ab45-111f9b6364e0",
+      "stopOrder": 24,
+      "time": "2026-10-21T00:12:00.000Z",
+      "arrivalTime": "2026-10-21T00:16:50.000Z",
+      "departureTime": "2026-10-21T00:17:10.000Z"
+     },
+     {
+      "distance": 449,
+      "extraInfo": null,
+      "locationID": "8a993170-f777-49d2-8173-b695f9389569",
+      "stopOrder": 25,
+      "time": "2026-10-21T00:13:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 458,
+      "extraInfo": null,
+      "locationID": "9e27f3f2-7604-47d7-8b48-d6725c27f382",
+      "stopOrder": 26,
+      "time": "2026-10-21T00:14:00.000Z",
+      "arrivalTime": "2026-10-21T00:18:51.000Z",
+      "departureTime": "2026-10-21T00:18:51.000Z"
+     },
+     {
+      "distance": 314,
+      "extraInfo": null,
+      "locationID": "482e60af-c75d-42c9-b6e0-d6415ef6b9a6",
+      "stopOrder": 27,
+      "time": "2026-10-21T00:15:00.000Z",
+      "arrivalTime": "2026-10-21T00:19:21.000Z",
+      "departureTime": "2026-10-21T00:19:21.000Z"
+     },
+     {
+      "distance": 446,
+      "extraInfo": null,
+      "locationID": "ccbafd91-843c-4070-aa74-f480f9c0bdfc",
+      "stopOrder": 28,
+      "time": "2026-10-21T00:16:00.000Z",
+      "arrivalTime": "2026-10-21T00:20:02.000Z",
+      "departureTime": "2026-10-21T00:20:02.000Z"
+     },
+     {
+      "distance": 806,
+      "extraInfo": null,
+      "locationID": "807dec32-8fc4-4c13-8a77-43c6ba1e1132",
+      "stopOrder": 29,
+      "time": "2026-10-21T00:17:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 546,
+      "extraInfo": null,
+      "locationID": "38c9edbd-a21c-4d0e-bf86-fbdb3f68496f",
+      "stopOrder": 30,
+      "time": "2026-10-21T00:18:00.000Z",
+      "arrivalTime": "2026-10-21T00:22:13.000Z",
+      "departureTime": "2026-10-21T00:22:13.000Z"
+     },
+     {
+      "distance": 553,
+      "extraInfo": null,
+      "locationID": "f0530835-0fe6-4311-95b6-cb877dd6de06",
+      "stopOrder": 31,
+      "time": "2026-10-21T00:19:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 396,
+      "extraInfo": null,
+      "locationID": "f416cd5e-8f54-4cec-9ac2-c463331e83f1",
+      "stopOrder": 32,
+      "time": "2026-10-21T00:20:00.000Z",
+      "arrivalTime": "2026-10-21T00:24:23.000Z",
+      "departureTime": "2026-10-21T00:36:43.000Z"
+     }
+    ]
+   },
+   "delayMinutes": -4.383333333333334,
+   "runID": "db9f010e-60d4-49bf-875d-ed7f009a69cb",
+   "delaySeconds": -263,
+   "lastPosition": {
+    "dateTime": "2026-10-21T00:36:43.000Z",
+    "longitude": 19.15376091003418,
+    "latitude": 50.78792953491211,
+    "lineNo": "80",
+    "direction": "KUKUCZKI",
+    "taborNo": 158
+   }
+  },
+  {
+   "vehicleID": "f0f91905-8ea2-469b-8ae1-14b575b4fdfa",
+   "currentRun": {
+    "day": "2026-10-16T22:00:00.000Z",
+    "direction": true,
+    "name": "35-02 [S]/8/8",
+    "lineID": "9ac060c2-463b-4a3f-98c2-3f6cbeb2ad36",
+    "runID": "896c6d6e-8581-4c33-bb4f-cf9bfda4930e",
+    "foreignID": "196407",
+    "start": "2026-10-17T11:10:00.000Z",
+    "vehicleID": "f0f91905-8ea2-469b-8ae1-14b575b4fdfa",
+    "end": "2026-10-17T11:43:00.000Z",
+    "runStops": [
+     {
+      "distance": null,
+      "extraInfo": null,
+      "locationID": "c6692890-9dfa-4de3-a04f-c275d542b2c8",
+      "stopOrder": null,
+      "time": "2026-10-17T11:10:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 262,
+      "extraInfo": null,
+      "locationID": "63a9509f-6095-434b-bd1c-2ac7fb25b94c",
+      "stopOrder": 1,
+      "time": "2026-10-17T11:11:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     }
+    ]
+   },
+   "delayMinutes": 2,
+   "runID": "896c6d6e-8581-4c33-bb4f-cf9bfda4930e",
+   "delaySeconds": 120,
+   "lastPosition": null
+  },
+  {
+   "vehicleID": "f96b5dd6-1b48-4c2e-9cb0-18505e1e71d3",
+   "currentRun": {
+    "day": "2026-09-20T22:00:00.000Z",
+    "direction": null,
+    "name": "32-03 [S]/5/5",
+    "lineID": "be96f978-cbe1-4db7-a980-0757a1dcb3c9",
+    "runID": "9fe56e32-2e70-45a7-ac91-fbb1695b314f",
+    "foreignID": "177470",
+    "start": "2026-09-21T06:28:00.000Z",
+    "vehicleID": "f96b5dd6-1b48-4c2e-9cb0-18505e1e71d3",
+    "end": "2026-09-21T07:15:00.000Z",
+    "runStops": [
+     {
+      "distance": null,
+      "extraInfo": null,
+      "locationID": "19f87f4e-8a77-401e-a1a4-95ee0be64013",
+      "stopOrder": null,
+      "time": "2026-09-21T06:28:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     },
+     {
+      "distance": 417,
+      "extraInfo": null,
+      "locationID": "f8329977-b3a1-413b-8abd-2e7d4cac9a07",
+      "stopOrder": 1,
+      "time": "2026-09-21T06:29:00.000Z",
+      "arrivalTime": null,
+      "departureTime": null
+     }
+    ]
+   },
+   "delayMinutes": 0,
+   "runID": "9fe56e32-2e70-45a7-ac91-fbb1695b314f",
+   "delaySeconds": 0,
+   "lastPosition": null
+  },
+  {
+   "vehicleID": "27c97d1f-86b8-4bec-b9b4-92a399fe88be",
+   "currentRun": {
+    "day": "2026-10-18T22:00:00.000Z",
+    "direction": true,
+    "name": "10-03 [S]/5/5",
+    "lineID": "578496a7-7ac7-4de7-bf81-080f50711642",
+    "runID": "de8eea69-ae67-4180-abbd-2a51bfa6d5b6",
+    "foreignID": "189972",
+    "start": "2026-10-19T05:47:00.000Z",
+    "vehicleID": "27c97d1f-86b8-4bec-b9b4-92a399fe88be",
+    "end": "2026-10-19T06:21:00.000Z",
+    "runStops": [
+     {
+      "distance": null,
+      "extraInfo": null,
+      "locationID": "8a86bdf7-d2e5-4783-a015-8fe2d5b5347d",
+      "stopOrder": null,
+      "time": "2026-10-19T05:47:00.000Z",
+      "arrivalTime": "2026-10-19T05:47:04.000Z",
+      "departureTime": "2026-10-19T05:47:04.000Z"
+     },
+     {
+      "distance": 390,
+      "extraInfo": null,
+      "locationID": "d7914121-e98e-4bc4-9541-b9d54272e9eb",
+      "stopOrder": 1,
+      "time": "2026-10-19T05:48:00.000Z",
+      "arrivalTime": "2026-10-19T05:48:54.000Z",
+      "departureTime": "2026-10-19T05:49:24.000Z"
+     }
+    ]
+   },
+   "delayMinutes": -3.0833333333333335,
+   "runID": "de8eea69-ae67-4180-abbd-2a51bfa6d5b6",
+   "delaySeconds": -185,
+   "lastPosition": null
+  },
+  {
+   "vehicleID": "c7163864-028e-45d2-96f6-7a565ace0847",
+   "currentRun": {
+    "day": "2026-10-15T22:00:00.000Z",
+    "direction": null,
+    "name": "12-06 [S]/3/3",
+    "lineID": "1ad3d167-2a14-40ef-8c56-f60e699e36e1",
+    "runID": "95bba2e4-d75d-4f85-97f6-2ca48ab434a6",
+    "foreignID": "206049",
+    "start": "2026-10-16T06:20:00.000Z",
+    "vehicleID": "c7163864-028e-45d2-96f6-7a565ace0847",
+    "end": "2026-10-16T07:05:00.000Z",
+    "runStops": [
+     {
+      "distance": null,
+      "extraInfo": null,
+      "locationID": "f416cd5e-8f54-4cec-9ac2-c463331e83f1",
+      "stopOrder": null,
+      "time": "2026-10-16T06:20:00.000Z",
+      "arrivalTime": "2026-10-16T06:20:06.000Z",
+      "departureTime": "2026-10-16T06:20:36.000Z"
+     },
+     {
+      "distance": 470,
+      "extraInfo": null,
+      "locationID": "ccee4d8d-2499-44a5-9c17-1ae9bc13cede",
+      "stopOrder": 1,
+      "time": "2026-10-16T06:21:00.000Z",
+      "arrivalTime": "2026-10-16T06:23:06.000Z",
+      "departureTime": "2026-10-16T06:23:26.000Z"
+     }
+    ]
+   },
+   "delayMinutes": -4.333333333333333,
+   "runID": "95bba2e4-d75d-4f85-97f6-2ca48ab434a6",
+   "delaySeconds": -260,
+   "lastPosition": null
+  }
+ ]
+}

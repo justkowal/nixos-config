@@ -1,0 +1,113 @@
+{
+ "_fixture": "synthetic-from-spec: invented values, shapes from PLK OpenAPI v1.1.4, not recorded",
+ "generatedAt": "2026-10-21T00:30:00Z",
+ "period": {
+  "from": "2026-10-21T00:00:00",
+  "to": "2026-11-20T00:00:00"
+ },
+ "routes": [
+  {
+   "scheduleId": 26,
+   "orderId": 111112,
+   "name": "REYMONT",
+   "carrierCode": "IC",
+   "nationalNumber": "5311",
+   "commercialCategorySymbol": "IC",
+   "operatingDates": [
+    "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23",
+    "2026-10-24",
+    "2026-10-25",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-29",
+    "2026-10-30",
+    "2026-10-31",
+    "2026-11-01",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+    "2026-11-17",
+    "2026-11-18",
+    "2026-11-19",
+    "2026-11-20"
+   ],
+   "stations": [
+    {
+     "stationId": 900004,
+     "orderNumber": 1,
+     "arrivalTime": null,
+     "arrivalDay": null,
+     "departureTime": "17:00:00",
+     "departureDay": 0,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    },
+    {
+     "stationId": 900003,
+     "orderNumber": 2,
+     "arrivalTime": "17:35:00",
+     "arrivalDay": 0,
+     "departureTime": "17:36:00",
+     "departureDay": 0,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    },
+    {
+     "stationId": 900001,
+     "orderNumber": 3,
+     "arrivalTime": "18:40:00",
+     "arrivalDay": 0,
+     "departureTime": null,
+     "departureDay": null,
+     "stopTypeId": 1,
+     "stopTypeName": "Postój handlowy"
+    }
+   ],
+   "connections": []
+  }
+ ],
+ "dictionaries": {
+  "stations": {
+   "900001": {
+    "id": 900001,
+    "name": "Kraków Główny"
+   },
+   "900002": {
+    "id": 900002,
+    "name": "Miechów"
+   },
+   "900003": {
+    "id": 900003,
+    "name": "Zawiercie"
+   },
+   "900004": {
+    "id": 900004,
+    "name": "Częstochowa"
+   }
+  },
+  "services": {},
+  "connectionTypes": {},
+  "commercialCategories": {},
+  "stopTypes": {},
+  "carriers": {
+   "IC": "PKP Intercity S.A.",
+   "KS": "Koleje Slaskie sp. z o.o."
+  }
+ }
+}

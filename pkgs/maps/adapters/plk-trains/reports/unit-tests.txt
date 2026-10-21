@@ -1,0 +1,25 @@
+.unresolved corridor stations: ['Częstochowa Stradom']
+./home/justkowal/.local/share/uv/python/cpython-3.14.6-linux-x86_64-gnu/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 403: 'x'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+breaker open reason=ban signal status=403 until=1792021600
+./home/justkowal/.local/share/uv/python/cpython-3.14.6-linux-x86_64-gnu/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 429: 'x'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+429 quota signal, pausing until 1792015500
+.429 quota signal, pausing until 1792000860
+./home/justkowal/.local/share/uv/python/cpython-3.14.6-linux-x86_64-gnu/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 500: 'x'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+breaker open reason=run of 5 errors until=1792022055
+....../home/justkowal/.local/share/uv/python/cpython-3.14.6-linux-x86_64-gnu/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 302: 'x'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+breaker open reason=ban signal status=302 until=1792021600
+breaker open reason=ban signal status=-1 until=1792021610
+...breaker open reason=ban signal status=403 until=1792021600
+......./home/justkowal/nixos-config/.claude/worktrees/agent-a2d00a925ffb6a568/pkgs/maps/adapters/plk-trains/tests/test_adapter.py:371: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpbhmdoj1l/key' mode='w' encoding='UTF-8'>
+  open(keyfile, "w").write("k")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+unresolved corridor stations: ['Nigdzie']
+...........
+----------------------------------------------------------------------
+Ran 32 tests in 0.047s
+
+OK

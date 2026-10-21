@@ -1,0 +1,167 @@
+{
+ "_fixture": "synthetic-from-spec: invented values, shapes from PLK OpenAPI v1.1.4, not recorded",
+ "generatedAt": "2026-10-21T08:20:05Z",
+ "pagination": {
+  "page": 1,
+  "pageSize": 2000,
+  "totalCount": 6,
+  "totalPages": 1,
+  "hasNextPage": false,
+  "hasPreviousPage": false
+ },
+ "trains": [
+  {
+   "scheduleId": 26,
+   "orderId": 111111,
+   "trainOrderId": 111111,
+   "operatingDate": "2026-10-21",
+   "trainStatus": "P",
+   "stations": [
+    {
+     "stationId": 900001,
+     "plannedSequenceNumber": 1,
+     "actualSequenceNumber": 1,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": 4,
+     "isConfirmed": false,
+     "isCancelled": false
+    },
+    {
+     "stationId": 900002,
+     "plannedSequenceNumber": 2,
+     "actualSequenceNumber": 2,
+     "arrivalDelayMinutes": 5,
+     "departureDelayMinutes": 6,
+     "isConfirmed": true,
+     "isCancelled": false
+    },
+    {
+     "stationId": 900003,
+     "plannedSequenceNumber": 3,
+     "actualSequenceNumber": 3,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": null,
+     "isConfirmed": false,
+     "isCancelled": false
+    },
+    {
+     "stationId": 900004,
+     "plannedSequenceNumber": 4,
+     "actualSequenceNumber": 4,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": null,
+     "isConfirmed": false,
+     "isCancelled": false
+    }
+   ]
+  },
+  {
+   "scheduleId": 26,
+   "orderId": 222222,
+   "trainOrderId": 222222,
+   "operatingDate": "2026-10-20",
+   "trainStatus": "X",
+   "stations": [
+    {
+     "stationId": 900001,
+     "plannedSequenceNumber": 1,
+     "actualSequenceNumber": 1,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": null,
+     "isConfirmed": false,
+     "isCancelled": true
+    }
+   ]
+  },
+  {
+   "scheduleId": 26,
+   "orderId": 333333,
+   "trainOrderId": 333334,
+   "operatingDate": "2026-10-21",
+   "trainStatus": "Q",
+   "stations": [
+    {
+     "stationId": 900001,
+     "plannedSequenceNumber": 1,
+     "actualSequenceNumber": 1,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": 0,
+     "isConfirmed": false,
+     "isCancelled": false
+    },
+    {
+     "stationId": 900002,
+     "plannedSequenceNumber": 2,
+     "actualSequenceNumber": 2,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": null,
+     "isConfirmed": false,
+     "isCancelled": true
+    },
+    {
+     "stationId": 900004,
+     "plannedSequenceNumber": 3,
+     "actualSequenceNumber": 3,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": null,
+     "isConfirmed": false,
+     "isCancelled": false
+    }
+   ]
+  },
+  {
+   "scheduleId": 26,
+   "orderId": 111112,
+   "trainOrderId": 111112,
+   "operatingDate": "2026-10-20",
+   "trainStatus": "C",
+   "stations": [
+    {
+     "stationId": 900004,
+     "plannedSequenceNumber": 1,
+     "actualSequenceNumber": 1,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": 0,
+     "isConfirmed": false,
+     "isCancelled": false
+    }
+   ]
+  },
+  {
+   "scheduleId": 26,
+   "orderId": 555555,
+   "trainOrderId": 555555,
+   "operatingDate": "2026-10-21",
+   "trainStatus": "P",
+   "stations": [
+    {
+     "stationId": 900001,
+     "plannedSequenceNumber": 1,
+     "actualSequenceNumber": 1,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": 3,
+     "isConfirmed": false,
+     "isCancelled": false
+    }
+   ]
+  },
+  {
+   "scheduleId": 26,
+   "orderId": 111111,
+   "trainOrderId": 111111,
+   "operatingDate": "2026-12-31",
+   "trainStatus": "S",
+   "stations": [
+    {
+     "stationId": 900001,
+     "plannedSequenceNumber": 1,
+     "actualSequenceNumber": 1,
+     "arrivalDelayMinutes": null,
+     "departureDelayMinutes": null,
+     "isConfirmed": false,
+     "isCancelled": false
+    }
+   ]
+  }
+ ]
+}

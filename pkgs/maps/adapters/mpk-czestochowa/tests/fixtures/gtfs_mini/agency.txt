@@ -1,0 +1,2 @@
+agency_id,agency_name,agency_url,agency_timezone,agency_lang,agency_phone,agency_fare_url,agency_email
+1,Miejskie Przedsiębiorstwo Komunikacyjne w Częstochowie Spółka Akcyjna,http://mpk.czest.pl,Europe/Warsaw,pl,(34) 3779100,http://mpk.czest.pl,

@@ -1,0 +1,5 @@
+route_id,service_id,trip_id,trip_headsign,trip_short_name,direction_id,block_id,shape_id,wheelchair_accessible
+1486,171880,171880,,,1,7168,1,
+687,97620,97620,,,1,3686,57,
+687,97621,97621,,,1,3685,57,
+1282,97634,97634,,,0,3684,145,

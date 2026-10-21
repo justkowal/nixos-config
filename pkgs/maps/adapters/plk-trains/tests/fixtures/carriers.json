@@ -1,0 +1,17 @@
+{
+ "generatedAt": "2026-10-21T00:00:00Z",
+ "carriers": [
+  {
+   "code": "IC",
+   "name": "PKP Intercity S.A.",
+   "validFrom": null,
+   "validTo": null
+  },
+  {
+   "code": "KS",
+   "name": "Koleje Slaskie sp. z o.o.",
+   "validFrom": null,
+   "validTo": null
+  }
+ ]
+}
