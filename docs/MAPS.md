@@ -107,3 +107,25 @@ All three live in `pkgs/maps/adapters/` and are not integrated: the feeds regist
 - `mpk-czestochowa`: official static GTFS from the operator's public share (new folder every few days, about two weeks of validity), plus realtime from the operator's own live service (websocket, no polling). Runs are matched to trips and checked before use. Delays after the last observed stop are estimated by plain propagation. 16 tests pass, GTFS validator 0 errors, the official GTFS-RT validator has no offline release so a structural check was used instead. Licence of the feed is unstated. Request volume stays under about 15 per day per source.
 - `plk-trains`: the official PLK open data API. Built and tested on fixtures derived from the OpenAPI spec only, because it needs the API key (never read). 32 tests pass, 0 validator errors. Stop coordinates come from the local Nominatim and are flagged. Budgets: Basic tier gives about 2-minute freshness at 64% of the daily limit, Standard allows 30 s polling. Open items are in its README (key file readability, station names, the carrier code of the Lesser Poland operator, first live run checks).
 - `komunikacja-jurajska`: **not built**. `komunikacjajurajska.kiedyprzyjedzie.pl/robots.txt` says `Disallow: /` for everyone and the operator publishes no GTFS. Options: ask the operator or the vendor for permission or a feed, file a public information request, or drop it.
+
+### Enabling an adapter (after you approve it)
+
+Each adapter is off by default. In `hosts/rpi4/configuration.nix` (or any host module) set `lab.maps.adapters.mpk-czestochowa.enable = true;` or `lab.maps.adapters.plk-trains.enable = true;`, then deploy. The Pi builds the image from the adapter's Dockerfile, starts it on `mcp-internal` and `mcp` (outbound for its source, no port published), and copies its static zip into the export folder every minute.
+
+Then register it by hand in `state/feeds.yaml` (the tools can never set `internal_adapter`):
+
+```yaml
+- id: mpk-czestochowa
+  name: MPK Czestochowa
+  static: adapter:mpk-czestochowa
+  realtime:
+    trip_updates: http://mcp-adapter-mpk-czestochowa:8080/gtfs-rt/trip-updates.pb
+    vehicle_positions: http://mcp-adapter-mpk-czestochowa:8080/gtfs-rt/vehicle-positions.pb
+  poll_seconds: 30
+  license: "unstated by the operator"
+  attribution: "MPK Czestochowa"
+  enabled: true
+  internal_adapter: true
+```
+
+For `plk-trains` use `static: adapter:plk-trains` and the URLs `.../gtfs-rt/trip-updates.pb` and `.../gtfs-rt/alerts.pb`. It needs the API key: `ssh nixos-rpi4.lab 'sudo sh -c "umask 077; cat > /var/lib/mcp-gateway/secrets/plk_api_key"' < /path/to/keyfile`; the module sets the file to `root:10001` mode 0640 so the container user can read it, and the container only starts once the file exists. Check `/health` of the adapter for `unresolved` station names and `match_ratio` at the first live run (see its README). Both adapters have a kill switch (`/data/KILL`).

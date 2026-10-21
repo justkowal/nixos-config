@@ -25,8 +25,11 @@ for f in feeds:
     dest = os.path.join(d, f"{fid}-gtfs.zip")
     if ref.startswith("file:"):
         shutil.copy(os.path.join(d, "local", ref[5:]), dest)
+    elif f.get("internal_adapter") and ref.startswith("adapter:"):
+        # the Pi copies each adapter's zip into its export folder; the pull key reads it from there
+        shutil.copy(os.path.join(d, "src", "adapters", ref[8:] + ".zip"), dest)
     elif f.get("internal_adapter"):
-        sys.exit(f"{fid}: adapter feeds are collected by the adapter step, not here")
+        sys.exit(f"{fid}: an internal adapter feed needs static: adapter:<name>")
     else:
         open(dest, "wb").write(safe_open(ref, extra_ports=tuple(f.get("allow_ports") or [])))
     data = open(dest, "rb").read()

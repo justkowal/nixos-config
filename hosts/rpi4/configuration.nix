@@ -134,6 +134,7 @@ in {
     ./notes-backup.nix
     ./storage.nix
     ./maps.nix
+    ./maps-adapters.nix
     ./apps.nix
     ../../modules/monitoring.nix
     ../../modules/fleet-health.nix
