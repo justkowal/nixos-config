@@ -287,7 +287,7 @@
     const opts = { center: [cam.lon, cam.lat], zoom: cam.zoom, animate: false };
     if (threeD) { const hd = (Math.atan2(v.hx, v.hy) * 180) / Math.PI, bear = map.getBearing(); opts.bearing = bear + (((hd - bear + 540) % 360) - 180) * (1 - Math.exp(-dt / 0.8)); }
     map.jumpTo(opts);
-    $("#follow-status").textContent = v.sched ? (v.vel > 0.5 ? "Following the timetable" : "Standing, by the timetable") : v.st === "STOPPED_AT" ? `At ${v.sn || "a stop"}` : v.sn ? `Next stop: ${v.sn}` : v.vel > 0.5 ? "Moving" : "Standing";
+    $("#follow-status").textContent = v.sched ? (v.vel > 0.5 ? "Estimated from the timetable and its delay" : "Standing, by the timetable") : v.st === "STOPPED_AT" ? `At ${v.sn || "a stop"}` : v.sn ? `Next stop: ${v.sn}` : v.vel > 0.5 ? "Moving" : "Standing";
   }
   function showBar(v) {
     if (!followBar) {
@@ -377,6 +377,7 @@
     const bt = $("#btn-veh");
     if (bt) bt.hidden = !(ctx || force || followId !== null);
     map.triggerRepaint();
+    refreshSched();
   }
 
   // ---- data
@@ -505,14 +506,17 @@
     if (want.length > take.length) setTimeout(loadRoofs, 1500);
   }
   // trips with no live position, played back from the timetable
-  let schedBusy = false, schedAt = 0;
+  // outside diorama only operators with no live positions at all are estimated (trains, trams without a feed); in diorama every trip without a position is
+  let schedBusy = false, schedMode = "";
   async function refreshSched() {
-    if (!ambient || !map || schedBusy || document.hidden || map.getZoom() < Z_MESH - 1 || (window.Daylight?.mode === "cycle")) return;
+    const mode = ambient ? "all" : shown() ? "gap" : "";
+    if (mode !== schedMode) { schedMode = mode; for (const [id, o] of V) if (o.sched) V.delete(id); }
+    if (!mode || !map || schedBusy || document.hidden || map.getZoom() < (mode === "all" ? Z_MESH - 1 : 11.5) || (window.Daylight?.mode === "cycle")) return;
     schedBusy = true;
     try {
       const b = map.getBounds(), w = (b.getEast() - b.getWest()) * 0.15, hh = (b.getNorth() - b.getSouth()) * 0.15, live = simLive();
       const box = [b.getWest() - w, b.getSouth() - hh, b.getEast() + w, b.getNorth() + hh].map((x) => x.toFixed(5)).join(",");
-      const q = { bbox: box }; if (!live) { q.at = Math.round(simEpoch()); q.all = "1"; }
+      const q = { bbox: box }; if (!live) { q.at = Math.round(simEpoch()); q.all = "1"; } else if (mode === "gap") q.gap = "1";
       const r = await api("sched", q);
       const keep = new Set(), liveTrips = new Set(); for (const o of V.values()) if (!o.sched && o.trip) liveTrips.add(o.trip);
       for (const tr of r.trips || []) {
@@ -547,7 +551,7 @@
   }
   function setAmbient(on) {
     ambient = !!on;
-    if (!ambient) { for (const [id, v] of V) if (v.sched) V.delete(id); } else refreshSched();
+    refreshSched();
     if (ambient && !traffic) traffic = new window.Traffic.Traffic();
     laneKey = "";
     if (ambient) loadLanes();

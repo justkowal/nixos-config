@@ -245,7 +245,7 @@ Enforced in `adapter/guard.py`; config can only slow it down.
 | Rule | Value |
 |---|---|
 | Spacing between two requests to one source | 5 s minimum + 0 to 3 s random jitter |
-| Hourly budget | 100 per source (code cap); operator: static lane 60; kiedyPrzyjedzie: static lane 20, realtime lane 60 |
+| Hourly budget | 240 per source (code cap, raised from 100 on request); operator: static lane 60; kiedyPrzyjedzie: static lane 60, realtime lane 150 |
 | Error backoff | exponential, 30 s doubling to 900 s added to the spacing; 5 errors in a row open the breaker |
 | Ban signals (403, 429, any 3xx, a challenge page such as "Just a moment", 200 without JSON or without the app marker) | breaker open 6 h, persisted |
 | Kill switch | `/data/KILL` or `KJ_KILL=1` |

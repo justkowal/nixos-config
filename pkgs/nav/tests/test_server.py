@@ -146,6 +146,12 @@ class Scheduled(unittest.TestCase):
         self.assertEqual([x[0] for x in r["trips"][0]["st"]], [0, 900])
         self.assertEqual(r["trips"][0]["sd"], sd)
         s._sched.clear()
+        s._veh.update(t=time.time(), list=[{"id": "w", "trip": "x:other", "ag": "A", "lon": 19.0, "lat": 50.0}])
+        self.assertEqual(s.api_sched({"bbox": ["18.99,49.99,19.01,50.01"], "gap": ["1"]})["trips"], [], "operator A has live vehicles, so its trips are not estimated")
+        s._sched.clear()
+        s._veh.update(t=time.time(), list=[{"id": "w", "trip": "x:other", "ag": "B", "lon": 19.0, "lat": 50.0}])
+        self.assertEqual(len(s.api_sched({"bbox": ["18.99,49.99,19.01,50.01"], "gap": ["1"]})["trips"]), 1)
+        s._sched.clear()
         with self.assertRaises(s.Bad):
             s.api_sched({"bbox": ["1,2,3"]})
         self.assertEqual(s.api_sched({"bbox": ["10,40,20,50"]})["trips"], [])

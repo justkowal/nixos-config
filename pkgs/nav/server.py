@@ -492,7 +492,8 @@ def api_sched(q):
         return {"now": time.time(), "trips": [], "note": "zoom in"}
     at = int(num((q.get("at") or [str(int(time.time()))])[0], time.time() - 3 * 86400, time.time() + 3 * 86400, "at"))
     everything = (q.get("all") or [""])[0] == "1"  # a time other than now: the live feed says nothing about it
-    key = (round(box[0], 3), round(box[1], 3), round(box[2], 3), round(box[3], 3), at // 30, everything)
+    gap = (q.get("gap") or [""])[0] == "1"  # only operators with no live positions at all (trains, trams without a feed): their vehicles are estimated from schedule and delay
+    key = (round(box[0], 3), round(box[1], 3), round(box[2], 3), round(box[3], 3), at // 30, everything, gap)
     hit = _sched.get(key)
     if hit and time.time() - hit[0] < 20:
         return hit[1]
@@ -508,8 +509,11 @@ def api_sched(q):
     for blk in gql("{ " + part + " }").values():
         for x in (blk or {}).get("stoptimesWithoutPatterns") or []:
             seen.setdefault(x["trip"]["gtfsId"], x["serviceDay"])
+    live_agencies = set()
     if not everything:
-        live = {v["trip"] for v in vehicles_snapshot() if v["trip"]}
+        snap = vehicles_snapshot()
+        live = {v["trip"] for v in snap if v["trip"]}
+        live_agencies = {v.get("ag") for v in snap if v.get("ag")}
         seen = {t: d for t, d in seen.items() if t not in live}
     chosen = [(t, d) for t, d in seen.items() if ID.fullmatch(t)][:SCHED_TRIPS]
     if not chosen:
@@ -520,6 +524,8 @@ def api_sched(q):
         tr = res.get(f"t{i}")
         times = (tr or {}).get("stoptimesForDate") or []
         if len(times) < 2:
+            continue
+        if gap and (tr["route"].get("agency") or {}).get("name") in live_agencies:
             continue
         a0, a1 = d + times[0]["realtimeDeparture"], d + times[-1]["realtimeArrival"]
         if a1 < at - 30 or a0 > at + 300:
