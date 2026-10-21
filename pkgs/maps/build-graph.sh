@@ -83,6 +83,18 @@ cp "$W/feeds/src/feeds.yaml" "$W/feeds/feeds.yaml" 2>/dev/null || echo "feeds: [
 cp "$W/feeds/src/feeds-local"/* "$W/feeds/local/" 2>/dev/null || true
 export FEED_CONTACT="$CONTACT"; py "$HERE/fetch_feeds.py" "$W/feeds" "$UA"
 
+# ---- 2b. feeds without shapes get routes derived from OSM (ids start with derived-), originals are kept next to them
+for z in "$W"/feeds/*-gtfs.zip; do
+  [ -f "$z" ] || continue
+  id=$(basename "$z" -gtfs.zip)
+  rc=0; nix shell nixpkgs#osmium-tool nixpkgs#python3 -c python3 "$HERE/derive_shapes.py" "$z" "$z.shaped" "$W/osm/scope-pruned.osm.pbf" "$W/reports/shapes-$id.json" >/dev/null || rc=$?
+  case $rc in
+    0) mv "$z" "$W/feeds/$id-original.bak" && mv "$z.shaped" "$z"; log "shapes: $id derived $(jq -c '[.derived,.partial,.straight_segments]' "$W/reports/shapes-$id.json") (patterns, partial, straight segments)" ;;
+    3) ;;
+    *) rm -f "$z.shaped"; log "shapes: $id failed, using the feed as published" ;;
+  esac
+done
+
 # ---- 3. validate every static feed with the MobilityData validator
 FEEDS=$(jq -r '.[].id' "$W/feeds/feeds.json" 2>/dev/null || true)
 if [ -n "$FEEDS" ]; then
