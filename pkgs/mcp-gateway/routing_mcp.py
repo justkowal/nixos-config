@@ -307,12 +307,17 @@ def t_service_alerts(a):
 
 def t_trip_detail(a):
     need_feeds()
-    d = gql(f'{{ trip(id:"{a["trip_id"]}") {{ tripHeadsign route {{ shortName longName }} stoptimes {{ stop {{ name }} scheduledDeparture realtimeDeparture realtime }} }} }}')
+    m = re.search(r"(\d{4})(\d{2})(\d{2})_", a["trip_id"])
+    day = a.get("service_date") or (f"{m[1]}-{m[2]}-{m[3]}" if m else datetime.datetime.now(TZ).strftime("%Y-%m-%d"))
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        raise RuntimeError("service_date must be YYYY-MM-DD")
+    d = gql(f'{{ trip(id:"{a["trip_id"]}") {{ tripHeadsign route {{ shortName longName }} stoptimesForDate(serviceDate:"{day}") {{ stop {{ name }} scheduledDeparture realtimeDeparture departureDelay realtime realtimeState }} }} }}')
     t = d["trip"]
     if not t:
         raise RuntimeError("unknown trip_id")
-    return cap({"line": t["route"]["shortName"], "to": t["tripHeadsign"],
-                "stops": [{"stop": s["stop"]["name"], "time": hhmm(s["realtimeDeparture"]), "scheduled": hhmm(s["scheduledDeparture"]), "realtime": s["realtime"]} for s in t["stoptimes"]]})
+    return cap({"line": t["route"]["shortName"], "to": t["tripHeadsign"], "service_date": day,
+                "stops": [{"stop": s["stop"]["name"], "time": hhmm(s["realtimeDeparture"]), "scheduled": hhmm(s["scheduledDeparture"]), "delay_s": s["departureDelay"],
+                           "realtime": s["realtime"], "state": s["realtimeState"]} for s in t["stoptimesForDate"]]})
 
 
 def t_info(_a):
@@ -538,7 +543,7 @@ TOOLS = {
     "stop_departures": dict(desc="Next departures at a stop, realtime-aware.", **R, schema=obj({"stop_id": {"type": "string"}, "count": {"type": "integer"}}, ["stop_id"]), fn=t_stop_departures),
     "vehicle_positions": dict(desc="Live vehicle positions for a route.", **R, schema=obj({"route_id": {"type": "string"}}, ["route_id"]), fn=t_vehicle_positions),
     "service_alerts": dict(desc="Service alerts for a route.", **R, schema=obj({"route_id": {"type": "string"}}, ["route_id"]), fn=t_service_alerts),
-    "trip_detail": dict(desc="Stops and times of one trip.", **R, schema=obj({"trip_id": {"type": "string"}}, ["trip_id"]), fn=t_trip_detail),
+    "trip_detail": dict(desc="Stops and times of one trip.", **R, schema=obj({"trip_id": {"type": "string"}, "service_date": {"type": "string", "description": "YYYY-MM-DD, default from the trip id or today"}}, ["trip_id"]), fn=t_trip_detail),
     "routing_data_info": dict(desc="Graph build time, engine version, OSM date, loaded feeds, rebuild status.", **R, schema=obj(), fn=t_info),
     "feed_list": dict(desc="The transit feed registry (secrets are never shown).", **R, schema=obj(), fn=t_feed_list),
     "feed_validate": dict(desc="Download a candidate GTFS zip safely and report its contents. Changes nothing.", **R,
