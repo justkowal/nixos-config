@@ -368,7 +368,7 @@ class ResolveGeocodeTests(unittest.TestCase):
     def test_resolve_with_one_request_and_cache(self):
         tmp = tempfile.mkdtemp()
         keyfile = os.path.join(tmp, "key")
-        open(keyfile, "w").write("k")
+        open(keyfile, "w").write("TESTKEY_" + "x" * 24)
         cfg = copy.deepcopy(CFG)
         cfg["api"]["key_file"] = keyfile
         cfg["corridor"]["pairs"] = [{"from": ["kraków  główny"], "to": ["Częstochowa", "Nigdzie"]}]

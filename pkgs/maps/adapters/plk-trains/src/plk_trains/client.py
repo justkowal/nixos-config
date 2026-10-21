@@ -2,6 +2,7 @@
 import gzip
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -29,6 +30,23 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+KEY_CHARS = re.compile(r"[A-Za-z0-9_\-]{20,256}")
+
+
+def parse_key(raw):
+    """Accepts the bare key or the portal's downloaded file ("X-API-Key: <key>" or "API Key: <key>").
+    Never echoes file content: an invalid file is reported without any of its text."""
+    raw = raw.strip()
+    if not raw:
+        raise NoKey("key file empty")
+    if KEY_CHARS.fullmatch(raw):
+        return raw
+    m = re.search(r"X-API-Key:[ \t]*([A-Za-z0-9_\-]{20,256})", raw) or re.search(r"API Key:[ \t]*([A-Za-z0-9_\-]{20,256})", raw)
+    if m:
+        return m.group(1)
+    raise NoKey("key file has no usable key: it must contain only the key (or the portal's X-API-Key line)")
+
+
 class Client:
     def __init__(self, cfg, limiter, schemas, opener=None):
         self.api = cfg["api"]
@@ -40,12 +58,10 @@ class Client:
     def _key(self):
         try:
             with open(self.api["key_file"]) as f:
-                key = f.read().strip()
+                raw = f.read()
         except OSError:
             raise NoKey("key file unreadable")
-        if not key:
-            raise NoKey("key file empty")
-        return key
+        return parse_key(raw)
 
     def get(self, path, params=None, schema=None, prio="rt"):
         """Returns (parsed_json, lowercase_headers). Raises Denied, NoKey, ApiError or SchemaError."""

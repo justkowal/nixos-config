@@ -58,7 +58,8 @@ class App:
             h["blocked"] = e.reason
             return
         h["blocked"] = None
-        h["last_error"] = "%s: %s" % (type(e).__name__, e)
+        # only our own exception types carry messages that are safe to expose; anything else shows its type alone
+        h["last_error"] = ("%s: %s" % (type(e).__name__, e)) if type(e).__module__.startswith("plk_trains") else type(e).__name__
         h["last_error_at"] = int(self.clock())
         if isinstance(e, NoKey):
             self.h["key"] = "missing"
