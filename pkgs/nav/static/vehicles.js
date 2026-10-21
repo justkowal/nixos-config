@@ -1,11 +1,11 @@
 "use strict";
-// Live vehicles in three levels of detail: heatmap far out, dots in the middle, painted 3D models up close.
-// Positions arrive every few seconds, the animation runs every frame. Each vehicle is dead-reckoned along its trip shape
-// with a speed controller that
+// Live vehicles: heatmap far out, GPU dots in the middle, painted instanced 3D models up close (see scene3d.js).
+// Positions arrive every few seconds, the simulation runs every frame. Each vehicle is dead-reckoned along its trip shape with a speed controller that
 //  - brakes for simulated red lights (signal nodes from OSM) and holds until green,
 //  - docks at the platform when the feed says it is stopped at a stop,
 //  - steers back toward the reported position: speeds up when behind, eases off when ahead, never reverses,
-//  - and for a large mismatch glides over about a second instead of jumping.
+//  - and for a large mismatch glides over a short distance, or fades out, jumps and fades in.
+// The per-frame path does not allocate: shapes keep mercator coordinates and unit directions per segment, signals keep cycle tables and a cursor.
 (() => {
   const A = window.App;
   const { api, h, icon, $, store } = A;
@@ -14,29 +14,47 @@
   const VMAX = { RAIL: 45, TRAM: 20, BUS: 22, TROLLEYBUS: 20, DEFAULT: 22 };
   const ACC = { RAIL: 0.8, TRAM: 1.0, BUS: 1.1, TROLLEYBUS: 1.1, DEFAULT: 1.1 };
   const FALLBACK = { RAIL: "#b3311f", BUS: "#1c5fb0", TRAM: "#a35a00", TROLLEYBUS: "#4d7c0f" };
-  const GLASS = "#1b2430";
   const EXTRAP_MAX = 40, STALE_DIM = 240, STALE_DROP = 900, K_PULL = 0.3, RESYNC_M = 350, TELEPORT_M = 600, LIGHT_SLACK_M = 110;
-  const Z_DOTS = 10.4, Z_HEAT_OUT = 11.8, Z_3D = 15;
+  const Z_DOTS = 10.4, Z_HEAT_OUT = 11.8, Z_MESH = 15, Z_LABEL = 13.2;
+  const TAU = Math.PI * 2;
 
   const V = new Map();        // vehicle id -> state
-  const SHAPES = new Map();   // trip id -> shape info | "pending" | "none"
-  let map = null, on = store.get("veh", true), threeD = store.get("3d", true), hi = new Set(), popup = null;
-  let lastFrame = 0, followId = null, followBar = null, cam = null;
+  const SHAPES = new Map();   // trip id -> shape info | "pending" | { fail }
+  let map = null, scene = null, on = store.get("veh", true), threeD = store.get("3d", true), hi = new Set();
+  let ctx = false, force = false, followId = null, followBar = null, cam = null, lastTick = 0, nowSec = 0;
+  const pose = new Float64Array(4);  // scratch: mx, my, ux, uy
 
-  // ---- shapes
+  // ---- mercator helpers
+  const mercX = (lon) => (lon + 180) / 360;
+  const mercY = (lat) => 0.5 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / TAU;
+  const lonOf = (mx) => mx * 360 - 180;
+  const latOf = (my) => (Math.atan(Math.sinh(Math.PI * (1 - 2 * my))) * 180) / Math.PI;
+
+  // ---- traffic light model: deterministic per junction (cycle and phase come from a hash of its position along the trip)
+  function hash(n) { n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return ((n ^ (n >>> 16)) >>> 0) / 4294967296; }
+  let wall = 0, wallFor = -1;
+  const redAt = (sh, j) => ((wall + sh.sigPhase[j]) % sh.sigCycle[j]) < sh.sigCycle[j] * 0.42;
+
+  // ---- shapes: mercator points, metres along the line, unit direction (east, north) per segment
   function buildShape(info) {
     const pts = A.decode(info.points);
     if (pts.length < 2) return null;
-    const k = Math.cos((pts[0][1] * Math.PI) / 180) * 111320, ky = 110540;
-    const X = pts.map((p) => p[0] * k), Y = pts.map((p) => p[1] * ky), cum = [0];
-    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(X[i] - X[i - 1], Y[i] - Y[i - 1]));
-    return { pts, X, Y, cum, k, ky, length: cum[cum.length - 1], stops: info.stops || [], sig: info.sig || [] };
+    const n = pts.length, k = Math.cos((pts[0][1] * Math.PI) / 180) * 111320, ky = 110540;
+    const X = new Float64Array(n), Y = new Float64Array(n), MX = new Float64Array(n), MY = new Float64Array(n), cum = new Float64Array(n), UX = new Float32Array(n), UY = new Float32Array(n);
+    for (let i = 0; i < n; i++) { X[i] = pts[i][0] * k; Y[i] = pts[i][1] * ky; MX[i] = mercX(pts[i][0]); MY[i] = mercY(pts[i][1]); }
+    for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(X[i] - X[i - 1], Y[i] - Y[i - 1]);
+    for (let i = 0; i < n - 1; i++) { const dx = X[i + 1] - X[i], dy = Y[i + 1] - Y[i], l = Math.hypot(dx, dy) || 1; UX[i] = dx / l; UY[i] = dy / l; }
+    UX[n - 1] = UX[n - 2]; UY[n - 1] = UY[n - 2];
+    const sigs = info.sig || [], sigCycle = new Float32Array(sigs.length), sigPhase = new Float32Array(sigs.length), trip = info.trip || "";
+    for (let j = 0; j < sigs.length; j++) { const id = Math.round(sigs[j]) * 31 + trip.length; sigCycle[j] = 70 + hash(id) * 50; sigPhase[j] = hash(id + 7) * sigCycle[j]; }
+    return { pts, X, Y, MX, MY, cum, UX, UY, k, ky, length: cum[n - 1], stops: info.stops || [], sig: Float64Array.from(sigs), sigCycle, sigPhase };
   }
   function rayFrom(lon, lat, headingDeg) {
     const r = (headingDeg * Math.PI) / 180, k = Math.cos((lat * Math.PI) / 180) * 111320, ky = 110540;
-    const pts = [[lon, lat], [lon + (Math.sin(r) * 6000) / k, lat + (Math.cos(r) * 6000) / ky]];
-    const X = pts.map((p) => p[0] * k), Y = pts.map((p) => p[1] * ky), len = Math.hypot(X[1] - X[0], Y[1] - Y[0]);
-    return { pts, X, Y, cum: [0, len], k, ky, length: len, stops: [], sig: [], ray: true };
+    const far = [lon + (Math.sin(r) * 6000) / k, lat + (Math.cos(r) * 6000) / ky];
+    const X = Float64Array.of(lon * k, far[0] * k), Y = Float64Array.of(lat * ky, far[1] * ky), len = Math.hypot(X[1] - X[0], Y[1] - Y[0]);
+    return { pts: [[lon, lat], far], X, Y, MX: Float64Array.of(mercX(lon), mercX(far[0])), MY: Float64Array.of(mercY(lat), mercY(far[1])), cum: Float64Array.of(0, len), UX: Float32Array.of(Math.sin(r), Math.sin(r)), UY: Float32Array.of(Math.cos(r), Math.cos(r)),
+             k, ky, length: len, stops: [], sig: new Float64Array(0), sigCycle: new Float32Array(0), sigPhase: new Float32Array(0), ray: true };
   }
   function locate(sh, s) {  // segment index containing distance s
     let a = 0, b = sh.cum.length - 1;
@@ -46,39 +64,30 @@
   function project(sh, lon, lat, near, win = 500) {
     const x = lon * sh.k, y = lat * sh.ky;
     const scan = (lo, hi2) => {
-      let best = null;
+      let bd = Infinity, bs = 0;
       for (let i = lo; i <= hi2; i++) {
         const dx = sh.X[i + 1] - sh.X[i], dy = sh.Y[i + 1] - sh.Y[i], l2 = dx * dx + dy * dy;
         const t = l2 ? Math.max(0, Math.min(1, ((x - sh.X[i]) * dx + (y - sh.Y[i]) * dy) / l2)) : 0;
         const d = Math.hypot(x - (sh.X[i] + t * dx), y - (sh.Y[i] + t * dy));
-        if (!best || d < best.d) best = { d, s: sh.cum[i] + t * Math.sqrt(l2) };
+        if (d < bd) { bd = d; bs = sh.cum[i] + t * Math.sqrt(l2); }
       }
-      return best;
+      return { d: bd, s: bs };
     };
-    const last = sh.pts.length - 2;
+    const last = sh.X.length - 2;
     let best = near != null ? scan(Math.max(0, locate(sh, near - win)), Math.min(last, locate(sh, near + win))) : null;
     if (!best || best.d > 150) best = scan(0, last);  // lost the thread: search everything once
     return best;
   }
-  function pointAt(sh, s) {
-    s = Math.max(0, Math.min(sh.length, s));
-    const i = Math.min(locate(sh, s), sh.pts.length - 2), seg = sh.cum[i + 1] - sh.cum[i] || 1, t = (s - sh.cum[i]) / seg;
-    const lon = sh.pts[i][0] + (sh.pts[i + 1][0] - sh.pts[i][0]) * t, lat = sh.pts[i][1] + (sh.pts[i + 1][1] - sh.pts[i][1]) * t;
-    const hd = (Math.atan2(sh.X[i + 1] - sh.X[i], sh.Y[i + 1] - sh.Y[i]) * 180) / Math.PI;
-    return { lon, lat, hd: (hd + 360) % 360 };
-  }
-
-  // ---- traffic light model: deterministic per junction, so every frame and every client agrees
-  function hash(n) { n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return ((n ^ (n >>> 16)) >>> 0) / 4294967296; }
-  function red(trip, sigAlong) {
-    const id = Math.round(sigAlong) * 31 + trip.length;
-    const cycle = 70 + hash(id) * 50, phase = (Date.now() / 1000 + hash(id + 7) * cycle) % cycle;
-    return phase < cycle * 0.42;
+  // writes mercator position and unit direction at distance s into `pose`
+  function poseAt(sh, s) {
+    if (s < 0) s = 0; else if (s > sh.length) s = sh.length;
+    const i = Math.min(locate(sh, s), sh.X.length - 2), seg = sh.cum[i + 1] - sh.cum[i] || 1, t = (s - sh.cum[i]) / seg;
+    pose[0] = sh.MX[i] + (sh.MX[i + 1] - sh.MX[i]) * t; pose[1] = sh.MY[i] + (sh.MY[i + 1] - sh.MY[i]) * t; pose[2] = sh.UX[i]; pose[3] = sh.UY[i];
   }
 
   // ---- vehicle state
   function newVehicle(r, now) {
-    return { id: r.id, s: 0, vel: 0, sRep: 0, vRep: 0, tRep: -1e9, shape: null, ray: null, h: r.hd ?? 0, fade: 0, lon: r.lon, lat: r.lat, seen: now, model: null };
+    return { id: r.id, s: 0, vel: 0, sRep: 0, vRep: 0, tRep: -1e9, shape: null, ray: null, hx: 0, hy: 1, fade: 0, lon: r.lon, lat: r.lat, seen: now, model: null, ns: 0, seg: 0, seg0: 0, liv: 0, rgb: [68, 80, 92], mx: mercX(r.lon), my: mercY(r.lat) };
   }
   function ingest(list, serverNow) {
     const now = T();
@@ -92,6 +101,7 @@
       if (v.modelKey !== modelKey) { v.modelKey = modelKey; v.model = null; }
       Object.assign(v, { line: r.line, mode: r.mode, ag: r.ag, to: r.to, trip: r.trip, st: r.st, sn: r.sn, seen: now });
       v.color = A.providerOf(r.ag)?.color || FALLBACK[r.mode] || "#44505c";
+      v.rgb = [1, 3, 5].map((i) => parseInt(v.color.slice(i, i + 2), 16));
       const prev = { lon: v.lon, lat: v.lat, had: v.tRep > -1e8 };
       v.lon = r.lon; v.lat = r.lat;
       const sh = v.shape;
@@ -102,7 +112,8 @@
         if (hd != null) v.rayHd = (hd + 360) % 360;
         v.vRep = r.sp != null ? r.sp : v.vRep || 0;
         v.tRep = tRep;
-        if (v.rayHd != null) { v.ray = rayFrom(r.lon, r.lat, v.rayHd); v.s = 0; v.sRep = 0; }
+        v.mx = mercX(r.lon); v.my = mercY(r.lat);
+        if (v.rayHd != null) { v.ray = rayFrom(r.lon, r.lat, v.rayHd); v.s = 0; v.sRep = 0; v.seg = 0; v.seg0 = 0; }
         continue;
       }
       const p = project(sh, r.lon, r.lat, v.sRep || null);
@@ -116,7 +127,7 @@
       if (r.sp == null && !first && dt > 1 && Math.abs(p.s - v.sRep) < 2) v.vRep = 0;  // same place twice: it is standing
       v.sRep = first ? p.s : Math.max(p.s, v.sRep);
       v.tRep = tRep;
-      if (first) { v.s = v.sRep + v.vRep * Math.min(ageAtArrival, EXTRAP_MAX); v.vel = v.vRep; }
+      if (first) { v.s = v.sRep + v.vRep * Math.min(ageAtArrival, EXTRAP_MAX); v.vel = v.vRep; v.ns = 0; }
     }
     for (const [id, v] of V) if (now - v.seen > STALE_DROP) V.delete(id);
   }
@@ -124,20 +135,37 @@
     const sh = buildShape(info);
     if (!sh) return;
     // continuity: project where the vehicle is drawn now onto the real shape
-    const cur = v.ray ? pointAt(v.ray, v.s) : { lon: v.lon, lat: v.lat };
+    let cur = { lon: v.lon, lat: v.lat };
+    if (v.ray) { poseAt(v.ray, v.s); cur = { lon: lonOf(pose[0]), lat: latOf(pose[1]) }; }
     const pc = project(sh, cur.lon, cur.lat, null), pr = project(sh, v.lon, v.lat, null);
-    v.shape = sh; v.ray = null;
+    v.shape = sh; v.ray = null; v.ns = 0; v.seg = 0; v.seg0 = 0;
     if (pr) { v.sRep = pr.s; v.s = pc ? pc.s : pr.s; }
   }
 
+  // per-dt coefficients, recomputed only when dt changes (it is constant from frame to frame)
+  let coefDt = -1, kHead = 0, kFadeOut = 0, kGlide = 0, kFadeIn = 0;
+  function coefficients(dt) { coefDt = dt; kHead = 1 - Math.exp(-dt / 0.22); kGlide = 1 - Math.exp(-dt / 1.1); }
+  // segment cursor: advance or retreat from where this vehicle was last frame instead of searching the whole shape
+  function cursor(sh, v, key, s) {
+    let i = v[key] | 0;
+    const last = sh.X.length - 2;
+    if (i > last) i = last;
+    while (i < last && sh.cum[i + 1] <= s) i++;
+    while (i > 0 && sh.cum[i] > s) i--;
+    v[key] = i;
+    return i;
+  }
+  // advances one vehicle by dt seconds; returns its draw alpha
   function step(v, dt, now) {
     const sh = v.shape || v.ray;
-    if (!sh) return null;
+    if (!sh) return 0.7;
+    if (dt !== coefDt) coefficients(dt);
+    if (now !== wallFor) { wallFor = now; wall = Date.now() / 1000; }
     const age = now - v.tRep, stale = age > STALE_DIM, vmax = VMAX[v.mode] || 22;
     let sTarget = v.sRep + v.vRep * Math.min(age, EXTRAP_MAX), vDes = stale ? 0 : v.vRep;
     if (v.st === "STOPPED_AT" && v.sn && v.shape) {  // docked: sit at the stop the feed names
-      const stop = v.shape.stops.find((x) => x.n === v.sn && Math.abs(x.a - v.sRep) < 80);
-      if (stop) { sTarget = stop.a; vDes = 0; }
+      const stops = v.shape.stops;
+      for (let i = 0; i < stops.length; i++) { const x = stops[i]; if (x.n === v.sn && Math.abs(x.a - v.sRep) < 80) { sTarget = x.a; vDes = 0; break; } }
     }
     if (stale) sTarget = v.s;  // no news for a long time: come to rest where we are instead of coasting on an old guess
     const e = sTarget - v.s;
@@ -145,124 +173,98 @@
     let hard = false;
     if (Math.abs(e) > TELEPORT_M) {  // far apart: fade out, jump, fade in
       v.fade = Math.min(1, v.fade + dt * 5);
-      if (v.fade >= 1) { v.s = Math.max(0, Math.min(sh.length, sTarget)); v.vel = vDes; }
-    } else if (e > RESYNC_M) { v.s += Math.min(e * (1 - Math.exp(-dt / 1.1)), 90 * dt); v.fade = Math.min(0.4, v.fade + dt); }  // behind by a few hundred metres: a quick glide
+      if (v.fade >= 1) { v.s = Math.max(0, Math.min(sh.length, sTarget)); v.vel = vDes; v.ns = 0; }
+    } else if (e > RESYNC_M) { v.s += Math.min(e * kGlide, 90 * dt); v.fade = Math.min(0.4, v.fade + dt); }  // behind by a few hundred metres: a quick glide
     else v.fade = Math.max(0, v.fade - dt * 2.5);
     // simulated lights, only while we are not already behind reality, so a stop never becomes a permanent lag
-    if (v.shape && v.shape.sig.length && e < LIGHT_SLACK_M && vDes > 2 && !stale) {
-      for (const a of v.shape.sig) {
-        const d = a - v.s;
-        if (d < -2) continue;
-        if (d > 90) break;
-        if (red(v.trip || "", a)) { const cap = Math.sqrt(2 * 1.6 * Math.max(0, d - 4)); vCmd = Math.min(vCmd, cap); hard = d < 40 && v.vel > 1.5 * cap; }
-        break;
+    const sig = sh.sig;
+    if (sig.length && e < LIGHT_SLACK_M && vDes > 2 && !stale) {
+      let j = v.ns;
+      while (j > 0 && sig[j - 1] > v.s - 2) j--;
+      while (j < sig.length && sig[j] < v.s - 2) j++;
+      v.ns = j;
+      if (j < sig.length) {
+        const d = sig[j] - v.s;
+        if (d <= 90 && redAt(sh, j)) { const cap = Math.sqrt(2 * 1.6 * Math.max(0, d - 4)); vCmd = Math.min(vCmd, cap); hard = d < 40 && v.vel > 1.5 * cap; }
       }
     }
     v.vel += Math.max(-(hard ? 3.2 : 1.4) * dt, Math.min((ACC[v.mode] || 1.1) * dt, vCmd - v.vel));
     v.s = Math.min(sh.length, Math.max(v.s, v.s + v.vel * dt));
-    const ahead = pointAt(sh, v.s + 6);
-    v.h = (v.h + (((ahead.hd - v.h + 540) % 360) - 180) * (1 - Math.exp(-dt / 0.22)) + 360) % 360;
-    return { alpha: (stale ? 0.45 : 1) * (1 - 0.9 * v.fade) };
+    const ia = cursor(sh, v, "seg", Math.min(sh.length, v.s + 6));  // direction a little ahead, so the nose turns into bends
+    v.hx += (sh.UX[ia] - v.hx) * kHead; v.hy += (sh.UY[ia] - v.hy) * kHead;
+    const l = Math.sqrt(v.hx * v.hx + v.hy * v.hy) || 1; v.hx /= l; v.hy /= l;
+    return (stale ? 0.45 : 1) * (1 - 0.9 * v.fade);
   }
 
-  // ---- vehicle models: stacked prisms painted in the carrier's livery. Trams and trains are articulated: each car sits on the track at its own distance.
+  // ---- models: which mesh per car, offset along the vehicle (centre = 0). Articulated cars sit on the track at their own distance.
+  const MODELS = {
+    BUS: { cars: [{ mesh: "bus", c: 0, bend: false }] },
+    TRAM: { cars: [{ mesh: "tramEnd", c: -9.5, flip: true }, { mesh: "bellowsTram", c: -4.75 }, { mesh: "tramMid", c: 0 }, { mesh: "bellowsTram", c: 4.75 }, { mesh: "tramEnd", c: 9.5 }] },
+    EMU: { cars: [{ mesh: "railEnd", c: -21, flip: true }, { mesh: "railMid", c: 0 }, { mesh: "railEnd", c: 21 }] },
+    IC: { cars: [{ mesh: "railMid", c: -24.8 }, { mesh: "railMid", c: 0 }, { mesh: "loco", c: 24.4 }] },
+  };
+  const modelFor = (v) => (v.mode === "TRAM" ? MODELS.TRAM : v.mode === "RAIL" ? (/Intercity/i.test(v.ag || "") ? MODELS.IC : MODELS.EMU) : MODELS.BUS);
   function livery(v) {
     const p = A.providerOf(v.ag), L = p?.livery && (p.livery[v.mode] || p.livery.default);
     return { body: L?.body || v.color, stripe: L?.stripe || "#ffffff", roof: L?.roof || "#d4d8de", skirt: L?.skirt || "#2a2f36" };
   }
-  function carParts(c, L, o) {  // o: {front, rear, bus, loco, pan}
-    const { len, wid, h: ht } = c, out = [];
-    const part = (off, plen, pwid, b, t, col) => out.push({ off, len: plen, wid: pwid, b, t, col });
-    part(0, len * 0.96, wid - 0.2, 0.25, 0.95, L.skirt);
-    part(0, len, wid, 0.95, ht - 0.28, o.loco ? L.stripe : L.body);
-    part(0, len, wid + 0.05, 0.95, 1.45, o.loco ? L.body : L.stripe);
-    if (!o.loco) part(0, len - 1.5, wid + 0.1, 1.65, ht - 0.75, GLASS);
-    part(0, len - 0.5, wid - 0.35, ht - 0.28, ht, L.roof);
-    if (o.bus) part(-1, 3.2, 1.6, ht, ht + 0.35, L.roof);
-    if (o.pan) part(0, 1.5, 0.9, ht, ht + 0.5, "#2c3138");
-    if (o.front) part(len / 2 - 0.17, 0.5, wid - 0.5, 1.3, ht - 0.6, GLASS);
-    if (o.rear) part(-(len / 2 - 0.17), 0.5, wid - 0.7, 1.4, ht - 0.7, "#2b3440");
-    return out;
-  }
-  function modelOf(v) {
-    if (v.model) return v.model;
-    const L = livery(v), ic = /Intercity/i.test(v.ag || "");
-    let cars, gap = 0, bell = false;
-    if (v.mode === "TRAM") { cars = [8.6, 8.6, 8.6].map((len) => ({ len, wid: 2.4, h: 3.5 })); gap = 0.9; bell = true; }
-    else if (v.mode === "RAIL") {
-      if (ic) { cars = [{ len: 24, wid: 3, h: 4.2 }, { len: 24, wid: 3, h: 4.2 }, { len: 18, wid: 3, h: 4.3, loco: true }]; gap = 0.8; }
-      else { cars = [20, 20, 20].map((len) => ({ len, wid: 2.9, h: 4.1 })); gap = 1.0; bell = true; }
-    } else if (v.mode === "BUS" || v.mode === "TROLLEYBUS") cars = [{ len: 12, wid: 2.5, h: 3.1, bus: true }];
-    else cars = [{ len: 10, wid: 2.4, h: 3.0, bus: true }];
-    const total = cars.reduce((a, c) => a + c.len, 0) + gap * (cars.length - 1);
-    let pos = -total / 2;
-    const out = [];
-    cars.forEach((c, i) => {
-      const centre = pos + c.len / 2;
-      out.push({ c: centre, bend: cars.length > 1, parts: carParts(c, L, { front: i === cars.length - 1, rear: i === 0, bus: c.bus, loco: c.loco, pan: (v.mode === "TRAM" || (v.mode === "RAIL" && !ic)) && i === 1 }) });
-      pos += c.len;
-      if (i < cars.length - 1) {
-        if (bell) out.push({ c: pos + gap / 2, bend: true, parts: [{ off: 0, len: gap + 0.3, wid: cars[i].wid - 0.45, b: 0.95, t: cars[i].h - 0.5, col: "#262b33" }] });
-        pos += gap;
-      }
-    });
-    v.model = { cars: out, total };
-    return v.model;
-  }
 
-  // ---- drawing
-  const hex = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
-  function mix(c, bg, a) {  // blend toward the background: extrusions cannot take per-feature opacity
-    if (a >= 0.99) return c;
-    const x = hex(c), y = hex(bg);
-    return "#" + x.map((v, i) => Math.round(v * a + y[i] * (1 - a)).toString(16).padStart(2, "0")).join("");
-  }
-  function rect(lon, lat, hdDeg, len, wid, off) {
-    const r = (hdDeg * Math.PI) / 180, kx = Math.cos((lat * Math.PI) / 180) * 111320, ky = 110540;
-    const fx = Math.sin(r), fy = Math.cos(r), sx = fy, sy = -fx, hl = len / 2, hw = wid / 2;
-    const c = (a, b) => [lon + (fx * (a + off) + sx * b) / kx, lat + (fy * (a + off) + sy * b) / ky];
-    return [c(hl, hw), c(hl, -hw), c(-hl, -hw), c(-hl, hw), c(hl, hw)];
-  }
-  function draw(dt, now) {
-    if (!map || !map.getSource("veh-dots")) return;
-    const b = map.getBounds().toArray(), pad = 0.01, z = map.getZoom(), routeOn = hi.size > 0;
-    const dots = [], solids = [];
-    const bgHex = (getComputedStyle(document.documentElement).getPropertyValue("--surface-3").trim() || "#dddddd");
-    let nearby = 0, followed = null;
+  // ---- the frame: simulate, cull, write instances. Drawing itself happens in the custom layer.
+  function frame(dt) {
+    const c = map.getCenter(), z = map.getZoom();
+    const ox = mercX(c.lng), oy = mercY(c.lat), k = 1 / (40075016.686 * Math.cos((c.lat * Math.PI) / 180));  // mercator units per metre
+    const b = map.getBounds(), m = 0.25 * Math.max(b.getEast() - b.getWest(), 1e-4);
+    const x0 = mercX(b.getWest() - m), x1 = mercX(b.getEast() + m), y1 = mercY(b.getSouth() - m), y0 = mercY(b.getNorth() + m);
+    scene.beginFrame();
+    const routeOn = hi.size > 0, dotAlpha = z < Z_MESH + 0.5 ? 1 : Math.max(0, 1 - (z - (Z_MESH + 0.5)) / 1.2);
+    const dotSize = z < 12 ? 7 : z < 14 ? 10 : 14, labels = z >= Z_LABEL && z < 17.6, meshes = z >= Z_MESH;
     for (const v of V.values()) {
-      const st = step(v, dt, now) || { alpha: 0.7 };  // no shape yet: a still dot at the last reported position
-      const sh = v.shape || v.ray, p = sh ? pointAt(sh, v.s) : { lon: v.lon, lat: v.lat };
-      if (p.lon < b[0][0] - pad || p.lon > b[1][0] + pad || p.lat < b[0][1] - pad || p.lat > b[1][1] + pad) continue;
-      const mine = hi.has(v.trip) || v.id === followId, alpha = st.alpha * (routeOn && !mine ? 0.35 : 1);
-      dots.push({ type: "Feature", properties: { c: v.color, l: v.line || "", a: alpha, hi: mine ? 1 : 0, v: v.id }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } });
-      if (v.id === followId) followed = { lon: p.lon, lat: p.lat, hd: v.h, v };
-      if (sh && z >= Z_3D && nearby < 140) {
-        nearby++;
-        const m = modelOf(v);
-        for (const car of m.cars) {
-          const cp = car.bend ? pointAt(sh, v.s + car.c) : p, hd = car.bend ? cp.hd : v.h, lon = car.bend ? cp.lon : p.lon, lat = car.bend ? cp.lat : p.lat;
-          for (const part of car.parts) {
-            solids.push({ type: "Feature", properties: { c: mix(part.col, bgHex, alpha), b: part.b, t: part.t, v: v.id }, geometry: { type: "Polygon", coordinates: [rect(lon, lat, hd, part.len, part.wid, part.off + (car.bend ? 0 : car.c))] } });
-          }
+      const a = step(v, dt, nowSec), sh = v.shape || v.ray;
+      if (sh) { const i = cursor(sh, v, "seg0", v.s), t = (v.s - sh.cum[i]) / (sh.cum[i + 1] - sh.cum[i] || 1); v.mx = sh.MX[i] + (sh.MX[i + 1] - sh.MX[i]) * t; v.my = sh.MY[i] + (sh.MY[i + 1] - sh.MY[i]) * t; }
+      if (v.mx < x0 || v.mx > x1 || v.my < y0 || v.my > y1) continue;
+      const mine = hi.has(v.trip) || v.id === followId, alpha = a * (routeOn && !mine ? 0.35 : 1), dx = (v.mx - ox) / k, dy = (v.my - oy) / k;
+      if (dotAlpha > 0.02) {
+        if (mine) scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], 90, dotSize * 2.1, -1);
+        scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], Math.round(255 * alpha * dotAlpha), dotSize, -1);
+        if (labels && v.line) scene.addLabel(v.line, dx, dy);
+      }
+      if (meshes && sh) {
+        if (!v.model) { v.model = modelFor(v); v.liv = scene.palette.id(livery(v)); }
+        const al = Math.round(255 * alpha), cars = v.model.cars, bend = cars.length > 1;
+        for (let i = 0; i < cars.length; i++) {
+          const cd = cars[i];
+          let cx = dx, cy = dy, fx = v.hx, fy = v.hy;
+          if (bend) { poseAt(sh, v.s + cd.c); cx = (pose[0] - ox) / k; cy = (pose[1] - oy) / k; fx = pose[2]; fy = pose[3]; }
+          if (cd.flip) { fx = -fx; fy = -fy; }
+          scene.batches.get(cd.mesh).batch.push(cx, cy, fx, fy, v.liv, al, 0);
         }
       }
     }
-    map.getSource("veh-dots").setData({ type: "FeatureCollection", features: dots });
-    map.getSource("veh-3d").setData({ type: "FeatureCollection", features: solids });
-    if (followId) chase(followed, dt);
+    scene.setFrame({ ox, oy, k, zoom: z, dpr: window.devicePixelRatio || 1 });
+    window.Daylight?.apply(scene, map);
+    if (followId) chase(V.get(followId), dt);
   }
+  function tick() {
+    requestAnimationFrame(tick);
+    const t = performance.now();
+    if (!scene || !map || document.hidden || !shown() || map.getZoom() < Z_DOTS) { lastTick = t; return; }
+    const dt = Math.min(0.05, (t - lastTick) / 1000);
+    lastTick = t;
+    nowSec = T();
+    frame(dt);
+    map.triggerRepaint();
+  }
+
   // chase camera: glides to the vehicle, and in 3D turns to look along its direction of travel
-  function chase(f, dt) {
-    if (!f) { if (followBar) $("#follow-status").textContent = "No position for this vehicle right now"; return; }
-    const k = 1 - Math.exp(-dt / 0.4), c = map.getCenter();
+  function chase(v, dt) {
+    if (!v) { if (followBar) $("#follow-status").textContent = "No position for this vehicle right now"; return; }
+    const lon = lonOf(v.mx), lat = latOf(v.my), c = map.getCenter(), k = 1 - Math.exp(-dt / 0.4);
     cam = cam || { lon: c.lng, lat: c.lat, zoom: map.getZoom(), target: Math.max(map.getZoom(), 17.8) };
-    cam.lon += (f.lon - cam.lon) * k; cam.lat += (f.lat - cam.lat) * k;
-    if (cam.free) cam.zoom = map.getZoom();  // the user took over the zoom
-    else cam.zoom += (cam.target - cam.zoom) * (1 - Math.exp(-dt / 0.6));
+    cam.lon += (lon - cam.lon) * k; cam.lat += (lat - cam.lat) * k;
+    if (cam.free) cam.zoom = map.getZoom(); else cam.zoom += (cam.target - cam.zoom) * (1 - Math.exp(-dt / 0.6));
     const opts = { center: [cam.lon, cam.lat], zoom: cam.zoom, animate: false };
-    if (threeD) { const b = map.getBearing(); opts.bearing = b + (((f.hd - b + 540) % 360) - 180) * (1 - Math.exp(-dt / 0.8)); }
+    if (threeD) { const hd = (Math.atan2(v.hx, v.hy) * 180) / Math.PI, bear = map.getBearing(); opts.bearing = bear + (((hd - bear + 540) % 360) - 180) * (1 - Math.exp(-dt / 0.8)); }
     map.jumpTo(opts);
-    const v = f.v;
     $("#follow-status").textContent = v.st === "STOPPED_AT" ? `At ${v.sn || "a stop"}` : v.sn ? `Next stop: ${v.sn}` : v.vel > 0.5 ? "Moving" : "Standing";
   }
   function showBar(v) {
@@ -273,14 +275,13 @@
       document.body.append(followBar);
     }
     followBar.hidden = false;
-    const t = $("#follow-title");
-    t.replaceChildren(A.badge(v.line || "?", v.color, v.mode), v.to ? ` to ${v.to}` : "");
+    $("#follow-title").replaceChildren(A.badge(v.line || "?", v.color, v.mode), v.to ? ` to ${v.to}` : "");
     $("#follow-sub").textContent = A.providerOf(v.ag)?.name || v.ag || "";
   }
   function follow(id) {
     const v = V.get(id);
     if (!v) return false;
-    followId = id; cam = null; on = true; syncVisibility();
+    followId = id; cam = null; syncVisibility(); refresh();
     showBar(v);
     ensureShape(v);
     return true;
@@ -288,6 +289,7 @@
   function stopFollow() {
     followId = null; cam = null;
     if (followBar) followBar.hidden = true;
+    syncVisibility();
     map.easeTo({ bearing: threeD ? map.getBearing() : 0, duration: 400 });
   }
   function ensureShape(v) {
@@ -296,9 +298,8 @@
     if (known && known.points) return attachShape(v, known);
     if (known === "pending") return;
     SHAPES.set(v.trip, "pending");
-    api("shape", { trip: v.trip }).then((info) => { SHAPES.set(v.trip, info); for (const o of V.values()) if (o.trip === v.trip && !o.shape) attachShape(o, info); }).catch(() => SHAPES.set(v.trip, { fail: T() }));
+    api("shape", { trip: v.trip }).then((info) => { info.trip = v.trip; SHAPES.set(v.trip, info); for (const o of V.values()) if (o.trip === v.trip && !o.shape) attachShape(o, info); }).catch(() => SHAPES.set(v.trip, { fail: T() }));
   }
-  // from a trip leg or a departure: find the vehicle on that trip, wherever it is, and follow it
   async function followTrip(trip) {
     if (!map || !trip) return false;
     let v = [...V.values()].find((x) => x.trip === trip);
@@ -308,52 +309,44 @@
     }
     return v ? follow(v.id) : false;
   }
-  function loop() {
-    requestAnimationFrame(loop);
-    const t = performance.now();
-    if (!on || !map || document.hidden || map.getZoom() < Z_DOTS || t - lastFrame < (map.getZoom() >= Z_3D ? 30 : 60)) return;
-    const dt = Math.min(0.25, (t - lastFrame) / 1000);
-    lastFrame = t;
-    draw(dt, T());
-  }
 
-  // ---- map layers (re-added after every style change)
+  // the dark base map is used by the OS theme, or at night in diorama mode
+  const isDark = () => (window.Daylight?.enabled ? window.Daylight.wantsDark() : matchMedia("(prefers-color-scheme: dark)").matches);
+  // ---- layers: heatmap (MapLibre), 3D buildings (MapLibre), everything else is the custom layer
   function layers() {
     const css = (n, d) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d;
-    if (!map.getSource("veh-dots")) {
-      for (const id of ["veh-dots", "veh-3d", "veh-heat"]) map.addSource(id, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-    }
-    const labelFont = (map.getStyle().layers.find((l) => l.layout && l.layout["text-font"]) || { layout: {} }).layout["text-font"] || ["Noto Sans Regular"];
+    if (!map.getSource("veh-heat")) map.addSource("veh-heat", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     const firstSymbol = (map.getStyle().layers.find((l) => l.type === "symbol") || {}).id;
     if (!map.getLayer("buildings-3d") && map.getSource("openmaptiles")) {
       map.addLayer({ id: "buildings-3d", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 14,
-        paint: { "fill-extrusion-color": css("--surface-3", "#ddd"), "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6], "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0], "fill-extrusion-opacity": 0.88, "fill-extrusion-vertical-gradient": true } }, firstSymbol);
+        paint: { "fill-extrusion-color": isDark() ? "#2d333d" : "#dcdfe3", "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6], "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0], "fill-extrusion-opacity": 0.9, "fill-extrusion-vertical-gradient": true } }, firstSymbol);
     }
-    const add = (l) => { if (!map.getLayer(l.id)) map.addLayer(l); };
-    const accent = css("--accent", "#0b6e5c");
-    add({ id: "veh-heat", type: "heatmap", source: "veh-heat", maxzoom: Z_HEAT_OUT, paint: {
-      "heatmap-weight": 1, "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 6, 0.12, 9, 0.35, 11, 0.9], "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 6, 6, 11, 18],
-      "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0,0,0,0)", 0.15, "rgba(60,150,170,0.35)", 0.45, accent, 0.75, "#e0a100", 1, "#c62828"],
-      "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 10.4, 0.9, Z_HEAT_OUT, 0] } });
-    add({ id: "veh-3d-body", type: "fill-extrusion", source: "veh-3d", minzoom: Z_3D, paint: { "fill-extrusion-color": ["get", "c"], "fill-extrusion-height": ["get", "t"], "fill-extrusion-base": ["get", "b"], "fill-extrusion-opacity": 0.97, "fill-extrusion-vertical-gradient": true } });
-    add({ id: "veh-halo", type: "circle", source: "veh-dots", filter: ["==", ["get", "hi"], 1], paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 9, 16, 18], "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ["get", "c"], "circle-stroke-width": 3, "circle-stroke-opacity": 0.9 } });
-    const fade = ["interpolate", ["linear"], ["zoom"], Z_DOTS, 0, 11.2, ["get", "a"], 16.2, ["get", "a"], 17, 0];
-    add({ id: "veh-dot", type: "circle", source: "veh-dots", paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 3.5, 13, 6, 16, 9], "circle-color": ["get", "c"], "circle-stroke-color": "#ffffff", "circle-stroke-width": 2,
-      "circle-opacity": fade, "circle-stroke-opacity": fade } });
-    add({ id: "veh-label", type: "symbol", source: "veh-dots", minzoom: 13.2, layout: { "text-field": ["get", "l"], "text-font": labelFont, "text-size": 11, "text-offset": [0, -1.5], "text-optional": true },
-      paint: { "text-color": css("--ink", "#111"), "text-halo-color": css("--surface", "#fff"), "text-halo-width": 1.6, "text-opacity": ["get", "a"] } });
+    if (!map.getLayer("veh-heat")) {
+      map.addLayer({ id: "veh-heat", type: "heatmap", source: "veh-heat", maxzoom: Z_HEAT_OUT, paint: {
+        "heatmap-weight": 1, "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 6, 0.12, 9, 0.35, 11, 0.9], "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 6, 6, 11, 18],
+        "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0,0,0,0)", 0.15, "rgba(60,150,170,0.35)", 0.45, css("--accent", "#0b6e5c"), 0.75, "#e0a100", 1, "#c62828"],
+        "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 10.4, 0.9, Z_HEAT_OUT, 0] } });
+    }
+    if (scene && !map.getLayer(scene.id)) map.addLayer(scene.layer);
+    scene?.labels.theme(isDark() ? "#eef1f4" : "#14181d", isDark() ? "#1b1f24" : "#ffffff");
+    window.Daylight?.syncTheme?.(isDark());
     syncVisibility();
   }
+  const shown = () => on && (ctx || force || followId !== null);  // vehicles belong to transit contexts, not to general map browsing
   function syncVisibility() {
     if (!map) return;
-    for (const id of ["veh-heat", "veh-3d-body", "veh-halo", "veh-dot", "veh-label"]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+    if (map.getLayer("veh-heat")) map.setLayoutProperty("veh-heat", "visibility", shown() ? "visible" : "none");
     if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", threeD ? "visible" : "none");
+    if (scene) { scene.showDots = scene.showMeshes = scene.showLabels = shown(); }
+    const bt = $("#btn-veh");
+    if (bt) bt.hidden = !(ctx || force || followId !== null);
+    map.triggerRepaint();
   }
 
   // ---- data
   let fetching = false;
   async function refresh() {
-    if (!on || !map || document.hidden || fetching) return;
+    if (!shown() || !map || document.hidden || fetching) return;
     const z = map.getZoom();
     fetching = true;
     try {
@@ -372,11 +365,23 @@
           const known = SHAPES.get(v.trip);
           if (known && known.points) { attachShape(v, known); continue; }
           if (known === "pending" || (known && T() - known.fail < 60)) continue;  // loading, or failed less than a minute ago
-          SHAPES.set(v.trip, "pending"); budget--;
-          api("shape", { trip: v.trip }).then((info) => { SHAPES.set(v.trip, info); for (const o of V.values()) if (o.trip === v.trip && !o.shape) attachShape(o, info); }).catch(() => SHAPES.set(v.trip, { fail: T() }));
+          budget--;
+          ensureShape(v);
         }
       }
     } catch { /* keep animating what we have */ } finally { fetching = false; }
+  }
+
+  // ---- picking: project every vehicle and take the nearest to the pointer
+  function pick(pt) {
+    let best = null, bd = 1e9;
+    const reach = map.getZoom() >= Z_MESH + 1 ? 26 : 16;
+    for (const v of V.values()) {
+      if (!v.mx) continue;
+      const p = map.project([lonOf(v.mx), latOf(v.my)]), d = Math.hypot(p.x - pt.x, p.y - pt.y);
+      if (d < bd && d < reach) { bd = d; best = v; }
+    }
+    return best;
   }
 
   // ---- ui
@@ -395,20 +400,28 @@
     else { map.easeTo({ pitch: 0, bearing: 0, duration: 500 }); map.dragRotate.disable(); map.touchPitch.disable(); map.touchZoomRotate.disableRotation(); }
     syncVisibility();
   }
-  function onClick(e) {
-    const f = e.features && e.features[0];
-    if (f && f.properties.v) follow(f.properties.v);
+  function setupScene() {
+    const S3 = window.Scene3D, car = S3.carMesh;
+    scene = S3.createLayer({ id: "scene3d" });
+    scene.registerMesh("bus", car({ L: 12, W: 2.5, H: 3.1, nose: "both", bus: true }));
+    scene.registerMesh("tramEnd", car({ L: 8.6, W: 2.4, H: 3.5, nose: "front", wheels: 0 }));
+    scene.registerMesh("tramMid", car({ L: 8.6, W: 2.4, H: 3.5, nose: "none", pantograph: true, wheels: 0 }));
+    scene.registerMesh("bellowsTram", S3.bellowsMesh(1.2, 2.0, 3.5));
+    scene.registerMesh("railEnd", car({ L: 20, W: 2.9, H: 4.1, nose: "front", wheels: 0, bogies: 2 }));
+    scene.registerMesh("railMid", car({ L: 20, W: 2.9, H: 4.1, nose: "none", wheels: 0, bogies: 2 }));
+    scene.registerMesh("loco", car({ L: 18, W: 3, H: 4.3, nose: "both", loco: true, wheels: 0, bogies: 2 }));
+    for (const [name, cap] of [["bus", 1024], ["tramEnd", 512], ["tramMid", 256], ["bellowsTram", 512], ["railEnd", 256], ["railMid", 256], ["loco", 128]]) scene.addBatch(name, name, cap);
+    scene.meshZoom = Z_MESH;
   }
   function init(m) {
     map = m;
+    setupScene();
     controls();
     map.on("style.load", layers);
     if (map.isStyleLoaded()) layers();
-    for (const layer of ["veh-dot", "veh-3d-body"]) {
-      map.on("click", layer, onClick);
-      map.on("mouseenter", layer, () => (map.getCanvas().style.cursor = "pointer"));
-      map.on("mouseleave", layer, () => (map.getCanvas().style.cursor = ""));
-    }
+    const move = { t: 0 };
+    map.on("click", (e) => { if (!shown()) return; const v = pick(e.point); if (v) follow(v.id); });
+    map.on("mousemove", (e) => { const n = performance.now(); if (n - move.t < 90 || !shown()) return; move.t = n; map.getCanvas().style.cursor = pick(e.point) ? "pointer" : ""; });
     map.on("dragstart", (e) => { if (followId && e.originalEvent) stopFollow(); });
     map.on("zoomstart", (e) => { if (followId && cam && e.originalEvent) cam.free = true; });
     let deb = 0;
@@ -417,13 +430,15 @@
     map.touchPitch?.disable();
     if (threeD) set3d(true);
     refresh();
-    requestAnimationFrame(loop);
+    requestAnimationFrame(tick);
   }
 
   window.Vehicles = {
-    init, follow, followTrip, stopFollow, highlight: (ids) => { hi = new Set(ids || []); }, is3d: () => threeD,
+    init, follow, followTrip, stopFollow, set3d, is3d: () => threeD, scene: () => scene,
+    setContext: (c) => { ctx = !!c; syncVisibility(); if (shown()) refresh(); }, setForce: (f) => { force = !!f; syncVisibility(); if (shown()) refresh(); },
+    highlight: (ids) => { hi = new Set(ids || []); },
+    stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on: shown(), threeD, zoom: map ? +map.getZoom().toFixed(1) : null, render: scene?.stats }),
     // exposed for tests
-    stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on, threeD, zoom: map ? +map.getZoom().toFixed(1) : null }),
-    _ingest: ingest, _attach: attachShape, _step: step, _V: V, _project: project, _build: buildShape, _pointAt: pointAt, _red: red, _model: modelOf, _livery: livery,
+    _ingest: ingest, _attach: attachShape, _step: step, _V: V, _project: project, _build: buildShape, _red: (sh, j) => { wall = Date.now() / 1000; return redAt(sh, j); }, _model: modelFor, _livery: livery, _pose: (sh, s) => { poseAt(sh, s); return Array.from(pose); },
   };
 })();

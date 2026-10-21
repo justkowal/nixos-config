@@ -18,6 +18,8 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
 
+import places
+
 OTP = os.environ.get("OTP_URL", "http://mcp-otp:8080")
 DB = os.environ.get("NAV_DB", "")
 NOM = os.environ.get("NOMINATIM_URL", "http://mcp-nominatim:8080")
@@ -168,7 +170,10 @@ def api_geocode(q):
         road = a.get("road") or a.get("pedestrian")
         title = h.get("name") or (f'{road} {a.get("house_number", "")}'.strip() if road else h["display_name"].split(",")[0])
         place = a.get("city") or a.get("town") or a.get("village") or a.get("municipality") or ""
-        out.append({"title": title, "sub": ", ".join(x for x in (road if road and road != title else "", place) if x), "lat": float(h["lat"]), "lon": float(h["lon"]), "kind": h.get("type")})
+        osm = {"node": "N", "way": "W", "relation": "R"}.get(h.get("osm_type"))
+        poi = h.get("category") in places.MAIN_CLASSES and h.get("category") not in ("building", "place", "highway", "railway", "natural", "man_made")
+        out.append({"title": title, "sub": ", ".join(x for x in (road if road and road != title else "", place) if x), "lat": float(h["lat"]), "lon": float(h["lon"]), "kind": h.get("type"),
+                    "osm": f'{osm}{h["osm_id"]}' if osm and poi else None, "cat": places.label(h.get("category"), h.get("type")) if poi else None})
     return out
 
 
@@ -467,7 +472,78 @@ def api_shape(q):
     return info
 
 
-ROUTES = {"/api/vehicles": api_vehicles, "/api/shape": api_shape, "/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan": api_plan, "/api/nearby": api_nearby,
+# ---------------------------------------------------------------- places (explore)
+def api_explore(q):
+    one = lambda k, d="": (q.get(k) or [d])[0]
+    la, lo = point(f'{one("lat")},{one("lon")}', "point")
+    try:
+        return places.explore(one("cat"), la, lo, num(one("r", "800"), 100, 3000, "r"))
+    except ValueError as e:
+        raise Bad(str(e))
+
+
+def place_args(q):
+    one = lambda k, d="": (q.get(k) or [d])[0]
+    if one("id"):
+        if not places.OSM_ID.fullmatch(one("id")):
+            raise Bad("bad place id")
+        return {"osm": one("id")}
+    la, lo = point(f'{one("lat")},{one("lon")}', "point")
+    return {"lat": la, "lon": lo, "name": one("name")[:120] or None}
+
+
+def api_place(q, device="web"):
+    card = places.place_card(**place_args(q))
+    if not card:
+        raise Bad("no place here", 404)
+    if DB:
+        with conn() as c:
+            card["saved"] = bool(c.execute("SELECT 1 FROM saved WHERE device=? AND id=?", (device, card["id"])).fetchone())
+            n = c.execute("SELECT rating, text, ts FROM notes WHERE device=? AND place=?", (device, card["id"])).fetchone()
+            card["note"] = dict(n) if n else None
+    return card
+
+
+def api_place_more(q):
+    card = places.place_card(**place_args(q))
+    if not card:
+        raise Bad("no place here", 404)
+    out = places.more(card)
+    if out.get("photo"):
+        out["photo"] = "/api/img?u=" + urllib.parse.quote(out["photo"], safe="")
+    return out
+
+
+def api_saved_list(device):
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT id, title, lat, lon, cat FROM saved WHERE device=? ORDER BY ts DESC LIMIT 200", (device,)).fetchall()]
+
+
+def api_saved_add(device, b):
+    pid, title = str(b.get("id", ""))[:40], str(b.get("title", ""))[:120]
+    la, lo = point(f'{b.get("lat")},{b.get("lon")}', "point")
+    if not pid or not title:
+        raise Bad("id and title are required")
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO saved VALUES (?,?,?,?,?,?,?)", (device, pid, title, la, lo, str(b.get("cat", ""))[:40], time.time()))
+    return {"ok": True}
+
+
+def api_note_set(device, b):
+    place = str(b.get("place", ""))[:40]
+    rating = int(num(b.get("rating", 0), 0, 5, "rating"))
+    text = str(b.get("text", ""))[:1500]
+    if not place:
+        raise Bad("place is required")
+    with conn() as c:
+        if rating == 0 and not text:
+            c.execute("DELETE FROM notes WHERE device=? AND place=?", (device, place))
+        else:
+            c.execute("INSERT OR REPLACE INTO notes VALUES (?,?,?,?,?)", (device, place, rating, text, time.time()))
+    return {"ok": True}
+
+
+ROUTES = {"/api/explore": api_explore, "/api/place/more": api_place_more, "/api/vehicles": api_vehicles, "/api/shape": api_shape, "/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan": api_plan, "/api/nearby": api_nearby,
           "/api/departures": api_departures, "/api/trip": api_trip, "/api/info": api_info}
 
 
@@ -485,7 +561,9 @@ def init_db():
         c.executescript("""
             CREATE TABLE IF NOT EXISTS watches (id TEXT PRIMARY KEY, device TEXT, until REAL, legs TEXT, last TEXT);
             CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, watch TEXT, device TEXT, ts REAL, kind TEXT, text TEXT);
-            CREATE TABLE IF NOT EXISTS pushes (device TEXT PRIMARY KEY, kind TEXT, target TEXT);""")
+            CREATE TABLE IF NOT EXISTS pushes (device TEXT PRIMARY KEY, kind TEXT, target TEXT);
+            CREATE TABLE IF NOT EXISTS saved (device TEXT, id TEXT, title TEXT, lat REAL, lon REAL, cat TEXT, ts REAL, PRIMARY KEY (device, id));
+            CREATE TABLE IF NOT EXISTS notes (device TEXT, place TEXT, rating INTEGER, text TEXT, ts REAL, PRIMARY KEY (device, place));""")
 
 
 def emit(c, watch, device, kind, text):
@@ -552,7 +630,7 @@ _build_cache = {"key": None, "id": ""}
 
 def build_id():
     """content hash of the shipped files; recomputed when one of them changes on disk (matters in development, deploys replace the store path)."""
-    names = ("index.html", "app.js", "vehicles.js", "guide.js", "app.css", "providers.json", "sw.js")
+    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "app.css", "providers.json", "sw.js")
     key = []
     for n in names:
         try:
@@ -633,6 +711,24 @@ class H(BaseHTTPRequestHandler):
         if u.path.startswith("/api/"):
             if u.path == "/api/session":
                 return self.j(200 if self.authed() else 401, {"ok": self.authed()})
+            if u.path == "/api/img":
+                if not self.authed():
+                    return self.j(401, {"error": "sign in"})
+                try:
+                    ctype, data = places.fetch_image((urllib.parse.parse_qs(u.query).get("u") or [""])[0])
+                except Exception:
+                    return self.j(404, {"error": "no image"})
+                return self.send(200, data, ctype, extra=[("Cache-Control", "private, max-age=86400")])
+            if u.path in ("/api/place", "/api/saved") and DB:
+                if not self.authed():
+                    return self.j(401, {"error": "sign in"})
+                try:
+                    q = urllib.parse.parse_qs(u.query)
+                    return self.j(200, api_place(q, self.device()) if u.path == "/api/place" else api_saved_list(self.device()))
+                except Bad as e:
+                    return self.j(e.code, {"error": str(e)})
+                except Exception:
+                    return self.j(502, {"error": "places unavailable"})
             if u.path == "/api/events":
                 if not DB:
                     return self.j(404, {"error": "not enabled"})
@@ -663,7 +759,7 @@ class H(BaseHTTPRequestHandler):
         BUILD = build_id()
         with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
             html = f.read()
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js"):
             html = html.replace(f'"/{n}"', f'"/{n}?v={BUILD}"')
         return html.replace('content="dev"', f'content="{BUILD}"').encode()
 
@@ -688,11 +784,12 @@ class H(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         u = urllib.parse.urlparse(self.path)
-        if u.path.replace("/api/v1/", "/api/") != "/api/watch" or not DB or not self.authed():
+        p = u.path.replace("/api/v1/", "/api/")
+        if p not in ("/api/watch", "/api/saved") or not DB or not self.authed():
             return self.j(404 if self.authed() else 401, {"error": "not found"})
         wid = (urllib.parse.parse_qs(u.query).get("id") or [""])[0]
         with conn() as c:
-            c.execute("DELETE FROM watches WHERE id=? AND device=?", (wid, self.device()))
+            c.execute("DELETE FROM watches WHERE id=? AND device=?" if p == "/api/watch" else "DELETE FROM saved WHERE id=? AND device=?", (wid, self.device()))
         return self.j(200, {"ok": True})
 
     def do_POST(self):
@@ -701,6 +798,14 @@ class H(BaseHTTPRequestHandler):
             path = "/api/" + path[8:]
         if path == "/api/logout":
             return self.j(200, {"ok": True}, extra=[("Set-Cookie", "nav=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict")])
+        if path in ("/api/saved", "/api/notes"):
+            if not DB or not self.authed():
+                return self.j(401 if not self.authed() else 404, {"error": "not available"})
+            try:
+                b = self.body()
+                return self.j(200, api_saved_add(self.device(), b) if path == "/api/saved" else api_note_set(self.device(), b))
+            except Bad as e:
+                return self.j(e.code, {"error": str(e)})
         if path in ("/api/watch", "/api/push"):
             if not DB:
                 return self.j(404, {"error": "not enabled"})

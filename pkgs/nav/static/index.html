@@ -38,25 +38,50 @@
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></symbol>
   <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.7 2 2 0 3.3-.6 4.3-1.2a.5.5 0 0 1 .8.4v10.2a1 1 0 0 1-.4.8c-1 .7-2.3 1.2-4.3 1.2-2.7 0-4.7-2-7.7-2a6 6 0 0 0-3.6 1.2"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
 </svg>
 
 <div id="map" role="application" aria-label="Map"></div>
 
 <div class="mapctl glass" id="mapctl">
+  <button id="btn-dio" class="icon-btn" aria-label="Diorama mode" title="Diorama mode: just the view"><svg class="ic"><use href="#i-expand"/></svg></button>
   <button id="locate" class="icon-btn" aria-label="Show my location"><svg class="ic"><use href="#i-locate"/></svg></button>
 </div>
 
 <nav id="tabs" class="tabs glass" role="tablist" aria-label="Sections">
-  <button role="tab" id="tab-plan" aria-controls="view-plan" aria-selected="true" data-tab="plan"><svg class="ic"><use href="#i-nav"/></svg><span>Plan</span></button>
-  <button role="tab" id="tab-near" aria-controls="view-near" aria-selected="false" data-tab="near" tabindex="-1"><svg class="ic"><use href="#i-pin"/></svg><span>Nearby</span></button>
+  <button role="tab" id="tab-explore" aria-controls="view-explore" aria-selected="true" data-tab="explore"><svg class="ic"><use href="#i-search"/></svg><span>Explore</span></button>
+  <button role="tab" id="tab-plan" aria-controls="view-plan" aria-selected="false" data-tab="plan" tabindex="-1"><svg class="ic"><use href="#i-nav"/></svg><span>Plan</span></button>
+  <button role="tab" id="tab-near" aria-controls="view-near" aria-selected="false" data-tab="near" tabindex="-1"><svg class="ic"><use href="#i-bus"/></svg><span>Stops</span></button>
   <button role="tab" id="tab-info" aria-controls="view-info" aria-selected="false" data-tab="info" tabindex="-1"><svg class="ic"><use href="#i-info"/></svg><span>About</span></button>
 </nav>
 
 <section id="sheet" class="sheet glass" aria-label="Trip planner">
   <button id="grabber" class="grabber" aria-label="Resize panel"><span></span></button>
 
-  <div id="view-plan" class="view" role="tabpanel" aria-labelledby="tab-plan">
+  <div id="view-explore" class="view" role="tabpanel" aria-labelledby="tab-explore">
+    <div class="pane" id="explore-main">
+      <div class="fields">
+        <div class="field">
+          <svg class="ic mark-to" aria-hidden="true"><use href="#i-search"/></svg>
+          <input id="ex-q" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search places and addresses" aria-label="Search places">
+          <button class="icon-btn small" id="ex-clear" aria-label="Clear search" hidden><svg class="ic"><use href="#i-x"/></svg></button>
+        </div>
+      </div>
+      <ul id="ex-suggest" class="list" role="listbox" aria-label="Suggestions" hidden></ul>
+      <div id="cats" class="chips cats" role="group" aria-label="Categories"></div>
+      <div id="ex-status" class="status" role="status" aria-live="polite"></div>
+      <ul id="ex-results" class="list places"></ul>
+      <section id="saved-box" hidden><h3 class="sec">Saved</h3><ul id="saved-list" class="list places"></ul></section>
+    </div>
+    <div class="pane" id="explore-place" hidden>
+      <header class="bar"><button class="back" data-back="explore"><svg class="ic"><use href="#i-back"/></svg>Explore</button><h2 id="place-title"></h2></header>
+      <div id="place" class="place"></div>
+    </div>
+  </div>
+
+  <div id="view-plan" class="view" role="tabpanel" aria-labelledby="tab-plan" hidden>
     <div class="pane" id="plan-main">
       <div class="fields">
         <div class="field">
@@ -145,6 +170,20 @@
   </div>
 </section>
 
+<section id="diorama" class="diorama glass" hidden aria-label="Diorama controls">
+  <div class="dio-time"><output id="dio-clock" for="dio-slider">12:00</output><input id="dio-slider" type="range" min="0" max="1439" step="1" value="720" aria-label="Time of day"><input id="dio-date" type="date" aria-label="Day"></div>
+  <div id="dio-sun" class="dio-sun" aria-live="polite"></div>
+  <div class="dio-btns">
+    <button id="dio-live" class="chip" aria-pressed="true">Now</button>
+    <button id="dio-rise" class="chip">Sunrise</button>
+    <button id="dio-noon" class="chip">Noon</button>
+    <button id="dio-set" class="chip">Sunset</button>
+    <button id="dio-play" class="chip" aria-pressed="false">Play</button>
+    <button id="dio-orbit" class="chip" aria-pressed="false">Orbit</button>
+    <button id="dio-exit" class="primary">Exit</button>
+  </div>
+</section>
+
 <main id="login" class="login" hidden>
   <form id="login-form" autocomplete="on">
     <svg class="logo" aria-hidden="true"><use href="#i-nav"/></svg>
@@ -160,7 +199,11 @@
 
 <script src="/vendor/maplibre-gl.js"></script>
 <script src="/app.js" defer></script>
+<script src="/scene3d.js" defer></script>
+<script src="/daylight.js" defer></script>
+<script src="/explore.js" defer></script>
 <script src="/vehicles.js" defer></script>
+<script src="/diorama.js" defer></script>
 <script src="/guide.js" defer></script>
 </body>
 </html>

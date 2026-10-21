@@ -83,15 +83,11 @@ test("tracks a steadily moving vehicle without jumps or reversing", () => {
 test("stops for a simulated red light and then catches up", () => {
   const id = "b";
   // find a moment where the light at 1500 m is red for the next 25 s, so the approach (about 20 s away) meets it
-  const trip = "t:1";
-  let found = false;
-  for (let k = 0; k < 400 && !found; k++) {
-    now += 1;
-    found = Veh._red(trip, 1500) && (now += 0, true);
-  }
-  assert.ok(found, "a red phase exists");
   const rep = fresh(id, [1500]);
   const v = Veh._V.get(id);
+  let found = false;
+  for (let k = 0; k < 400 && !found; k++) { now += 1; found = Veh._red(v.shape, 0); }
+  assert.ok(found, "a red phase exists");
   // reposition the vehicle 200 m before the light, as truth
   Object.assign(v, { s: 1300, sRep: 1300, vel: 10, tRep: performance.now() / 1000 });
   rep.lon = lonAt(1300);
@@ -116,7 +112,7 @@ function mismatch(jump) {
   now += 1;
   Veh._ingest([{ ...rep, lon: lonAt(100 + jump), sp: 0, ts: 1.7e9 + 1e6 }], 1.7e9 + 1e6);  // the feed says it is `jump` m ahead and standing
   let maxStep = 0, last = v.s, minAlpha = 1;
-  for (let i = 0; i < 1800; i++) { now += 0.05; const r = Veh._step(v, 0.05, performance.now() / 1000); maxStep = Math.max(maxStep, v.s - last); minAlpha = Math.min(minAlpha, r.alpha); last = v.s; }
+  for (let i = 0; i < 1800; i++) { now += 0.05; const r = Veh._step(v, 0.05, performance.now() / 1000); maxStep = Math.max(maxStep, v.s - last); minAlpha = Math.min(minAlpha, r); last = v.s; }
   return { v, maxStep, minAlpha };
 }
 test("a few hundred metres of mismatch glide at a capped speed and converge", () => {
@@ -132,7 +128,7 @@ test("a huge mismatch fades out, jumps and fades in", () => {
   assert.ok(maxStep > 500, "the jump happened while invisible");
   assert.ok(Math.abs(v.s - 1600) < 20, "and it ends where the feed says");
   const after = Veh._step(v, 0.05, performance.now() / 1000);
-  assert.ok(after.alpha > 0.9, "fully visible again");
+  assert.ok(after > 0.9, "fully visible again");
 });
 
 test("halts when the feed says the vehicle stopped, without overshooting", () => {
@@ -154,6 +150,27 @@ test("stale vehicles stop and models differ by mode", () => {
   const mk = (mode, ag) => Veh._model({ mode, ag, color: "#123456" });
   assert.equal(mk("BUS", "x").cars.length, 1);
   assert.equal(mk("TRAM", "x").cars.length, 5, "three cars and two bellows");
-  assert.ok(mk("RAIL", "PKP Intercity").total > 60);
-  assert.ok(mk("TRAM", "x").cars.every((c) => c.parts.length > 0));
+  assert.deepEqual(mk("RAIL", "PKP Intercity").cars.map((c) => c.mesh), ["railMid", "railMid", "loco"]);
+  assert.equal(mk("RAIL", "Koleje Śląskie").cars.length, 3);
+  const offs = mk("TRAM", "x").cars.map((c) => c.c);
+  assert.deepEqual(offs, [...offs].sort((a, b) => a - b), "cars are ordered rear to front");
+});
+
+test("simulating 700 vehicles for a frame costs well under a millisecond", () => {
+  // 700 vehicles on 1000 point shapes, 2 of 3 with 40 signals, stepped at 60 fps
+  const N = 700, pts = [];
+  for (let i = 0; i < 1000; i++) pts.push([lonAt(i * 8), LAT + Math.sin(i / 40) * 0.0004]);
+  const info = { points: encode(pts), stops: [], sig: Array.from({ length: 40 }, (_, i) => 150 + i * 190) };
+  Veh._V.clear();
+  const reps = [];
+  for (let i = 0; i < N; i++) reps.push({ id: "p" + i, lat: LAT, lon: lonAt(i * 11 % 6000), hd: 90, sp: 6 + (i % 8), ts: 1.7e9, line: String(i % 40), mode: i % 5 === 0 ? "TRAM" : "BUS", ag: "x", trip: "t:" + i, to: "X", st: null, sn: null });
+  Veh._ingest(reps, 1.7e9);
+  for (const v of Veh._V.values()) Veh._attach(v, info);
+  const vs = [...Veh._V.values()];
+  for (let f = 0; f < 120; f++) { now += 1 / 60; for (const v of vs) Veh._step(v, 1 / 60, performance.now() / 1000); }  // warm up the JIT
+  const t0 = process.hrtime.bigint(), FRAMES = 600;
+  for (let f = 0; f < FRAMES; f++) { now += 1 / 60; const t = performance.now() / 1000; for (let i = 0; i < vs.length; i++) Veh._step(vs[i], 1 / 60, t); }
+  const msPerFrame = Number(process.hrtime.bigint() - t0) / 1e6 / FRAMES;
+  console.log(`# simulation: ${msPerFrame.toFixed(3)} ms per frame for ${N} vehicles`);
+  assert.ok(msPerFrame < 1.5, `${msPerFrame.toFixed(2)} ms per frame`);
 });

@@ -75,7 +75,7 @@ function badge(line, c, mode) {
 
 // ---------------------------------------------------------------- state
 const S = {
-  tab: "plan", from: null, to: null, mode: "transit", transit: { rail: true, bus: true, tram: true },
+  tab: "explore", from: null, to: null, mode: "transit", transit: { rail: true, bus: true, tram: true },
   by: "depart", at: "", results: [], sel: -1, me: null, detent: "peek", active: "to", stop: null,
 };
 let ctl = null;
@@ -91,14 +91,17 @@ async function api(path, params = {}, signal) {
 
 // ---------------------------------------------------------------- map
 const dark = matchMedia("(prefers-color-scheme: dark)");
-const styleUrl = () => `https://tiles.openfreemap.org/styles/${dark.matches ? "dark" : "positron"}`;
+const styleUrl = () => `https://tiles.openfreemap.org/styles/${(window.Daylight?.enabled ? window.Daylight.wantsDark() : dark.matches) ? "dark" : "positron"}`;
+let styleNow = null;
+function restyle() { const u = styleUrl(); if (map && u !== styleNow) { styleNow = u; map.setStyle(u); } }
 let map, routeData = { type: "FeatureCollection", features: [] }, focusData = { type: "FeatureCollection", features: [] }, focusMarker = null;
 let markers = [], userMarker = null, popup = null;
 
 function initMap() {
   const home = store.get("view", { c: [19.94, 50.06], z: 11 });
   try {
-    map = new maplibregl.Map({ container: "map", style: styleUrl(), center: home.c, zoom: home.z, attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, maxPitch: 70 });
+    styleNow = styleUrl();
+    map = new maplibregl.Map({ container: "map", style: styleNow, center: home.c, zoom: home.z, attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, maxPitch: 70 });
   } catch {
     map = null;  // no WebGL: planning, times and departures keep working
     $("#map").classList.add("nomap");
@@ -109,13 +112,14 @@ function initMap() {
   map.touchZoomRotate.disableRotation();
   map.on("style.load", addRouteLayers);
   map.on("moveend", () => { const c = map.getCenter(); store.set("view", { c: [+c.lng.toFixed(4), +c.lat.toFixed(4)], z: +map.getZoom().toFixed(1) }); });
-  dark.addEventListener("change", () => map.setStyle(styleUrl()));
+  dark.addEventListener("change", restyle);
   map.on("contextmenu", (e) => placeMenu(e.lngLat));
   let timer = null;
   const cancel = () => { clearTimeout(timer); timer = null; };
   map.on("touchstart", (e) => { if (e.originalEvent.touches.length === 1) timer = setTimeout(() => placeMenu(e.lngLat), 550); });
   ["touchmove", "touchend", "touchcancel", "dragstart", "zoomstart"].forEach((t) => map.on(t, cancel));
   window.Vehicles?.init(map);
+  window.Explore?.init(map);
 }
 function addRouteLayers() {
   if (map.getSource("route")) return;
@@ -286,14 +290,19 @@ function setDetent(name) {
 function setTab(t) {
   S.tab = t;
   $$("#tabs [role=tab]").forEach((b) => { const on = b.dataset.tab === t; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
+  $("#view-explore").hidden = t !== "explore";
   $("#view-plan").hidden = t !== "plan";
   $("#view-near").hidden = t !== "near";
   $("#view-info").hidden = t !== "info";
   if (t !== "near") stopTimer();
   if (t === "near" && !S.stop) loadNearby();
   if (t === "info") loadInfo();
-  if (!wide.matches && S.detent === "peek" && t !== "plan") setDetent("half");
+  if (!wide.matches && S.detent === "peek" && t !== "plan" && t !== "explore") setDetent("half");
+  updateContext();
+  if (t === "explore") window.Explore?.onShow();
 }
+// live vehicles belong to transit: the Plan tab in transit mode, and the Stops tab. General map browsing stays free of them.
+function updateContext() { window.Vehicles?.setContext((S.tab === "plan" && S.mode === "transit") || S.tab === "near"); }
 $("#tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (b) setTab(b.dataset.tab); });
 $("#tabs").addEventListener("keydown", (e) => {
   if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
@@ -306,6 +315,7 @@ function pane(view, name) {
 }
 $$("[data-back]").forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.back === "plan") { clearFocus(); pane("plan", "main"); S.sel = -1; if (S.results[0]) drawRoute(S.results[0]); }
+  else if (b.dataset.back === "explore") window.Explore?.back();
   else { stopTimer(); S.stop = null; pane("near", "main"); }
 }));
 
@@ -389,7 +399,7 @@ function radios(root, attr, get, set) {
     bs[(i + (e.key === "ArrowRight" ? 1 : bs.length - 1)) % bs.length].click();
   });
 }
-radios($("#modes"), "data-mode", () => S.mode, (v) => { S.mode = v; $("#transit-filter").hidden = v !== "transit"; plan(); });
+radios($("#modes"), "data-mode", () => S.mode, (v) => { S.mode = v; $("#transit-filter").hidden = v !== "transit"; updateContext(); plan(); });
 radios($("#by"), "data-by", () => S.by, (v) => { S.by = v; if (v === "arrive" && !S.at) setAt(new Date(Date.now() + 36e5)); updateWhen(); plan(); });
 $("#transit-filter").addEventListener("click", (e) => {
   const b = e.target.closest("[data-t]");
@@ -643,7 +653,7 @@ function start() {
   initMap();
   setDetent("peek");
   hashRead();
-  if (S.to) plan();
+  if (S.to) { setTab("plan"); plan(); } else { setTab("explore"); window.Explore?.fromHash(); }
 }
 (async function boot() {
   try { providers = (await (await fetch("/providers.json")).json()).providers; } catch { /* colours fall back to mode defaults */ }
@@ -653,4 +663,4 @@ function start() {
 })();
 
 // shared with guide.js (live navigation)
-window.App = { localInput, focusLeg, focusPoint, S, api, h, icon, color, dist, dur, hm, mins, rtTag, badge, providerOf, setDetent, pane, mapPad, decode, store, $, $$, MODE_ICON, tf, getMap: () => map, getMe: () => userMarker, showMe, drawRoute, clearRoute, showLogin, replan: (r) => { S.results = [r]; S.sel = 0; openDetail(0); } };
+window.App = { restyle, sheetWide: () => wide.matches, localInput, focusLeg, focusPoint, setTab, setPlace, runPlan: plan, clearMarkers, pin, S, api, h, icon, color, dist, dur, hm, mins, rtTag, badge, providerOf, setDetent, pane, mapPad, decode, store, $, $$, MODE_ICON, tf, getMap: () => map, getMe: () => userMarker, showMe, drawRoute, clearRoute, showLogin, replan: (r) => { S.results = [r]; S.sel = 0; openDetail(0); } };

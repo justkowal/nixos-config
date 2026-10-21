@@ -14,7 +14,7 @@ in
     dontBuild = true;
     installPhase = ''
       mkdir -p $out/static/vendor $TMPDIR/ml
-      cp server.py $out/
+      cp server.py hours.py places.py $out/
       cp -r static/. $out/static/
       rm -rf $out/static/vendor && mkdir $out/static/vendor
       tar -xzf ${maplibre} -C $TMPDIR/ml
