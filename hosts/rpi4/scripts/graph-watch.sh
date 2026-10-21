@@ -39,7 +39,7 @@ size=$(stat -c %s "$dir/graph.obj")
 
 # ---- stage test in a throwaway OTP; the production one is stopped meanwhile because the Pi cannot hold two
 ip_of() { podman inspect -f '{{(index .NetworkSettings.Networks "mcp-internal").IPAddress}}' "$1"; }
-ready() { for _ in $(seq 1 90); do [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://$1:8080/otp")" = 200 ] && return 0; sleep 2; done; return 1; }
+ready() { for _ in $(seq 1 150); do [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://$1:8080/otp")" = 200 ] && return 0; sleep 2; done; return 1; }
 gql() { curl -s -m 90 -X POST "http://$1:8080/otp/gtfs/v1" -H 'Content-Type: application/json' -d "$2"; }
 dist() { gql "$1" "{\"query\":\"{ planConnection(origin:{location:{coordinate:{latitude:$2,longitude:$3}}} destination:{location:{coordinate:{latitude:$4,longitude:$5}}} modes:{direct:[$6]}) { edges { node { legs { distance } } } } }\"}" | jq '[.data.planConnection.edges[0].node.legs[].distance] | add // 0 | floor'; }
 smoke() {
@@ -56,9 +56,13 @@ smoke() {
 
 systemctl stop podman-mcp-otp 2>/dev/null || true
 podman rm -f otp-staging >/dev/null 2>&1 || true
+# staging has no outbound network and an empty router config, so it never polls a realtime feed
+echo '{}' > "$G/staging-router-config.json"
+chmod 644 "$G/staging-router-config.json"
 podman run -d --name otp-staging --network mcp-internal --user 65534:65534 --read-only --tmpfs /tmp:rw,size=64m,mode=1777 \
-  --memory=1200m --cap-drop=ALL --security-opt=no-new-privileges -e "JAVA_OPTS=$JAVA_OPTS" \
-  -v "$dir:/var/opentripplanner:ro" "$OTP_IMAGE" --load --serve >/dev/null || reject "staging container did not start"
+  --memory="${OTP_MEMORY:-1500m}" --cap-drop=ALL --security-opt=no-new-privileges -e "JAVA_OPTS=$JAVA_OPTS" \
+  -v "$dir:/var/opentripplanner:ro" -v "$G/staging-router-config.json:/var/opentripplanner/router-config.json:ro" \
+  "$OTP_IMAGE" --load --serve >/dev/null || reject "staging container did not start"
 sip=$(ip_of otp-staging)
 if ! ready "$sip" || ! smoke "$sip" "$M"; then
   podman logs --tail 5 otp-staging >&2 || true
