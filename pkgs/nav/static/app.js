@@ -62,7 +62,7 @@ function color(leg) {
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 function rtTag(delayS, live) {
-  if (!live) return h("span", { class: "rt plan" }, "Scheduled");
+  if (!live) return h("span", { class: "rt plan", title: "This vehicle has no live data, the time is from the timetable" }, "No live data");
   const m = mins(delayS || 0);
   if (m >= 1) return h("span", { class: "rt late" }, `Live, ${m} min late`);
   if (m <= -1) return h("span", { class: "rt live" }, `Live, ${-m} min early`);
@@ -96,7 +96,14 @@ let markers = [], userMarker = null, popup = null;
 
 function initMap() {
   const home = store.get("view", { c: [19.94, 50.06], z: 11 });
-  map = new maplibregl.Map({ container: "map", style: styleUrl(), center: home.c, zoom: home.z, attributionControl: false, dragRotate: false, pitchWithRotate: false, maxPitch: 0 });
+  try {
+    map = new maplibregl.Map({ container: "map", style: styleUrl(), center: home.c, zoom: home.z, attributionControl: false, dragRotate: false, pitchWithRotate: false, maxPitch: 0 });
+  } catch {
+    map = null;  // no WebGL: planning, times and departures keep working
+    $("#map").classList.add("nomap");
+    $("#map").replaceChildren(h("p", {}, "The map needs WebGL, which is off on this device. Routes, times and departures still work."));
+    return;
+  }
   map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
   map.touchZoomRotate.disableRotation();
   map.on("style.load", addRouteLayers);
@@ -136,13 +143,15 @@ function mapPad() {
 }
 function clearMarkers() { markers.forEach((m) => m.remove()); markers = []; }
 function pin(cls, lngLat, c) {
+  if (!map) return null;
   const el = h("div", { class: "pin " + cls, style: c ? { "--c": c } : {} });
   const m = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
   markers.push(m);
   return m;
 }
-function drawRoute(it) {
+function drawRoute(it, opts = {}) {
   clearMarkers();
+  if (!map) return;
   const feats = [], bounds = new maplibregl.LngLatBounds();
   it.legs.forEach((l, i) => {
     const pts = decode(l.geometry);
@@ -156,7 +165,7 @@ function drawRoute(it) {
   const f = it.legs[0].from, t = it.legs[it.legs.length - 1].to;
   pin("", [f.lon, f.lat]);
   pin("to", [t.lon, t.lat]);
-  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: mapPad(), maxZoom: 16, duration: 600 });
+  if (opts.fit !== false && !bounds.isEmpty()) map.fitBounds(bounds, { padding: mapPad(), maxZoom: 16, duration: 600 });
 }
 function clearRoute() {
   clearMarkers();
@@ -165,6 +174,7 @@ function clearRoute() {
 }
 function placeMenu(ll) {
   popup?.remove();
+  if (!map) return;
   const pick = (which) => async () => {
     popup.remove();
     const p = await api("reverse", { lat: ll.lat, lon: ll.lng }).catch(() => ({ title: "Dropped pin", sub: "", lat: ll.lat, lon: ll.lng }));
@@ -178,6 +188,7 @@ function placeMenu(ll) {
 }
 function showMe(p) {
   S.me = p;
+  if (!map) return;
   userMarker?.remove();
   userMarker = new maplibregl.Marker({ element: h("div", { class: "dot-user" }) }).setLngLat([p.lon, p.lat]).addTo(map);
 }
@@ -287,7 +298,7 @@ function onType(which) {
   sugTimer = setTimeout(async () => {
     sugCtl?.abort(); sugCtl = new AbortController();
     try {
-      const c = map.getCenter();
+      const c = map ? map.getCenter() : { lat: 50.06, lng: 19.94 };
       renderSuggest(await api("geocode", { q, lat: c.lat, lon: c.lng }, sugCtl.signal), which, q);
     } catch (e) { if (e.name !== "AbortError") $("#suggest").replaceChildren(h("li", { class: "head" }, e.message)); }
   }, 220);
@@ -398,7 +409,7 @@ function ribbon(it) {
     const lbl = [];
     if (l.line) { lbl.push(icon(MODE_ICON[l.mode] || "transit")); if (share > 0.14) lbl.push(l.line); }
     else if (share > 0.08) lbl.push(icon(MODE_ICON[l.mode] || "walk"));
-    return h("span", { class: "seg-leg" + (l.line ? "" : " street"), style: { "flex-grow": Math.max(l.duration_s, total * 0.04), "--c": c } }, lbl);
+    return h("span", { class: "seg-leg" + (l.line ? "" : " street") + (l.realtime ? " live" : ""), style: { "flex-grow": Math.max(l.duration_s, total * 0.04), "--c": c } }, lbl);
   }));
 }
 function summary(it) {
@@ -440,6 +451,7 @@ function openDetail(i) {
   d.replaceChildren();
   it.legs.forEach((l) => d.append(stepFor(l)));
   const last = it.legs[it.legs.length - 1];
+  $("#start-nav").onclick = () => window.Guide?.start(it);
   d.append(h("div", { class: "step end", style: { "--c": "var(--accent)" } }, h("div", { class: "t" }, hm(it.end)), h("div", { class: "body" }, h("h3", {}, last.to.name))));
   drawRoute(it);
   if (!wide.matches && S.detent === "full") setDetent("half");
@@ -457,7 +469,7 @@ function stepFor(l) {
         h("h3", {}, badge(l.line, c, l.mode), l.headsign ? `to ${l.headsign}` : ""),
         h("div", { class: "meta" }, "Board at ", board),
         h("div", { class: "meta" }, rtTag(l.delay_s, l.realtime), ` · ${dur(l.duration_s)} · ${providerOf(l.agency)?.name || l.agency || ""}`),
-        stops.length ? h("details", {}, h("summary", {}, `${stops.length + 1} stop${stops.length ? "s" : ""}`), h("ul", {}, stops.map((s) => h("li", {}, s)), h("li", {}, `${l.to.name}, ${hm(l.end)}`))) : null));
+        stops.length ? h("details", {}, h("summary", {}, `${stops.length + 1} stop${stops.length ? "s" : ""}`), h("ul", {}, stops.map((s) => h("li", {}, s.name)), h("li", {}, `${l.to.name}, ${hm(l.end)}`))) : null));
   }
   const name = { WALK: "Walk", BICYCLE: "Cycle", CAR: "Drive" }[l.mode] || l.mode;
   return h("div", { class: `step street m-${l.mode.toLowerCase()}`, style: { "--c": c } }, left,
@@ -471,7 +483,7 @@ let depTimer = 0;
 function stopTimer() { clearInterval(depTimer); depTimer = 0; }
 function times(deps) { return deps.map((d) => h("span", { class: "badge", style: { "--c": providerOf(d.agency)?.color || "#44505c" } }, d.line, h("i", {}, d.time))); }
 async function loadNearby() {
-  const c = S.me || (() => { const m = map.getCenter(); return { lat: m.lat, lon: m.lng }; })();
+  const c = S.me || (() => { const m = map ? map.getCenter() : { lat: 50.06, lng: 19.94 }; return { lat: m.lat, lon: m.lng }; })();
   $("#near-status").textContent = "Looking for stops...";
   try {
     const stops = await api("nearby", { lat: c.lat, lon: c.lon, r: 600 });
@@ -489,7 +501,7 @@ async function showStop(s) {
   pane("near", "detail");
   $("#stop-title").textContent = s.name;
   clearMarkers();
-  if (s.lat) { pin("to", [s.lon, s.lat]); map.flyTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15), padding: mapPad() }); }
+  if (s.lat && map) { pin("to", [s.lon, s.lat]); map.flyTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15), padding: mapPad() }); }
   const load = async () => {
     try {
       const r = await api("departures", { stop: s.id, n: 14 });
@@ -540,7 +552,7 @@ function hashRead() {
 // ---------------------------------------------------------------- start and login
 $("#locate").addEventListener("click", async () => {
   const p = await locate();
-  if (p) map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 14), padding: mapPad() });
+  if (p && map) map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 14), padding: mapPad() });
 });
 function showLogin() { $("#login").hidden = false; $("#pass").focus(); }
 $("#login-form").addEventListener("submit", async (e) => {
@@ -574,3 +586,6 @@ function start() {
   if (r?.ok) start(); else showLogin();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 })();
+
+// shared with guide.js (live navigation)
+window.App = { localInput, S, api, h, icon, color, dist, dur, hm, mins, rtTag, badge, providerOf, setDetent, pane, mapPad, decode, store, $, $$, MODE_ICON, tf, getMap: () => map, getMe: () => userMarker, showMe, drawRoute, clearRoute, showLogin, replan: (r) => { S.results = [r]; S.sel = 0; openDetail(0); } };

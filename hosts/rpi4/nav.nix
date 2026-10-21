@@ -19,13 +19,14 @@ in {
     environmentFiles = [env];
     environment = {
       NAV_STATIC = "/nav/static";
+      NAV_DB = "/state/nav.db";
       OTP_URL = "http://mcp-otp:8080";
       NOMINATIM_URL = "http://mcp-nominatim:8080";
       GRAPH_MANIFEST = "/maps/graph/manifest.json";
       FEED_CONTACT = "hopkuba@gmail.com";
       SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
     };
-    volumes = ["${app}:/nav:ro" "${mapsData}/graph/info:/maps/graph:ro"];
+    volumes = ["${app}:/nav:ro" "${mapsData}/graph/info:/maps/graph:ro" "/var/lib/mcp-gateway/nav-state:/state:rw"];
     labels = {
       "traefik.enable" = "true";
       "traefik.docker.network" = "mcp";
@@ -53,6 +54,9 @@ in {
       "--health-interval=60s"
     ];
   };
+
+  # watched trips and their events (sqlite); small, but it must survive restarts
+  systemd.tmpfiles.rules = ["d /var/lib/mcp-gateway/nav-state 0750 nobody nogroup -"];
 
   systemd.services.podman-lab-nav = {
     requires = ["podman-network-mcp.service" "podman-mcp-gateway.service"];

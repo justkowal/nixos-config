@@ -35,6 +35,8 @@
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
   <symbol id="i-nav" viewBox="0 0 24 24"><polygon points="3 11 22 2 13 21 11 13 3 11"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.7 2 2 0 3.3-.6 4.3-1.2a.5.5 0 0 1 .8.4v10.2a1 1 0 0 1-.4.8c-1 .7-2.3 1.2-4.3 1.2-2.7 0-4.7-2-7.7-2a6 6 0 0 0-3.6 1.2"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
 </svg>
 
@@ -99,7 +101,7 @@
     </div>
 
     <div class="pane" id="plan-detail" hidden>
-      <header class="bar"><button class="back" data-back="plan"><svg class="ic"><use href="#i-back"/></svg>Routes</button><h2 id="detail-title"></h2></header>
+      <header class="bar"><button class="back" data-back="plan"><svg class="ic"><use href="#i-back"/></svg>Routes</button><h2 id="detail-title"></h2><button id="start-nav" class="primary start">Start</button></header>
       <div id="detail" class="detail"></div>
     </div>
   </div>
@@ -129,6 +131,19 @@
   </div>
 </section>
 
+<section id="guide" class="guide" hidden aria-label="Navigation">
+  <div class="guide-top glass" role="status" aria-live="polite">
+    <span class="g-arrow" id="g-arrow" aria-hidden="true"><svg class="ic"><use href="#i-arrow"/></svg></span>
+    <div class="g-main"><div id="g-dist" class="g-dist"></div><div id="g-text" class="g-text"></div><div id="g-then" class="g-then"></div><div id="g-live" class="g-live"></div><div id="g-notice" class="g-notice" role="alert"></div></div>
+  </div>
+  <div class="guide-bottom glass">
+    <div class="g-eta"><b id="g-eta"></b><span id="g-left"></span></div>
+    <button id="g-voice" class="chip" aria-pressed="false">Voice</button>
+    <button id="g-recenter" class="chip" hidden>Recenter</button>
+    <button id="g-end" class="primary danger-fill">End</button>
+  </div>
+</section>
+
 <main id="login" class="login" hidden>
   <form id="login-form" autocomplete="on">
     <svg class="logo" aria-hidden="true"><use href="#i-nav"/></svg>
@@ -144,5 +159,6 @@
 
 <script src="/vendor/maplibre-gl.js"></script>
 <script src="/app.js" defer></script>
+<script src="/guide.js" defer></script>
 </body>
 </html>

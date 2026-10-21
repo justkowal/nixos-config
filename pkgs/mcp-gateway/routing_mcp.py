@@ -39,6 +39,7 @@ MAX_STEPS = 40
 MAX_CHARS = 30000
 NO_FEEDS = "no transit feeds loaded; add one via feeds.yaml or feed_add"
 ATTRIBUTION = "© OpenStreetMap contributors (ODbL)"
+NAV_URL = os.environ.get("NAV_URL", "https://nav.23012006.xyz")
 calls, lock = [], threading.Lock()
 
 HEADER = """# Transit feed registry: the source of truth for the graph build on the desktop.
@@ -223,6 +224,20 @@ LEG = """legs { mode duration distance realTime headsign
   steps { relativeDirection streetName distance } }"""
 
 
+def app_link(a, b, direct, depart_at, arrive_by):
+    """link that opens the navigation web app on this exact trip (the app restores it from the URL hash)."""
+    pl = lambda p: f'{p["lat"]:.5f},{p["lon"]:.5f},{(p.get("name") or "Pin").split(",")[0][:40]}'
+    q = {"f": pl(a), "t": pl(b)}
+    m = {"WALK": "walk", "BICYCLE": "bike", "CAR": "car"}.get(direct)
+    if m:
+        q["m"] = m
+    when = arrive_by or depart_at
+    if when:
+        q["at"] = parse_dt(when).astimezone(TZ).strftime("%Y-%m-%dT%H:%M")
+        q["by"] = "arrive" if arrive_by else "depart"
+    return NAV_URL + "/#" + urllib.parse.urlencode(q, quote_via=urllib.parse.quote)
+
+
 def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=False):
     a, b = resolve(frm), resolve(to)
     when = ""
@@ -240,7 +255,7 @@ def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=Fals
     its = [{"start": e["node"]["start"][11:16], "end": e["node"]["end"][11:16], "duration_min": round(e["node"]["duration"] / 60),
             "transfers": e["node"]["numberOfTransfers"], "distance_m": round(sum(l["distance"] for l in e["node"]["legs"])),
             "legs": [leg_out(l) for l in e["node"]["legs"]]} for e in edges]
-    return {"from": a, "to": b, "itineraries": its, "attribution": ATTRIBUTION}
+    return {"from": a, "to": b, "itineraries": its, "app_link": app_link(a, b, direct, depart_at, arrive_by), "attribution": ATTRIBUTION}
 
 
 def cap(out):
@@ -542,9 +557,9 @@ WHEN = {"depart_at": {"type": "string", "description": "local ISO time, e.g. 202
 R = {"ro": True, "class": "read"}
 W = {"class": "write"}
 TOOLS = {
-    "route": dict(desc="Street route between two places by walk, bike or car. Echoes the resolved coordinates.", **R,
+    "route": dict(desc="Street route between two places by walk, bike or car. Echoes the resolved coordinates. The result has app_link: give it to the user to open the trip in the navigation app (live GPS guidance).", **R,
                   schema=obj({"from": PLACE, "to": PLACE, "mode": {"type": "string", "enum": ["walk", "bike", "car"]}, "alternatives": {"type": "integer"}, **WHEN}, ["from", "to"]), fn=t_route),
-    "transit_plan": dict(desc="Public transport itinerary between two places. " + NO_FEEDS + " when the graph has no feeds.", **R,
+    "transit_plan": dict(desc="Public transport itinerary between two places. " + NO_FEEDS + " when the graph has no feeds. The result has app_link: give it to the user to open the trip in the navigation app.", **R,
                          schema=obj({"from": PLACE, "to": PLACE, **WHEN, "arrive_by": {"type": "string"}, "alternatives": {"type": "integer"}}, ["from", "to"]), fn=t_transit_plan),
     "stops_nearby": dict(desc="Transit stops near a place.", **R, schema=obj({"place": PLACE, "radius_m": {"type": "number"}}, ["place"]), fn=t_stops_nearby),
     "stop_departures": dict(desc="Next departures at a stop, realtime-aware.", **R, schema=obj({"stop_id": {"type": "string"}, "count": {"type": "integer"}}, ["stop_id"]), fn=t_stop_departures),

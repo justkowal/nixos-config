@@ -9,6 +9,7 @@ import json
 import mimetypes
 import os
 import re
+import sqlite3
 import threading
 import time
 import urllib.parse
@@ -17,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
 
 OTP = os.environ.get("OTP_URL", "http://mcp-otp:8080")
+DB = os.environ.get("NAV_DB", "")
 NOM = os.environ.get("NOMINATIM_URL", "http://mcp-nominatim:8080")
 STATIC = os.environ.get("NAV_STATIC", os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"))
 MANIFEST = os.environ.get("GRAPH_MANIFEST", "/maps/graph/manifest.json")
@@ -43,17 +45,21 @@ def _key():
     return hashlib.sha256(b"nav-cookie|" + SECRET.encode()).digest()
 
 
-def make_cookie():
-    exp = str(int(time.time()) + SESSION_DAYS * 86400)
-    return f"{exp}.{hmac.new(_key(), exp.encode(), hashlib.sha256).hexdigest()}"
+def make_cookie(device="web", days=SESSION_DAYS):
+    exp = str(int(time.time()) + days * 86400)
+    body = f"{exp}.{device}"
+    return f"{body}.{hmac.new(_key(), body.encode(), hashlib.sha256).hexdigest()}"
 
 
-def valid_cookie(value):
+def session_device(value):
+    """-> device name for a valid signed token, else None."""
     try:
-        exp, sig = value.split(".", 1)
-        return int(exp) > time.time() and hmac.compare_digest(sig, hmac.new(_key(), exp.encode(), hashlib.sha256).hexdigest())
+        exp, device, sig = value.split(".", 2)
+        body = f"{exp}.{device}"
+        ok = int(exp) > time.time() and hmac.compare_digest(sig, hmac.new(_key(), body.encode(), hashlib.sha256).hexdigest())
+        return device if ok and re.fullmatch(r"[\w-]{1,32}", device) else None
     except (ValueError, AttributeError):
-        return False
+        return None
 
 
 def throttled(table, who, limit, window):
@@ -119,6 +125,22 @@ def local_iso(s):
     return (d if d.tzinfo else d.replace(tzinfo=TZ)).isoformat()
 
 
+DUR = re.compile(r"(-)?P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?")
+
+
+def seconds(v):
+    """OTP gives delays as ISO-8601 durations ('PT3M20S', '-PT45S'); departures give plain integers."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return int(v)
+    m = DUR.fullmatch(v)
+    if not m:
+        return None
+    n = int(m[2] or 0) * 86400 + int(m[3] or 0) * 3600 + int(m[4] or 0) * 60 + float(m[5] or 0)
+    return int(-n if m[1] else n)
+
+
 def hhmm(sec):
     return f"{int(sec) // 3600 % 24:02d}:{int(sec) % 3600 // 60:02d}"
 
@@ -163,7 +185,8 @@ LEG = """legs { mode duration distance realTime headsign
   start { scheduledTime estimated { time delay } } end { scheduledTime estimated { time delay } }
   route { shortName longName color textColor agency { name } }
   legGeometry { points }
-  intermediateStops { name }
+  intermediateStops { name lat lon }
+  trip { gtfsId }
   steps { relativeDirection streetName distance } }"""
 
 
@@ -173,17 +196,18 @@ def place(p):
 
 def leg_out(l):
     s, e = l["start"], l["end"]
-    d = (s.get("estimated") or {}).get("delay")
+    d = seconds((s.get("estimated") or {}).get("delay"))
     rt = bool(l.get("realTime")) and abs(d or 0) <= 7200
     out = {"mode": l["mode"], "from": place(l["from"]), "to": place(l["to"]), "distance_m": round(l["distance"]), "duration_s": round(l["duration"]),
            "start": (s.get("estimated") or {}).get("time") if rt and (s.get("estimated") or {}).get("time") else s["scheduledTime"],
            "end": (e.get("estimated") or {}).get("time") if rt and (e.get("estimated") or {}).get("time") else e["scheduledTime"],
-           "scheduled_start": s["scheduledTime"], "realtime": rt, "delay_s": d if rt else None,
+           "scheduled_start": s["scheduledTime"], "scheduled_end": e["scheduledTime"], "realtime": rt, "delay_s": d if rt else None,
            "geometry": (l.get("legGeometry") or {}).get("points", "")}
     r = l.get("route")
     if r:
         out.update({"line": r.get("shortName") or r.get("longName"), "headsign": l.get("headsign"), "agency": (r.get("agency") or {}).get("name"),
-                    "color": r.get("color"), "text_color": r.get("textColor"), "stops": [x["name"] for x in (l.get("intermediateStops") or [])]})
+                    "color": r.get("color"), "text_color": r.get("textColor"), "trip_id": (l.get("trip") or {}).get("gtfsId"),
+                    "stops": [{"name": x["name"], "lat": x["lat"], "lon": x["lon"]} for x in (l.get("intermediateStops") or [])]})
     elif l.get("steps"):
         out["steps"] = [{"dir": x["relativeDirection"].lower(), "street": x["streetName"], "m": round(x["distance"])} for x in l["steps"][:60]]
     return out
@@ -275,6 +299,81 @@ ROUTES = {"/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan":
           "/api/departures": api_departures, "/api/trip": api_trip, "/api/info": api_info}
 
 
+# ---------------------------------------------------------------- watched trips (groundwork for push and native clients)
+# A client registers the transit legs of its trip. The watcher compares live delays once a minute and appends events,
+# which a client polls from /api/v1/events. Delivery over Web Push or FCM plugs in at emit() later.
+def conn():
+    c = sqlite3.connect(DB, timeout=5)
+    c.row_factory = sqlite3.Row
+    return c
+
+
+def init_db():
+    with conn() as c:
+        c.executescript("""
+            CREATE TABLE IF NOT EXISTS watches (id TEXT PRIMARY KEY, device TEXT, until REAL, legs TEXT, last TEXT);
+            CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, watch TEXT, device TEXT, ts REAL, kind TEXT, text TEXT);
+            CREATE TABLE IF NOT EXISTS pushes (device TEXT PRIMARY KEY, kind TEXT, target TEXT);""")
+
+
+def emit(c, watch, device, kind, text):
+    c.execute("INSERT INTO events (watch, device, ts, kind, text) VALUES (?,?,?,?,?)", (watch, device, time.time(), kind, text))
+    # delivery hook: look up pushes[device] and send over its kind, not implemented yet
+
+
+def watch_once():
+    with conn() as c:
+        c.execute("DELETE FROM watches WHERE until < ?", (time.time(),))
+        c.execute("DELETE FROM events WHERE ts < ?", (time.time() - 86400,))
+        for w in c.execute("SELECT * FROM watches").fetchall():
+            legs, last = json.loads(w["legs"]), json.loads(w["last"] or "{}")
+            for i, l in enumerate(legs):
+                try:
+                    day = l["scheduled_start"][:10]
+                    t = api_trip({"id": [l["trip_id"]], "date": [day]})
+                except Exception:
+                    continue
+                at = next((x for x in t["stops"] if x["stop"] == l["from"]), None)
+                if not at:
+                    continue
+                delay = at["delay_s"] if at["realtime"] else None
+                prev = last.get(str(i), {"delay": 0, "live": False})
+                if delay is not None and (not prev["live"] or abs(delay - prev["delay"]) >= 120):
+                    mins = round(delay / 60)
+                    emit(c, w["id"], w["device"], "delay", f'{l["line"]} at {l["from"]}: ' + (f"{mins} min late" if mins > 0 else "on time" if mins == 0 else f"{-mins} min early"))
+                last[str(i)] = {"delay": delay if delay is not None else prev["delay"], "live": delay is not None or prev["live"]}
+            c.execute("UPDATE watches SET last=? WHERE id=?", (json.dumps(last), w["id"]))
+
+
+def watch_loop():
+    while True:
+        try:
+            watch_once()
+        except Exception:
+            pass
+        time.sleep(60)
+
+
+def api_watch_add(device, body):
+    legs = [{k: str(l.get(k, ""))[:120] for k in ("trip_id", "line", "from", "to", "scheduled_start")} for l in (body.get("legs") or [])[:8] if ID.fullmatch(str(l.get("trip_id", "")))]
+    if not legs:
+        raise Bad("no transit legs to watch")
+    wid = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+    until = time.time() + min(float(body.get("hours", 6)), 24) * 3600
+    with conn() as c:
+        if c.execute("SELECT COUNT(*) FROM watches WHERE device=?", (device,)).fetchone()[0] >= 5:
+            raise Bad("too many watched trips")
+        c.execute("INSERT INTO watches (id, device, until, legs, last) VALUES (?,?,?,?,?)", (wid, device, until, json.dumps(legs), "{}"))
+    return {"id": wid, "until": until}
+
+
+def api_events(device, q):
+    since = int(num((q.get("since") or ["0"])[0], 0, 1e12, "since"))
+    with conn() as c:
+        rows = c.execute("SELECT id, watch, ts, kind, text FROM events WHERE device=? AND id>? ORDER BY id LIMIT 100", (device, since)).fetchall()
+    return [dict(r) for r in rows]
+
+
 # ---------------------------------------------------------------- http
 class H(BaseHTTPRequestHandler):
     server_version = "nav"
@@ -304,21 +403,37 @@ class H(BaseHTTPRequestHandler):
     def j(self, code, obj, extra=()):
         self.send(code, json.dumps(obj, ensure_ascii=False).encode(), extra=extra)
 
+    def device(self):
+        """device name of the signed cookie or bearer token, None when not signed in."""
+        if not SECRET:
+            return None
+        b = self.headers.get("Authorization", "")
+        if b.lower().startswith("bearer "):
+            return session_device(b[7:].strip())
+        m = re.search(r"(?:^|;\s*)nav=([^;]+)", self.headers.get("Cookie", ""))
+        return session_device(m[1]) if m else None
+
     def authed(self):
-        c = self.headers.get("Cookie", "")
-        m = re.search(r"(?:^|;\s*)nav=([^;]+)", c)
-        return bool(SECRET) and bool(m) and valid_cookie(m[1])
+        return self.device() is not None
 
     def do_HEAD(self):
         self.do_GET()
 
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
+        if u.path.startswith("/api/v1/"):  # the versioned contract for other clients; /api/ stays what the web app calls
+            u = u._replace(path="/api/" + u.path[8:])
         if u.path == "/healthz":
             return self.j(200, {"ok": True})
         if u.path.startswith("/api/"):
             if u.path == "/api/session":
                 return self.j(200 if self.authed() else 401, {"ok": self.authed()})
+            if u.path == "/api/events":
+                if not DB:
+                    return self.j(404, {"error": "not enabled"})
+                if not self.authed():
+                    return self.j(401, {"error": "sign in"})
+                return self.j(200, api_events(self.device(), urllib.parse.parse_qs(u.query)))
             fn = ROUTES.get(u.path)
             if not fn:
                 return self.j(404, {"error": "not found"})
@@ -347,21 +462,52 @@ class H(BaseHTTPRequestHandler):
         with open(full, "rb") as f:
             self.send(200, f.read(), ctype + ("; charset=utf-8" if ctype.startswith("text/") or "javascript" in ctype else ""))
 
+    def body(self, limit=8192):
+        try:
+            return json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", "0")), limit)) or b"{}")
+        except ValueError:
+            return {}
+
+    def do_DELETE(self):
+        u = urllib.parse.urlparse(self.path)
+        if u.path.replace("/api/v1/", "/api/") != "/api/watch" or not DB or not self.authed():
+            return self.j(404 if self.authed() else 401, {"error": "not found"})
+        wid = (urllib.parse.parse_qs(u.query).get("id") or [""])[0]
+        with conn() as c:
+            c.execute("DELETE FROM watches WHERE id=? AND device=?", (wid, self.device()))
+        return self.j(200, {"ok": True})
+
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path.startswith("/api/v1/"):
+            path = "/api/" + path[8:]
         if path == "/api/logout":
             return self.j(200, {"ok": True}, extra=[("Set-Cookie", "nav=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict")])
+        if path in ("/api/watch", "/api/push"):
+            if not DB:
+                return self.j(404, {"error": "not enabled"})
+            if not self.authed():
+                return self.j(401, {"error": "sign in"})
+            try:
+                body = self.body()
+                if path == "/api/watch":
+                    return self.j(200, api_watch_add(self.device(), body))
+                with conn() as c:
+                    c.execute("INSERT OR REPLACE INTO pushes (device, kind, target) VALUES (?,?,?)", (self.device(), str(body.get("kind", ""))[:16], str(body.get("target", ""))[:2000]))
+                return self.j(200, {"ok": True})
+            except Bad as e:
+                return self.j(e.code, {"error": str(e)})
         if path != "/api/login":
             return self.j(404, {"error": "not found"})
         who = self.who()
         if throttled(_fails, who, FAIL_LIMIT, FAIL_WINDOW):
             return self.j(429, {"error": "too many attempts, try again later"})
-        try:
-            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", "0")), 2048)) or b"{}")
-        except ValueError:
-            body = {}
+        body = self.body(2048)
         given = str(body.get("secret", ""))
         if SECRET and hmac.compare_digest(hashlib.sha256(given.encode()).digest(), hashlib.sha256(SECRET.encode()).digest()):
+            dev = re.sub(r"[^\w-]", "", str(body.get("device", "")))[:32]
+            if dev:  # a named device is a native client: a year-long bearer token in the body, no cookie
+                return self.j(200, {"ok": True, "token": make_cookie(dev, 365)})
             ck = f"nav={make_cookie()}; Max-Age={SESSION_DAYS * 86400}; Path=/; HttpOnly; Secure; SameSite=Strict"
             return self.j(200, {"ok": True}, extra=[("Set-Cookie", ck)])
         note(_fails, who)
@@ -372,4 +518,7 @@ class H(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     if len(SECRET) < 16:
         raise SystemExit("NAV_SECRET must be set and at least 16 characters")
+    if DB:
+        init_db()
+        threading.Thread(target=watch_loop, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", 8080), H).serve_forever()

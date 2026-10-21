@@ -70,7 +70,7 @@
       # the feed admin tools are writes and stay hidden until enabled by name
       name = "routing";
       cmd = [py "/app/routing_mcp.py"];
-      env = ["OTP_URL" "NOMINATIM_URL" "STATE_DIR" "GRAPH_MANIFEST" "FEED_CONTACT" "ROUTING_PER_MINUTE"];
+      env = ["OTP_URL" "NOMINATIM_URL" "STATE_DIR" "GRAPH_MANIFEST" "FEED_CONTACT" "ROUTING_PER_MINUTE" "NAV_URL"];
       classes = ["read"];
       log = [];
     }
@@ -180,6 +180,7 @@ in {
         STATE_DIR = "/state";
         GRAPH_MANIFEST = "/maps/graph/manifest.json";
         FEED_CONTACT = "hopkuba@gmail.com";
+        NAV_URL = "https://nav.23012006.xyz";
         FLEET_HOSTS = builtins.toJSON {
           desktop = {ip = "100.109.222.110"; wake = "wake-wol";};
           laptop = {ip = "100.69.154.81";};
