@@ -44,6 +44,8 @@ Default view with no route: every vehicle that has live data, in three levels of
 - **Far (below zoom 11.8):** a heatmap of all vehicles in view, from compact positions only (`/api/v1/vehicles?lod=heat`).
 - **Middle (zoom 10.4 to 16.2):** one dot per vehicle in its operator colour with the line number, tap for line, destination, operator and next stop.
 - **Close (zoom 15.3 and up):** painted 3D models. Buses are one body, trams are three articulated cars with bellows, trains are three cars (Intercity: two coaches and a locomotive). Cars sit on the track at their own distance, so they bend through curves. Paint comes from the `livery` of the operator in `static/providers.json` (per mode where an operator differs, e.g. GZM yellow buses and red trams). `confirmed: false` entries are guesses, edit them. Confirmed from press and the city identity guide: Kraków white with dark blue (new or refurbished vehicles, the fleet is mixed), GZM yellow buses, red trams, yellow-green trolleybuses.
+- Click or tap a dot or a 3D model to follow that vehicle: the camera glides after it (and in 3D turns to look along its direction), a bar shows line, destination, operator and next stop, and "Stop" or dragging the map ends it.
+- In a route's detail: every stage has a pin button that highlights that leg on the map and in the list; stops in "N stops" and the walking directions are clickable and fly to their place; the "Live" badge of a transit leg is a button that finds that trip's vehicle and follows it. A live departure in a stop's list does the same.
 - With a route or navigation active, its vehicles get a ring and the others dim.
 - Buttons on the map: vehicles on/off, 3D (tilts the map to 58 degrees, enables rotation, shows 3D buildings from the vector tiles, and the same tilt is used while navigating).
 
@@ -51,6 +53,10 @@ How a vehicle moves between reports (the feed delivers positions every 10 to 120
 - The server returns the trip's shape with the position of every stop and every traffic signal along it (`/api/v1/shape?trip=`, cached 6 h). Signals come from OSM (`highway=traffic_signals`, `crossing=traffic_signals`), extracted by `build-graph.sh` into `signals.json` and published by graph-watch next to the manifest. Without that file the app animates without lights.
 - Each vehicle is dead-reckoned along its shape with a speed controller: it brakes smoothly for a red light (a deterministic phase per junction) and holds until green, docks at the platform when the feed says it is stopped at a stop, and steers back toward the reported position (speeds up when behind, eases when ahead, never reverses). A mismatch of 350 to 600 m is closed with a capped glide, more than 600 m fades the vehicle out, moves it and fades it in. Vehicles with no news for 4 minutes come to rest and dim, after 15 minutes they are dropped. Light stops are only simulated while the vehicle is less than 110 m behind its reported position, so a simulated stop never turns into a lasting lag.
 - Controller tests: `node --test pkgs/nav/tests/vehicles.test.js` (fake clock: tracking, red light and catch-up, both mismatch cases, stopped vehicles, stale vehicles, models).
+
+## If the app looks old
+
+The page and every script URL carry a content hash of the build (`?v=...`, shown under About, "This device", and on `/healthz`). HTML and API answers are sent with `no-store` and CDN no-store headers, hashed assets are immutable. A device that shows a different build than `/healthz` is serving an old copy: reload once (the service worker takes the new page on the next load).
 
 ## MCP link
 

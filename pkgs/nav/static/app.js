@@ -92,7 +92,7 @@ async function api(path, params = {}, signal) {
 // ---------------------------------------------------------------- map
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const styleUrl = () => `https://tiles.openfreemap.org/styles/${dark.matches ? "dark" : "positron"}`;
-let map, routeData = { type: "FeatureCollection", features: [] };
+let map, routeData = { type: "FeatureCollection", features: [] }, focusData = { type: "FeatureCollection", features: [] }, focusMarker = null;
 let markers = [], userMarker = null, popup = null;
 
 function initMap() {
@@ -123,6 +123,9 @@ function addRouteLayers() {
   const casing = css("--surface");
   map.addLayer({ id: "route-casing", type: "line", source: "route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": casing, "line-width": 9, "line-opacity": 0.9 } });
   map.addLayer({ id: "route-solid", type: "line", source: "route", filter: ["!", ["get", "dashed"]], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 5.5 } });
+  map.addSource("focus", { type: "geojson", data: focusData });
+  map.addLayer({ id: "focus-casing", type: "line", source: "focus", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": casing, "line-width": 14, "line-opacity": 0.95 } });
+  map.addLayer({ id: "focus-line", type: "line", source: "focus", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 8 } });
   map.addLayer({ id: "route-dash", type: "line", source: "route", filter: ["get", "dashed"], layout: { "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 4.5, "line-dasharray": [1, 1.6] } });
 }
 function decode(str) {
@@ -175,6 +178,51 @@ function clearRoute() {
   window.Vehicles?.highlight([]);
   routeData = { type: "FeatureCollection", features: [] };
   map?.getSource("route")?.setData(routeData);
+}
+function lineMeters(pts) {  // cumulative distance of a decoded polyline, in metres
+  const k = Math.cos((pts[0][1] * Math.PI) / 180) * 111320, cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot((pts[i][0] - pts[i - 1][0]) * k, (pts[i][1] - pts[i - 1][1]) * 110540));
+  return cum;
+}
+function pointAlong(pts, cum, s) {
+  s = Math.max(0, Math.min(cum[cum.length - 1], s));
+  let i = 0;
+  while (i < cum.length - 2 && cum[i + 1] < s) i++;
+  const t = cum[i + 1] > cum[i] ? (s - cum[i]) / (cum[i + 1] - cum[i]) : 0;
+  return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t];
+}
+function clearFocus() {
+  focusData = { type: "FeatureCollection", features: [] };
+  map?.getSource("focus")?.setData(focusData);
+  focusMarker?.remove(); focusMarker = null;
+  $$("#detail .step.focus").forEach((e) => e.classList.remove("focus"));
+}
+function focusLeg(i) {
+  const it = S.results[S.sel];
+  if (!it || !map) return;
+  clearFocus();
+  const l = it.legs[i], pts = decode(l.geometry || "");
+  if (pts.length < 2) return focusPoint(l.from.lon, l.from.lat, l.from.name);
+  focusData = { type: "FeatureCollection", features: [{ type: "Feature", properties: { color: color(l) }, geometry: { type: "LineString", coordinates: pts } }] };
+  map.getSource("focus")?.setData(focusData);
+  const b = new maplibregl.LngLatBounds();
+  pts.forEach((p) => b.extend(p));
+  map.fitBounds(b, { padding: mapPad(), maxZoom: 17, duration: 600 });
+  $$("#detail .step")[i]?.classList.add("focus");
+}
+function focusPoint(lon, lat, label) {
+  if (!map) return;
+  clearFocus();
+  focusMarker = new maplibregl.Marker({ element: h("div", { class: "pin to", "aria-label": label || "Selected place" }) }).setLngLat([lon, lat]).addTo(map);
+  map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 16.5), padding: mapPad(), duration: 700 });
+}
+function focusStep(leg, steps, k) {  // a walking direction: its place along the leg, from the distances in the instruction list
+  const pts = decode(leg.geometry || "");
+  if (pts.length < 2) return focusPoint(leg.from.lon, leg.from.lat, leg.from.name);
+  const cum = lineMeters(pts), total = steps.reduce((x, s) => x + s.m, 0) || 1, scale = cum[cum.length - 1] / total;
+  const before = steps.slice(0, k).reduce((x, s) => x + s.m, 0) * scale;
+  const [lon, lat] = pointAlong(pts, cum, before);
+  focusPoint(lon, lat, steps[k].street);
 }
 function placeMenu(ll) {
   popup?.remove();
@@ -257,7 +305,7 @@ function pane(view, name) {
   $$(`#view-${view} > .pane`).forEach((p) => (p.hidden = p.id !== `${view}-${name}`));
 }
 $$("[data-back]").forEach((b) => b.addEventListener("click", () => {
-  if (b.dataset.back === "plan") { pane("plan", "main"); S.sel = -1; if (S.results[0]) drawRoute(S.results[0]); }
+  if (b.dataset.back === "plan") { clearFocus(); pane("plan", "main"); S.sel = -1; if (S.results[0]) drawRoute(S.results[0]); }
   else { stopTimer(); S.stop = null; pane("near", "main"); }
 }));
 
@@ -447,20 +495,28 @@ function renderResults(r) {
 // ---------------------------------------------------------------- itinerary detail
 function openDetail(i) {
   S.sel = i;
+  if (map) clearFocus();
   const it = S.results[i];
   pane("plan", "detail");
   $("#detail-title").textContent = `${hm(it.start)} to ${hm(it.end)}`;
   $("#plan-detail").scrollTop = 0;
   const d = $("#detail");
   d.replaceChildren();
-  it.legs.forEach((l) => d.append(stepFor(l)));
+  it.legs.forEach((l, i) => d.append(stepFor(l, i)));
   const last = it.legs[it.legs.length - 1];
   $("#start-nav").onclick = () => window.Guide?.start(it);
   d.append(h("div", { class: "step end", style: { "--c": "var(--accent)" } }, h("div", { class: "t" }, hm(it.end)), h("div", { class: "body" }, h("h3", {}, last.to.name))));
   drawRoute(it);
   if (!wide.matches && S.detent === "full") setDetent("half");
 }
-function stepFor(l) {
+const showBtn = (i) => h("button", { class: "icon-btn small show", "aria-label": "Show this part on the map", title: "Show on the map", onclick: () => focusLeg(i) }, icon("pin"));
+// the live badge doubles as "where is it": it finds the vehicle on this trip and follows it
+function liveBadge(l) {
+  if (!(l.realtime && l.trip_id)) return rtTag(l.delay_s, l.realtime);
+  const b = h("button", { class: "rt-btn", title: "Show the vehicle on the map", onclick: async () => { b.disabled = true; const ok = await window.Vehicles?.followTrip(l.trip_id); b.disabled = false; if (!ok) b.title = "No live position for this trip right now"; if (!ok) b.lastChild.textContent = "No position yet"; } }, rtTag(l.delay_s, l.realtime), h("span", {}, "Show vehicle"));
+  return b;
+}
+function stepFor(l, idx) {
   const c = color(l), late = l.realtime && l.delay_s ? mins(l.delay_s) : 0;
   const left = h("div", { class: "t" }, h("time", {}, hm(l.start)), l.realtime && late ? h("small", {}, `sched ${hm(l.scheduled_start)}`) : null);
   if (l.line) {
@@ -470,16 +526,16 @@ function stepFor(l) {
       : l.from.name;
     return h("div", { class: "step", style: { "--c": c } }, left,
       h("div", { class: "body" },
-        h("h3", {}, badge(l.line, c, l.mode), l.headsign ? `to ${l.headsign}` : ""),
+        h("h3", {}, badge(l.line, c, l.mode), l.headsign ? `to ${l.headsign}` : "", showBtn(idx)),
         h("div", { class: "meta" }, "Board at ", board),
-        h("div", { class: "meta" }, rtTag(l.delay_s, l.realtime), ` · ${dur(l.duration_s)} · ${providerOf(l.agency)?.name || l.agency || ""}`),
-        stops.length ? h("details", {}, h("summary", {}, `${stops.length + 1} stop${stops.length ? "s" : ""}`), h("ul", {}, stops.map((s) => h("li", {}, s.name)), h("li", {}, `${l.to.name}, ${hm(l.end)}`))) : null));
+        h("div", { class: "meta" }, liveBadge(l), ` · ${dur(l.duration_s)} · ${providerOf(l.agency)?.name || l.agency || ""}`),
+        stops.length ? h("details", {}, h("summary", {}, `${stops.length + 1} stop${stops.length ? "s" : ""}`), h("ul", {}, stops.map((s) => h("li", {}, h("button", { class: "link", onclick: () => focusPoint(s.lon, s.lat, s.name) }, s.name))), h("li", {}, h("button", { class: "link", onclick: () => focusPoint(l.to.lon, l.to.lat, l.to.name) }, `${l.to.name}, ${hm(l.end)}`)))) : null));
   }
   const name = { WALK: "Walk", BICYCLE: "Cycle", CAR: "Drive" }[l.mode] || l.mode;
   return h("div", { class: `step street m-${l.mode.toLowerCase()}`, style: { "--c": c } }, left,
-    h("div", { class: "body" }, h("h3", {}, icon(MODE_ICON[l.mode] || "walk"), `${name} ${dist(l.distance_m)}`),
+    h("div", { class: "body" }, h("h3", {}, icon(MODE_ICON[l.mode] || "walk"), `${name} ${dist(l.distance_m)}`, showBtn(idx)),
       h("div", { class: "meta" }, `${dur(l.duration_s)} to ${l.to.name}`),
-      l.steps?.length ? h("details", {}, h("summary", {}, "Directions"), h("ul", {}, l.steps.filter((s) => s.m > 0).map((s) => h("li", {}, `${s.dir.replaceAll("_", " ")} ${s.street} ${dist(s.m)}`)))) : null));
+      l.steps?.length ? (() => { const st = l.steps.filter((s) => s.m > 0); return h("details", {}, h("summary", {}, "Directions"), h("ul", {}, st.map((s, k) => h("li", {}, h("button", { class: "link", onclick: () => focusStep(l, st, k) }, `${s.dir.replaceAll("_", " ")} ${s.street} ${dist(s.m)}`))))); })() : null));
 }
 
 // ---------------------------------------------------------------- nearby and departures
@@ -510,7 +566,7 @@ async function showStop(s) {
     try {
       const r = await api("departures", { stop: s.id, n: 14 });
       $("#stop-status").textContent = r.departures.length ? "" : "No departures soon.";
-      $("#stop-list").replaceChildren(...r.departures.map((d) => h("li", { class: "dep" },
+      $("#stop-list").replaceChildren(...r.departures.map((d) => h("li", { class: "dep" + (d.realtime ? " live" : ""), title: d.realtime ? "Show the vehicle on the map" : "", onclick: d.realtime && d.trip ? () => window.Vehicles?.followTrip(d.trip) : null },
         badge(d.line, providerOf(d.agency)?.color || "#44505c", "BUS"),
         h("span", { class: "to" }, d.to || ""),
         h("span", { class: "t" }, h("time", {}, d.time), h("small", {}, rtTag(d.delay_s, d.realtime))))));
@@ -529,6 +585,11 @@ async function loadInfo() {
   box.replaceChildren(
     h("section", {}, h("h3", {}, "Routing data"), h("div", {}, i.built_at ? `Graph built ${new Date(i.built_at).toLocaleString("en-GB", { timeZone: TZ })}` : "Unknown"), h("div", {}, i.osm_data ? `OpenStreetMap data from ${i.osm_data.slice(0, 10)}` : "")),
     h("section", {}, h("h3", {}, "Operators"), h("ul", {}, providers.map((p) => h("li", {}, h("span", { class: "swatch", style: { "--c": p.color } }), p.name)))),
+    h("section", {}, h("h3", {}, "This device"), h("ul", {}, [
+      h("li", {}, `App build ${document.querySelector('meta[name="nav-build"]')?.content || "?"}`),
+      h("li", {}, map ? "Map: WebGL on" : "Map: WebGL off, no map, no 3D"),
+      h("li", {}, (() => { const s = window.Vehicles?.stats?.(); return s ? `Vehicles: ${s.total} live, ${s.withShape} on their route, zoom ${s.zoom}, 3D ${s.threeD ? "on" : "off"}, layer ${s.on ? "on" : "off"}` : "Vehicles: not loaded"; })()),
+      h("li", {}, "3D buildings and vehicle models show from zoom 15 (street level)")])),
     h("section", {}, h("h3", {}, "Sources"), h("div", {}, "Map data © OpenStreetMap contributors (ODbL). Tiles by OpenFreeMap. Timetables and live data from the operators and PKP Polskie Linie Kolejowe S.A. Operator colours are approximate.")),
   );
 }
@@ -592,4 +653,4 @@ function start() {
 })();
 
 // shared with guide.js (live navigation)
-window.App = { localInput, S, api, h, icon, color, dist, dur, hm, mins, rtTag, badge, providerOf, setDetent, pane, mapPad, decode, store, $, $$, MODE_ICON, tf, getMap: () => map, getMe: () => userMarker, showMe, drawRoute, clearRoute, showLogin, replan: (r) => { S.results = [r]; S.sel = 0; openDetail(0); } };
+window.App = { localInput, focusLeg, focusPoint, S, api, h, icon, color, dist, dur, hm, mins, rtTag, badge, providerOf, setDetent, pane, mapPad, decode, store, $, $$, MODE_ICON, tf, getMap: () => map, getMe: () => userMarker, showMe, drawRoute, clearRoute, showLogin, replan: (r) => { S.results = [r]; S.sel = 0; openDetail(0); } };

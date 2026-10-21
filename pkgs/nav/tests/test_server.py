@@ -124,5 +124,22 @@ class Shapes(unittest.TestCase):
         self.assertEqual(s.api_vehicles({"bbox": ["10,40,20,50"], "lod": ["heat"]})["heat"], [[19.0, 50.0]])
 
 
+class Serving(unittest.TestCase):
+    def test_page_carries_build_id_on_every_asset(self):
+        html = s.H.__new__(s.H).page().decode()
+        import re
+        ids = set(re.findall(r"\?v=([0-9a-f]{10})", html))
+        self.assertEqual(len(ids), 1)
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js"):
+            self.assertIn(f"/{n}?v=", html)
+        self.assertIn(f'content="{ids.pop()}"', html)
+
+    def test_vehicle_by_trip(self):
+        s._veh.update(t=time.time(), list=[{"id": "a", "trip": "t:1", "lon": 1, "lat": 1}, {"id": "b", "trip": "t:2", "lon": 1, "lat": 1}])
+        self.assertEqual([v["id"] for v in s.api_vehicles({"trip": ["t:1"]})["vehicles"]], ["a"])
+        with self.assertRaises(s.Bad):
+            s.api_vehicles({"trip": ["bad id"]})
+
+
 if __name__ == "__main__":
     unittest.main()

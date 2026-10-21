@@ -296,3 +296,24 @@ button { background: none; border: 0; padding: 0; cursor: pointer; touch-action:
 .veh-pop b { font-size: 1rem; }
 .pop-sub { font-size: 0.8125rem; color: var(--ink-2); }
 .pop-sub:empty { display: none; }
+
+/* clickable stages, live badge, follow bar */
+.step .show { margin-left: auto; width: 32px; height: 32px; color: var(--ink-3); }
+.step h3 { flex-wrap: nowrap; }
+.step.focus .body { background: var(--accent-soft); border-radius: 10px; }
+.step .body { transition: background 0.2s; border-radius: 10px; }
+.link { display: inline; min-height: 32px; text-align: left; color: var(--ink); font: inherit; padding: 2px 0; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.link:hover, .link:focus-visible { color: var(--accent); text-decoration-color: var(--accent); }
+.rt-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 10px 0 6px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); }
+.rt-btn:hover { border-color: var(--accent); }
+.rt-btn > span:last-child { font-size: 0.8125rem; font-weight: 600; color: var(--accent); }
+.rt-btn:disabled { opacity: 0.6; }
+.deps .dep.live { cursor: pointer; }
+.deps .dep.live:hover { background: var(--accent-soft); border-radius: 10px; }
+.follow { position: fixed; z-index: 7; top: calc(var(--safe-t) + var(--gap)); left: var(--gap); right: var(--gap); display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; }
+.follow[hidden] { display: none; }
+@media (min-width: 760px) { .follow { left: calc(var(--side) + 2 * var(--gap)); right: auto; width: min(420px, calc(100vw - var(--side) - 90px)); } }
+.f-main { flex: 1; min-width: 0; }
+.f-title { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 1.0625rem; flex-wrap: wrap; }
+.f-sub, .f-status { font-size: 0.875rem; color: var(--ink-2); }
+.f-status { font-weight: 600; color: var(--ink); }

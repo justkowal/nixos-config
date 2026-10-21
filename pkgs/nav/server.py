@@ -370,6 +370,11 @@ def vehicles_snapshot():
 
 
 def api_vehicles(q):
+    trip = (q.get("trip") or [""])[0]
+    if trip:  # one vehicle by trip id, wherever it is
+        if not ID.fullmatch(trip):
+            raise Bad("bad trip id")
+        return {"now": time.time(), "vehicles": [v for v in vehicles_snapshot() if v["trip"] == trip][:3]}
     raw = (q.get("bbox") or [""])[0]
     box = [float(x) for x in raw.split(",")] if raw else []
     if len(box) != 4 or not (-180 <= box[0] < box[2] <= 180 and -90 <= box[1] < box[3] <= 90):
@@ -527,6 +532,33 @@ def api_events(device, q):
 
 
 # ---------------------------------------------------------------- http
+_build_cache = {"key": None, "id": ""}
+
+
+def build_id():
+    """content hash of the shipped files; recomputed when one of them changes on disk (matters in development, deploys replace the store path)."""
+    names = ("index.html", "app.js", "vehicles.js", "guide.js", "app.css", "providers.json", "sw.js")
+    key = []
+    for n in names:
+        try:
+            st = os.stat(os.path.join(STATIC, n))
+            key.append((n, st.st_mtime_ns, st.st_size))
+        except OSError:
+            key.append((n, 0, 0))
+    if key != _build_cache["key"]:
+        h = hashlib.sha1()
+        for n in names:
+            try:
+                with open(os.path.join(STATIC, n), "rb") as f:
+                    h.update(f.read())
+            except OSError:
+                pass
+        _build_cache.update(key=key, id=h.hexdigest()[:10])
+    return _build_cache["id"]
+
+
+
+
 class H(BaseHTTPRequestHandler):
     server_version = "nav"
     sys_version = ""
@@ -545,9 +577,15 @@ class H(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Permissions-Policy", "geolocation=(self), camera=(), microphone=()")
-        self.send_header("Cache-Control", "no-store" if ctype == "application/json" else "no-cache")
+        nocache = ctype == "application/json" or ctype.startswith("text/html")
+        cc = [v for k, v in extra if k == "Cache-Control"]
+        self.send_header("Cache-Control", "no-store" if nocache else (cc[0] if cc else "no-cache"))
+        if nocache:  # a CDN must never keep the page or an API answer
+            self.send_header("CDN-Cache-Control", "no-store")
+            self.send_header("Cloudflare-CDN-Cache-Control", "no-store")
         for k, v in extra:
-            self.send_header(k, v)
+            if k != "Cache-Control":
+                self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -576,7 +614,7 @@ class H(BaseHTTPRequestHandler):
         if u.path.startswith("/api/v1/"):  # the versioned contract for other clients; /api/ stays what the web app calls
             u = u._replace(path="/api/" + u.path[8:])
         if u.path == "/healthz":
-            return self.j(200, {"ok": True})
+            return self.j(200, {"ok": True, "build": build_id()})
         if u.path.startswith("/api/"):
             if u.path == "/api/session":
                 return self.j(200 if self.authed() else 401, {"ok": self.authed()})
@@ -603,10 +641,21 @@ class H(BaseHTTPRequestHandler):
                 return self.j(e.code, {"error": str(e)})
             except Exception:
                 return self.j(502, {"error": "upstream unavailable"})
-        return self.static(u.path)
+        return self.static(u.path, versioned=bool(re.fullmatch(r"v=[0-9a-f]{10}", u.query)))
 
-    def static(self, path):
-        rel = "index.html" if path in ("/", "") else path.lstrip("/")
+    def page(self):
+        """index.html with the build id on every asset URL, so no proxy, CDN or service worker can serve an old script next to a new page."""
+        BUILD = build_id()
+        with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js"):
+            html = html.replace(f'"/{n}"', f'"/{n}?v={BUILD}"')
+        return html.replace('content="dev"', f'content="{BUILD}"').encode()
+
+    def static(self, path, versioned=False):
+        if path in ("/", "", "/index.html"):
+            return self.send(200, self.page(), "text/html; charset=utf-8")
+        rel = path.lstrip("/")
         full = os.path.realpath(os.path.join(STATIC, rel))
         if not full.startswith(os.path.realpath(STATIC) + os.sep) or not os.path.isfile(full):
             full = os.path.join(STATIC, "index.html")  # single page app: unknown paths fall back to the shell
@@ -614,7 +663,7 @@ class H(BaseHTTPRequestHandler):
         if full.endswith(".webmanifest"):
             ctype = "application/manifest+json"
         with open(full, "rb") as f:
-            self.send(200, f.read(), ctype + ("; charset=utf-8" if ctype.startswith("text/") or "javascript" in ctype else ""))
+            self.send(200, f.read(), ctype + ("; charset=utf-8" if ctype.startswith("text/") or "javascript" in ctype else ""), extra=[("Cache-Control", "public, max-age=31536000, immutable")] if versioned else ())
 
     def body(self, limit=8192):
         try:

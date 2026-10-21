@@ -16,12 +16,12 @@
   const FALLBACK = { RAIL: "#b3311f", BUS: "#1c5fb0", TRAM: "#a35a00", TROLLEYBUS: "#4d7c0f" };
   const GLASS = "#1b2430";
   const EXTRAP_MAX = 40, STALE_DIM = 240, STALE_DROP = 900, K_PULL = 0.3, RESYNC_M = 350, TELEPORT_M = 600, LIGHT_SLACK_M = 110;
-  const Z_DOTS = 10.4, Z_HEAT_OUT = 11.8, Z_3D = 15.3;
+  const Z_DOTS = 10.4, Z_HEAT_OUT = 11.8, Z_3D = 15;
 
   const V = new Map();        // vehicle id -> state
   const SHAPES = new Map();   // trip id -> shape info | "pending" | "none"
-  let map = null, on = store.get("veh", true), threeD = store.get("3d", false), hi = new Set(), popup = null;
-  let lastFrame = 0, lastHeat = 0;
+  let map = null, on = store.get("veh", true), threeD = store.get("3d", true), hi = new Set(), popup = null;
+  let lastFrame = 0, followId = null, followBar = null, cam = null;
 
   // ---- shapes
   function buildShape(info) {
@@ -228,26 +228,85 @@
     const b = map.getBounds().toArray(), pad = 0.01, z = map.getZoom(), routeOn = hi.size > 0;
     const dots = [], solids = [];
     const bgHex = (getComputedStyle(document.documentElement).getPropertyValue("--surface-3").trim() || "#dddddd");
-    let nearby = 0;
+    let nearby = 0, followed = null;
     for (const v of V.values()) {
       const st = step(v, dt, now) || { alpha: 0.7 };  // no shape yet: a still dot at the last reported position
       const sh = v.shape || v.ray, p = sh ? pointAt(sh, v.s) : { lon: v.lon, lat: v.lat };
       if (p.lon < b[0][0] - pad || p.lon > b[1][0] + pad || p.lat < b[0][1] - pad || p.lat > b[1][1] + pad) continue;
-      const mine = hi.has(v.trip), alpha = st.alpha * (routeOn && !mine ? 0.35 : 1);
+      const mine = hi.has(v.trip) || v.id === followId, alpha = st.alpha * (routeOn && !mine ? 0.35 : 1);
       dots.push({ type: "Feature", properties: { c: v.color, l: v.line || "", a: alpha, hi: mine ? 1 : 0, v: v.id }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } });
+      if (v.id === followId) followed = { lon: p.lon, lat: p.lat, hd: v.h, v };
       if (sh && z >= Z_3D && nearby < 140) {
         nearby++;
         const m = modelOf(v);
         for (const car of m.cars) {
           const cp = car.bend ? pointAt(sh, v.s + car.c) : p, hd = car.bend ? cp.hd : v.h, lon = car.bend ? cp.lon : p.lon, lat = car.bend ? cp.lat : p.lat;
           for (const part of car.parts) {
-            solids.push({ type: "Feature", properties: { c: mix(part.col, bgHex, alpha), b: part.b, t: part.t }, geometry: { type: "Polygon", coordinates: [rect(lon, lat, hd, part.len, part.wid, part.off + (car.bend ? 0 : car.c))] } });
+            solids.push({ type: "Feature", properties: { c: mix(part.col, bgHex, alpha), b: part.b, t: part.t, v: v.id }, geometry: { type: "Polygon", coordinates: [rect(lon, lat, hd, part.len, part.wid, part.off + (car.bend ? 0 : car.c))] } });
           }
         }
       }
     }
     map.getSource("veh-dots").setData({ type: "FeatureCollection", features: dots });
     map.getSource("veh-3d").setData({ type: "FeatureCollection", features: solids });
+    if (followId) chase(followed, dt);
+  }
+  // chase camera: glides to the vehicle, and in 3D turns to look along its direction of travel
+  function chase(f, dt) {
+    if (!f) { if (followBar) $("#follow-status").textContent = "No position for this vehicle right now"; return; }
+    const k = 1 - Math.exp(-dt / 0.4), c = map.getCenter();
+    cam = cam || { lon: c.lng, lat: c.lat, zoom: map.getZoom(), target: Math.max(map.getZoom(), 17.8) };
+    cam.lon += (f.lon - cam.lon) * k; cam.lat += (f.lat - cam.lat) * k;
+    if (cam.free) cam.zoom = map.getZoom();  // the user took over the zoom
+    else cam.zoom += (cam.target - cam.zoom) * (1 - Math.exp(-dt / 0.6));
+    const opts = { center: [cam.lon, cam.lat], zoom: cam.zoom, animate: false };
+    if (threeD) { const b = map.getBearing(); opts.bearing = b + (((f.hd - b + 540) % 360) - 180) * (1 - Math.exp(-dt / 0.8)); }
+    map.jumpTo(opts);
+    const v = f.v;
+    $("#follow-status").textContent = v.st === "STOPPED_AT" ? `At ${v.sn || "a stop"}` : v.sn ? `Next stop: ${v.sn}` : v.vel > 0.5 ? "Moving" : "Standing";
+  }
+  function showBar(v) {
+    if (!followBar) {
+      followBar = h("section", { id: "follow", class: "follow glass", "aria-label": "Following a vehicle" },
+        h("div", { class: "f-main" }, h("div", { id: "follow-title", class: "f-title" }), h("div", { id: "follow-sub", class: "f-sub" }), h("div", { id: "follow-status", class: "f-status", role: "status", "aria-live": "polite" })),
+        h("button", { class: "chip", id: "follow-stop", onclick: () => stopFollow() }, "Stop"));
+      document.body.append(followBar);
+    }
+    followBar.hidden = false;
+    const t = $("#follow-title");
+    t.replaceChildren(A.badge(v.line || "?", v.color, v.mode), v.to ? ` to ${v.to}` : "");
+    $("#follow-sub").textContent = A.providerOf(v.ag)?.name || v.ag || "";
+  }
+  function follow(id) {
+    const v = V.get(id);
+    if (!v) return false;
+    followId = id; cam = null; on = true; syncVisibility();
+    showBar(v);
+    ensureShape(v);
+    return true;
+  }
+  function stopFollow() {
+    followId = null; cam = null;
+    if (followBar) followBar.hidden = true;
+    map.easeTo({ bearing: threeD ? map.getBearing() : 0, duration: 400 });
+  }
+  function ensureShape(v) {
+    if (v.shape || !v.trip) return;
+    const known = SHAPES.get(v.trip);
+    if (known && known.points) return attachShape(v, known);
+    if (known === "pending") return;
+    SHAPES.set(v.trip, "pending");
+    api("shape", { trip: v.trip }).then((info) => { SHAPES.set(v.trip, info); for (const o of V.values()) if (o.trip === v.trip && !o.shape) attachShape(o, info); }).catch(() => SHAPES.set(v.trip, { fail: T() }));
+  }
+  // from a trip leg or a departure: find the vehicle on that trip, wherever it is, and follow it
+  async function followTrip(trip) {
+    if (!map || !trip) return false;
+    let v = [...V.values()].find((x) => x.trip === trip);
+    if (!v) {
+      try { const r = await api("vehicles", { trip }); ingest(r.vehicles, r.now); } catch { return false; }
+      v = [...V.values()].find((x) => x.trip === trip);
+    }
+    return v ? follow(v.id) : false;
   }
   function loop() {
     requestAnimationFrame(loop);
@@ -337,21 +396,21 @@
     syncVisibility();
   }
   function onClick(e) {
-    const f = e.features && e.features[0], v = f && V.get(f.properties.v);
-    if (!v) return;
-    popup?.remove();
-    const rows = [h("b", {}, `${v.line || "?"}${v.to ? " to " + v.to : ""}`), h("div", { class: "pop-sub" }, A.providerOf(v.ag)?.name || v.ag || ""),
-      h("div", { class: "pop-sub" }, v.st === "STOPPED_AT" ? `At ${v.sn || "a stop"}` : v.sn ? `Next: ${v.sn}` : ""), A.rtTag(null, true)];
-    popup = new maplibregl.Popup({ closeButton: false, offset: 12 }).setLngLat(f.geometry.coordinates).setDOMContent(h("div", { class: "veh-pop" }, rows)).addTo(map);
+    const f = e.features && e.features[0];
+    if (f && f.properties.v) follow(f.properties.v);
   }
   function init(m) {
     map = m;
     controls();
     map.on("style.load", layers);
     if (map.isStyleLoaded()) layers();
-    map.on("click", "veh-dot", onClick);
-    map.on("mouseenter", "veh-dot", () => (map.getCanvas().style.cursor = "pointer"));
-    map.on("mouseleave", "veh-dot", () => (map.getCanvas().style.cursor = ""));
+    for (const layer of ["veh-dot", "veh-3d-body"]) {
+      map.on("click", layer, onClick);
+      map.on("mouseenter", layer, () => (map.getCanvas().style.cursor = "pointer"));
+      map.on("mouseleave", layer, () => (map.getCanvas().style.cursor = ""));
+    }
+    map.on("dragstart", (e) => { if (followId && e.originalEvent) stopFollow(); });
+    map.on("zoomstart", (e) => { if (followId && cam && e.originalEvent) cam.free = true; });
     let deb = 0;
     map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(refresh, 400); });
     setInterval(refresh, 5000);
@@ -362,8 +421,9 @@
   }
 
   window.Vehicles = {
-    init, highlight: (ids) => { hi = new Set(ids || []); }, is3d: () => threeD,
+    init, follow, followTrip, stopFollow, highlight: (ids) => { hi = new Set(ids || []); }, is3d: () => threeD,
     // exposed for tests
+    stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on, threeD, zoom: map ? +map.getZoom().toFixed(1) : null }),
     _ingest: ingest, _attach: attachShape, _step: step, _V: V, _project: project, _build: buildShape, _pointAt: pointAt, _red: red, _model: modelOf, _livery: livery,
   };
 })();
