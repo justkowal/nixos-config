@@ -15,7 +15,7 @@ PULL_KEY=${MAPS_PULL_KEY:-$HOME/.ssh/maps_pull_ed25519}   # the Pi lets it read 
 CONTACT=${MAPS_CONTACT:?set MAPS_CONTACT to the address that goes into the download User-Agent}
 UA="kowal-lab-maps/0.1 (personal use; contact $CONTACT)"
 VALIDATOR_VERSION=8.0.1
-VALIDATOR_SHA256=${VALIDATOR_SHA256:-}            # pinned below after the first verified download
+VALIDATOR_SHA256=${VALIDATOR_SHA256:-19293ddd9b6f954f216d4f12054bd8a3232921751c4484339e339764a91000e2}   # v8.0.1 cli jar, checked on download
 REFRESH=0 PUSH=1 ALLOW_ERR=0
 for a in "$@"; do case $a in --refresh-osm) REFRESH=1 ;; --no-push) PUSH=0 ;; --allow-validator-errors) ALLOW_ERR=1 ;; *) echo "unknown flag $a" >&2; exit 2 ;; esac; done
 
