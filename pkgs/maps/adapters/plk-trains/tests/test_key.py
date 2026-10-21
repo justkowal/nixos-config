@@ -44,3 +44,27 @@ class DelayFromTimes(unittest.TestCase):
     def test_missing_gives_none(self):
         from plk_trains.rt import _delay_s
         self.assertIsNone(_delay_s({"plannedArrival": "2026-10-21T04:11:00"}, "arrival"))
+
+
+class PaginationShape(unittest.TestCase):
+    def test_response_without_has_next_page(self):
+        """the real API omits hasNextPage on a single page of results"""
+        import os
+        import tempfile
+        from types import SimpleNamespace
+
+        from plk_trains.app import App
+        calls = []
+
+        class C:
+            def get(self, path, params, schema, prio="rt"):
+                calls.append(params["page"])
+                return {"trains": [], "pagination": {"page": 1, "totalPages": 1}, "generatedAt": "2026-10-21T08:00:00Z"}, {}
+
+        me = SimpleNamespace(cfg={"realtime": {"full_routes": False, "page_size": 2000, "max_pages": 3, "max_snapshot_age_s": 10**9}},
+                             h={"resolved": {}}, client=C(), index={"trips": {}}, clock=lambda: 1792566000, out=tempfile.mkdtemp())
+        me.stations_param = lambda: "1"
+        me._ok = lambda *a, **k: None
+        App.poll_ops(me)
+        self.assertEqual(calls, [1])
+        self.assertTrue(os.path.exists(os.path.join(me.out, "trip-updates.pb")))

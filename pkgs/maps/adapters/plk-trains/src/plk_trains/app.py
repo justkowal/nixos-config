@@ -143,7 +143,9 @@ class App:
             data, hdr = self.client.get("/api/v1/operations", params, "OperationResponseDto")
             trains += data["trains"] or []
             snap = snap or hdr.get("x-snapshot-timestamp") or data.get("generatedAt")
-            if not data["pagination"]["hasNextPage"] or page >= r["max_pages"]:
+            pag = data.get("pagination") or {}
+            more = pag.get("hasNextPage", page < pag.get("totalPages", page))
+            if not more or page >= r["max_pages"]:
                 break
             page += 1
         ts = datetime.fromisoformat(snap.replace("Z", "+00:00")).timestamp() if snap else self.clock()
