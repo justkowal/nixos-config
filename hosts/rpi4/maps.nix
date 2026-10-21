@@ -94,17 +94,22 @@ in {
     }
   ];
 
-  systemd.tmpfiles.rules = [
-    "d ${data} 0755 root root -"
-    "d ${data}/graph 0755 root root -"
-    "d ${data}/graph/current 0755 root root -"
-    "d ${data}/graph/previous 0755 root root -"
-    "d ${data}/graph/upload 0750 maps-push maps-push -"
-    "d ${data}/export 0755 root root -"
-    "d ${data}/export/adapters 0755 root root -"
-    "d ${data}/adapters 0755 root root -"
-    "d ${data}/osm 0755 root root -"
-  ];
+  # not tmpfiles: the disk root belongs to justkowal, and tmpfiles refuses directories with other owners below it
+  systemd.services.maps-dirs = {
+    description = "Create the maps data directories";
+    wantedBy = ["multi-user.target"];
+    before = ["podman-mcp-nominatim.service" "podman-mcp-otp.service" "graph-watch.path" "maps-export-sync.timer"];
+    unitConfig.RequiresMountsFor = "/srv/data";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      install -d -m 0755 ${data} ${data}/graph ${data}/graph/current ${data}/graph/previous ${data}/graph/quarantine \
+        ${data}/adapters ${data}/osm ${data}/export ${data}/export/adapters
+      install -d -m 0750 -o maps-push -g maps-push ${data}/graph/upload
+    '';
+  };
 
   virtualisation.oci-containers.containers = {
     mcp-nominatim = {

@@ -168,6 +168,20 @@ def coord_input(p):
     return f'{{location:{{coordinate:{{latitude:{p["lat"]},longitude:{p["lon"]}}}}}}}'
 
 
+def compact_steps(steps):
+    """merge consecutive pieces of the same street, then keep the longest MAX_STEPS in order, so long routes stay readable."""
+    merged = []
+    for s in steps:
+        if merged and merged[-1]["street"] == s["streetName"]:
+            merged[-1]["dist"] += s["distance"]
+        else:
+            merged.append({"dir": s["relativeDirection"].lower(), "street": s["streetName"], "dist": s["distance"]})
+    if len(merged) > MAX_STEPS:
+        keep = {id(m) for m in sorted(merged, key=lambda m: -m["dist"])[:MAX_STEPS]}
+        merged = [m for m in merged if id(m) in keep]
+    return [f'{m["dir"]} {m["street"]} {round(m["dist"])} m' for m in merged]
+
+
 def leg_out(l):
     out = {"mode": l["mode"], "from": (l["from"] or {}).get("name"), "to": (l["to"] or {}).get("name"),
            "start": l["start"]["scheduledTime"][11:16] if l.get("start") else None,
@@ -183,7 +197,7 @@ def leg_out(l):
         if delay:
             out["delay"] = delay
     if l.get("steps"):
-        out["steps"] = [f'{s["relativeDirection"].lower()} {s["streetName"]} {round(s["distance"])} m' for s in l["steps"][:MAX_STEPS]]
+        out["steps"] = compact_steps(l["steps"])
     return out
 
 
@@ -211,8 +225,19 @@ def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=Fals
 
 
 def cap(out):
+    """always valid JSON: shrink by dropping steps, then alternatives, instead of cutting the text."""
     s = json.dumps(out, ensure_ascii=False)
-    return s if len(s) <= MAX_CHARS else s[:MAX_CHARS] + '..."truncated"'
+    if len(s) <= MAX_CHARS or not isinstance(out, dict):
+        return s if len(s) <= MAX_CHARS else s[:MAX_CHARS]
+    for it in out.get("itineraries", []):
+        for leg in it.get("legs", []):
+            leg.pop("steps", None)
+    out["truncated"] = "steps dropped to fit the output limit"
+    s = json.dumps(out, ensure_ascii=False)
+    while len(s) > MAX_CHARS and len(out.get("itineraries", [])) > 1:
+        out["itineraries"].pop()
+        s = json.dumps(out, ensure_ascii=False)
+    return s
 
 
 # ---------------------------------------------------------------- tools: routing

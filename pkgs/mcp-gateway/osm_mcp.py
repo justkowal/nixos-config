@@ -130,10 +130,12 @@ def t_nearby(a):
     lat, lon = num(a, "lat", 48, 52), num(a, "lon", 16, 24)
     radius = num({"r": a.get("radius_m", 500)}, "r", 10, MAX_RADIUS_M)
     key = check_key(a.get("key", "amenity"), "key")
+    if not a.get("value") and radius > 1500:
+        raise RuntimeError("without a value (for example pharmacy) the radius is limited to 1500 m")
     p = {"lat": lat, "lon": lon, "r": radius, "k": key}
     dlat, dlon = radius / 111320.0, radius / (111320.0 * math.cos(math.radians(lat)))
     p.update(x1=lon - dlon, x2=lon + dlon, y1=lat - dlat, y2=lat + dlat)
-    where = "class = :k AND centroid && ST_MakeEnvelope(:x1, :y1, :x2, :y2, 4326) AND ST_DWithin(centroid::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :r)"
+    where = "class = :k AND geometry && ST_MakeEnvelope(:x1, :y1, :x2, :y2, 4326) AND ST_DWithin(centroid::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :r)"
     if a.get("value"):
         p["v"] = check_key(a["value"], "value")
         where += " AND type = :v"
@@ -149,8 +151,10 @@ def t_query(a):
     w, s, e, n = (float(x) for x in bb)
     if not (e > w and n > s) or e - w > MAX_BBOX_DEG or n - s > MAX_BBOX_DEG:
         raise RuntimeError(f"bbox must be at most {MAX_BBOX_DEG} degrees wide and high (about 28 km by 18 km)")
+    if not a.get("value") and (e - w > 0.06 or n - s > 0.06):
+        raise RuntimeError("without a value (for example restaurant) the bbox is limited to 0.06 degrees each way")
     p = {"k": check_key(a.get("key"), "key"), "x1": w, "y1": s, "x2": e, "y2": n}
-    where = "class = :k AND centroid && ST_MakeEnvelope(:x1, :y1, :x2, :y2, 4326)"
+    where = "class = :k AND geometry && ST_MakeEnvelope(:x1, :y1, :x2, :y2, 4326)"
     if a.get("value"):
         p["v"] = check_key(a["value"], "value")
         where += " AND type = :v"
