@@ -1,0 +1,376 @@
+Stop position reconciliation, operator map (primary) vs kiedyPrzyjedzie /stops, matched by normalised stop name.
+Operator stops with a position: 1368 (feed positions come from the operator map except the overrides listed at the end).
+Nearest same-name kiedyPrzyjedzie post within 30 m: 969
+30 to 100 m: 119
+Over 100 m: 73
+Operator only (no same-name stop on kiedyPrzyjedzie, so no second position): 207
+kiedyPrzyjedzie stop names with no operator stop (no operator timetable serves them): 68
+
+== over 100 m (operator id, name, kiedyPrzyjedzie place id, metres) ==
+1168	Borowce I	2302177:2390107	36539
+1169	Borowce I	2302177:2390107	36539
+1184	Rogaczew	2302176:2390105	33596
+1185	Rogaczew	2302176:2390105	33297
+1196	Wancerzów Kościół	979214:672837	12937
+1194	Jaskrów Mirowska	622748:671507	7654
+1434	Częstochowa, Św. Rocha - Szkoła	2303555:2391758	4328
+1525	Piła Druga ul. Sportowa	2303626:2391887	2646
+1524	Piła Druga II ul. Jesienna	2303622:2391881	1897
+243	Paulinów	676881:728142	1837
+242	Paulinów	676881:728142	1833
+216	Nakło - Stacja Paliw	676880:728140	1391
+215	Nakło - Stacja Paliw	676880:728140	1387
+1449	Częstochowa, Aleja Kościuszki	622621:671279	875
+931	Bieżeń ul. Ogrodowa	2303511:2391672	618
+932	Bieżeń ul. Ogrodowa	2303511:2391672	617
+473	Zawisna Szkoła	623665:673097	468
+1086	Hutka ul. Długa	2303567:2391780	449
+1195	Jaskrów Mirowska	622748:671508	437
+1173	Cielętniki Osiedle	2302163:2390084	423
+1172	Cielętniki Osiedle	2302163:2390084	420
+417	Wiercica-OSP	973651:1029129	411
+547	Wiercica-OSP	973651:1029129	410
+732	Zawada II	1476360:1538611	402
+733	Zawada II	1476360:1538611	402
+1058	Klepaczka I	2303585:2391810	367
+1057	Klepaczka I	2303585:2391810	365
+77	Częstochowa, Rakowska	622623:671282	361
+687	Poczesna - Strażacka	1476356:1538600	324
+1049	Kolonia Klepaczka I	1476345:1538581	322
+720	Kolonia Klepaczka I	1476345:1538581	322
+735	Zawada A	1476361:1538613	303
+1574	Garnek Zachodnia	2309822:2397783	301
+734	Zawada A	1476361:1538613	295
+629	Kolonia Poczesna, Katowicka	622853:671695	292
+688	Poczesna - Strażacka	1476356:1538600	288
+1580	Rzeki Wielkie Karczewice Polna	2309828:2397795	276
+1483	Częstochowa, Lisia	2288255:2375661	275
+1482	Częstochowa, Lisia	2288255:2375660	262
+998	Wręczyca Wielka, ul. Częstochowska Kol.	2303674:2391970	243
+78	Częstochowa, Rakowska	622623:671282	231
+927	Borowe ul. Sportowa Las	2303526:2391699	226
+698	Słowik - Spacerowa	1476358:1538607	223
+928	Borowe ul. Sportowa Las	2303526:2391699	222
+750	Wiercica III	1695348:1764607	211
+1052	Klepaczka IV	2303588:2391815	209
+1163	Ulesie I	2373124:2466595	208
+933	Zrębice - Widokowa I	2162094:2247017	202
+941	Hutka ul. Główna (WTZ)	2303569:2391782	184
+942	Hutka ul. Główna (WTZ)	2303569:2391782	184
+1162	Ulesie I	2373124:2466595	179
+1188	Dąbek	2302164:2390086	176
+672	Częstochowa, Dworzec PKS	676874	176
+697	Słowik - Spacerowa	1476358:1538607	175
+1189	Dąbek	2302164:2390086	170
+747	Wiercica II	1695347:1764605	159
+748	Wiercica II	1695347:1764605	159
+1674	Częstochowa Dworzec Autobusowy	622548	153
+1197	Wancerzów Kościół	979214:672837	148
+709	Kijów 1	1464904:1527691	148
+1451	Częstochowa, Dworzec Główny PKP	1464903:1527690	141
+710	Częstochowa, Dworzec Główny PKP	1464903:1527690	141
+37	Częstochowa, II Aleja Najświętszej Maryi Panny	622565:728133	136
+445	Koniecpol, ul. Mickiewicza	973637:1029108	134
+579	Koniecpol, ul. Mickiewicza	973637:1029108	134
+743	Częstochowa, Goździków	2303539:2391727	125
+1485	Częstochowa, Goździków	2303539:2391727	123
+703	Wiercica IV	623545:672889	123
+1180	Raczkowice-Kolonia	2301006:2388914	120
+1229	Mstów Szkoła	2302167:2390089	114
+1230	Mstów Szkoła	2302167:2390089	114
+749	Wiercica III	1695348:1764606	105
+1146	Łysiec Kolonia	2303606:2391852	101
+
+== operator only (operator id, name) ==
+104	Jaskrów Willowa
+1043	Piła Druga, Jesienna
+1044	Piła Druga, Jesienna
+105	Jaskrów Willowa
+1468	Pieńki Szczepockie - Pomnik
+1469	Pieńki Szczepockie - Pomnik
+1486	Nowe Brzeziny II
+1487	Nowe Brzeziny II
+1488	Sobuczyna
+1489	Sobuczyna
+1490	Młynek
+1491	Młynek
+1492	Mazury I
+1493	Mazury I
+1494	Mazury
+1495	Mazury
+1496	Nierada - Leszczynowa
+1497	Nierada - Leszczynowa
+1499	Nierada - Szkoła
+1500	Nierada - Szkoła
+1501	Brzeziny-Kolonia
+1503	Brzeziny-Kolonia
+1504	Brzeziny-Kolonia - Muzealna
+1505	Brzeziny-Kolonia - Muzealna
+1506	Wrzosowa - Sabinowska II
+1507	Wrzosowa - Sabinowska II
+1528	Wanaty II
+1529	Wanaty II
+1530	Częstochowa, Równoległa
+1531	Częstochowa, Równoległa
+1534	Kłobuck Staszica
+1535	Kłobuck Staszica
+1536	Kłobuck 3 maja
+1537	Kłobuck 3 maja
+1538	Kłobuck Rynek im. Jana Pawła II
+1539	Kłobuck Rynek im. Jana Pawła II
+1540	Kłobuck Długosza
+1541	Kłobuck Długosza
+1543	Kłobuck Zagórze
+1544	Herby, Sportowa
+1545	Herby, Sportowa
+1546	Herby Stare, Dworcowa
+1549	Teklinów - Karolinów
+1550	Teklinów - Karolinów
+1551	Teklinów - Plac Zabaw
+1552	Teklinów - Plac Zabaw
+1553	Teklinów - Długa/Nowa
+1554	Teklinów - Długa/Nowa
+1555	Widzów - Osiedlowa/Antoniowska
+1556	Widzów - Osiedlowa/Antoniowska
+1557	Widzów - Osiedlowa/Wspólna
+1558	Widzów - Osiedlowa/Wspólna
+1559	Baby - Słoneczna/Szkolna
+1560	Baby - Słoneczna/Szkolna
+1561	Kłomnice - Szkoła
+1562	Lipicze Stawowa/Kasztanowa
+1563	Lipicze Kasztanowa/Nowa
+1564	Lipicze Kasztanowa/Leśna
+1565	Zawada/Zberezka
+1566	Zawada Kościół
+1567	Zawada Kościuszki
+1568	Zdrowa Meble
+1569	Nieznanice Ceglana
+157	Kruszyna - Szkoła
+1570	Chorzenice Nowa
+1571	Chorzenice Dom Dziecka
+1572	Chorzenice Kapliczka
+158	Kruszyna - Rondo
+159	Kruszyna - Rondo
+1598	Kruszyna - Szkoła
+1599	Lgota Mała - Szkoła
+1600	Lgota Mała - Szkolna
+1601	Lgota Mała - Szkolna
+1609	Częstochowa, Św. Kazimierza
+165	Lgota Mała - Szkoła
+1671	Częstochowa, Pusta
+1672	Częstochowa, Pusta
+1685	Panki ul. Powstańców Śląskich (przy poczcie)
+1686	Panki ul. Powstańców Śląskich (przy poczcie)
+1688	Panki ul. Powstańców Śląskich (przy przejeżdzie kolejowym)
+1689	Ślusarze
+1690	Janiki (przy kapliczce)
+1691	Aleksandrów Szkoła
+1692	Kotary (przy posesji nr 4)
+1694	Kostrzyna (przy posesji nr 9)
+1695	Pacanów (przy sklepie)
+1696	Cyganka (przy OSP)
+1697	Panki przy skrzyżowaniu z ul. Słoneczną
+1698	Panki ul. Powstańców Śląskich (przy przejeżdzie kolejowym)
+1699	Panki PKP Dworcowa
+1700	Panki PKP Dworcowa
+1701	Zwierzyniec III Krzyżówka sklep
+1702	Zwierzyniec III Krzyżówka sklep
+1703	Zwierzyniec III Działki
+1704	Zwierzyniec III Przy lesie
+1705	Zwierzyniec III Przy lesie
+1706	Konieczki (przy szkole)
+1707	Konieczki (przy szkole)
+1708	Konieczki (przy posesji 36a)
+1709	Konieczki (przy posesji 36a)
+1710	Konieczki (przy posesji 28)
+1711	Konieczki (przy posesji 28)
+1712	Panki ul. Zwierzyniecka 3b
+1713	Panki ul. Zwierzyniecka 3b
+1714	Panki ul. Zwierzyniecka (przy skrzyżowaniu z ul. Powstańców Śląskich)
+1715	Panki ul. Zwierzyniecka (przy skrzyżowaniu z ul. Powstańców Śląskich)
+1717	Złochowice Skrzyżowanie z drogą do "Maskpol"
+1718	Kałmuki (przy skrzyżowaniu z drogą na Maskpol)
+1719	Kałmuki (przy skrzyżowaniu z drogą na Maskpol)
+172	Lipnik k. Janowa
+1720	Praszczyki (przy posesji 118)
+1721	Praszczyki (przy posesji 118)
+1722	Praszczyki (przy OSP)
+1723	Praszczyki (przy OSP)
+1724	Praszczyki Skrzyżowanie z DP2060S z DW494
+1725	Praszczyki Skrzyżowanie z DP2060S z DW494
+1726	Praszczyki (przy posesji 18)
+1727	Praszczyki (przy posesji 18)
+1728	Kawki (przy OSP)
+1729	Kawki (przy OSP)
+173	Lipnik k. Janowa
+1730	Kawki posesja 30
+1731	Kawki posesja 30
+1732	Kawki za wodą
+1733	Panki ul. Górnicza 5
+1734	Panki ul. Górnicza 5
+1735	Jaciska 17
+1736	Jaciska 17
+1737	Jaciska 37
+1738	Jaciska 37
+1739	Żerdzina 7
+1740	Żerdzina 7
+1741	Koski 41
+1742	Koski 41
+1743	Koski 29
+1745	Panki ul. Górnicza 27
+1746	Panki ul. Górnicza 27
+1747	Jaciska 49
+1748	Jaciska 49
+1749	Żerdzina 23
+1750	Żerdzina 23
+1751	Wanaty III
+1752	Wanaty III
+1753	Grodzisko ul. Ogrodowa (przy cmentarzu)
+1754	Grodzisko ul. Ogrodowa (przy cmentarzu)
+176	Łabędź, Grzybowa
+177	Łabędź, Grzybowa
+182	Łysiny, Szkolna
+183	Łysiny, Szkolna
+222	Olsztyn, Odrzykoń
+223	Olsztyn, Odrzykoń
+226	Olsztyn, Żwirki Wigury
+227	Olsztyn, Żwirki Wigury
+244	Piasek k. Janowa
+245	Piasek k. Janowa
+250	Podlesie k. Koniecpola
+251	Podlesie k. Koniecpola
+285	Siedlec k. Janowa, Krzyże
+286	Siedlec k. Janowa, Piekło
+287	Siedlec k. Janowa, Piekło
+288	Siedlec k. Janowa, Skrz.
+289	Siedlec k. Janowa, Skrz.
+314	Stanisławice, Zielona
+315	Stanisławice, Zielona
+316	Stanisławów k. Przyrowa
+317	Stanisławów k. Przyrowa
+373	Zrębice, Ciecierzyn
+374	Zrębice, Ciecierzyn
+38	Częstochowa, Jana Pawła II Uniwersytet
+385	Żuraw, Kolonia Żurawska
+386	Żuraw, Kolonia Żurawska
+403	Odrzykoń - Narcyzowa
+485	Nowe Brzeziny I
+531	Siedlec k. Janowa, Krzyże
+562	Częstochowa, Jana Pawła II Uniwersytet
+576	Częstochowa, Jana Pawła II Uniwersytet
+611	Nowe Brzeziny I
+631	Siedlec Mały
+632	Siedlec Mały
+633	Siedlec Duży
+634	Siedlec Duży
+635	Koziegłowy, Warszawska
+636	Koziegłowy, Warszawska
+639	Koziegłowy, Woźnicka
+640	Koziegłowy, Woźnicka
+641	Gniazdów, Woźnicka
+642	Gniazdów, Woźnicka
+643	Mzyki
+644	Mzyki
+645	Mzyki, Kościelna
+646	Mzyki, Kościelna
+66	Częstochowa, C.H. Jagiellończycy
+675	Widzów - Szkoła
+676	Widzów - Szkoła
+677	Widzów - Żwirki i Wigury/Spacerowa
+678	Widzów - Żwirki i Wigury/Spacerowa
+679	Jacków - Główna/Strażacka
+680	Jacków - Główna/Strażacka
+681	Baby - Słoneczna/Spokojna
+682	Baby - Słoneczna/Spokojna
+737	Poraj
+738	Konstantynów
+756	Julianka-Ujęcie
+757	Julianka-Ujęcie
+857	Częstochowa, Bohaterów Monte Cassino
+858	Częstochowa, Bohaterów Monte Cassino
+946	Truskolasy Dębieczna
+
+== kiedyPrzyjedzie names without an operator stop ==
+Brzeziny 01
+Brzeziny 02
+Brzeziny-Kolonia - Muzealna 01
+Brzeziny-Kolonia - Muzealna 02
+Brzeziny-Kolonia 01
+Brzeziny-Kolonia 03
+Ciecierzyn
+Częstochowa, Aleja Bohaterów Monte Cassino
+Częstochowa, Aleja Jana Pawła II - Uniwersytet
+Częstochowa, C.H. Jagielończycy
+Częstochowa, Dworzec Autobusowy (ul. Orzechowskiego)
+Częstochowa, Mała
+Częstochowa, Równoległa 03
+Częstochowa, Równoległa 04
+Częstochowa, Stary Rynek
+Częstochowa, Św. Barbary
+Częstochowa, Św. Kaziemierza
+Gniazdów ul. Woźnicka
+Jaskrów, Wille
+Kolonia Żurawska
+Koniecpol Robotnicza (blok 20)
+Konstantynów (Skrajniwa)
+Koziegłowy ul. Warszawska
+Koziegłowy ul. Woźnicka
+Kruszyna II
+Kruszyna, ul. Kościuszki
+Lgota Mała
+Lgota Mała 3
+Lipnik
+Mazury 01
+Mazury 02
+Mazury I 01
+Mazury I 02
+Mzyki ul. Kościelna (skrzyżowanie z ul. Szkolną)
+Mzyki ul. Kościelna (skrzyżowanie z ul. Słoneczną i Brzozową)
+Młynek 01
+Młynek 02
+Nierada - Leszczynowa 01
+Nierada - Leszczynowa 02
+Nierada - Szkoła 01
+Nierada - Szkoła 02
+Nowe Brzeziny I 01
+Nowe Brzeziny I 02
+Nowe Brzeziny II 01
+Nowe Brzeziny II 02
+Odrzykoń
+Olsztyn - Żwirki i Wigury
+Piasek
+Pieńki Szczepockie
+Piła Druga ul. Jesienna
+Podlesie
+Radoszewnica
+Siedlec Duży Trasa DK-1
+Siedlec Krzyże
+Siedlec Mały, Trasa DK-1
+Siedlec Piekło
+Siedlec skrz. k/Janowa
+Sobuczyna 03
+Sobuczyna 04
+Stanisławice, ul. Zielona
+Stanisławów
+Teklinów 3
+Truskolasy ul. Dębiczna
+Wrzosowa - Sabinowska II 01
+Wrzosowa - Sabinowska II 02
+Wrzosowa - Szkoła
+Łabędź OSP, ul. Grzybowa
+Łysiny, ul. Szkolna
+
+== positions taken from kiedyPrzyjedzie because the operator marker is over 1000 m from every same-name stop (operator id, name, metres) ==
+1169	Borowce I	36539
+1168	Borowce I	36539
+1184	Rogaczew	33596
+1185	Rogaczew	33297
+1196	Wancerzów Kościół	12937
+1194	Jaskrów Mirowska	7654
+1434	Częstochowa, Św. Rocha - Szkoła	4328
+1525	Piła Druga ul. Sportowa	2646
+1524	Piła Druga II ul. Jesienna	1897
+243	Paulinów	1837
+242	Paulinów	1833
+216	Nakło - Stacja Paliw	1391
+215	Nakło - Stacja Paliw	1387

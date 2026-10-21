@@ -1,0 +1,9 @@
+GET https://www.komunikacjajurajska.pl/robots.txt, 2026-10-21, honest User-Agent
+HTTP 200, Content-Type text/html; charset=UTF-8, 208593 bytes
+The body is the site's "Brak strony" (page not found) template, title:
+  Brak strony - Jurajski Związek Powiatowo-Gminny "Komunikacja Jurajska"
+No User-agent, Disallow or Allow lines. In practice there is no crawler policy on the operator site
+(an earlier check on 2026-10-21 saw the same as a 404).
+
+Terms: the footer links only a privacy policy (powiat-czestochowski.4bip.pl) and a cookie banner
+(essential cookies preselected). Nothing about automated access. The pages are public, no login.
