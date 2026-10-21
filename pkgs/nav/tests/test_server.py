@@ -124,13 +124,40 @@ class Shapes(unittest.TestCase):
         self.assertEqual(s.api_vehicles({"bbox": ["10,40,20,50"], "lod": ["heat"]})["heat"], [[19.0, 50.0]])
 
 
+class Scheduled(unittest.TestCase):
+    def test_sched_skips_live_trips_and_lines_stop_times_up_with_the_shape(self):
+        at = int(time.time())
+        sd = at - at % 86400
+        def fake(q, v=None):
+            if "stopsByBbox" in q:
+                return {"stopsByBbox": [{"gtfsId": "x:1", "lat": 50.0, "lon": 19.0}]}
+            if "s0:" in q:
+                return {"s0": {"stoptimesWithoutPatterns": [{"serviceDay": sd, "trip": {"gtfsId": "x:live"}}, {"serviceDay": sd, "trip": {"gtfsId": "x:quiet"}}]}}
+            self.assertNotIn("x:live", q)
+            return {"t0": {"tripHeadsign": "Dom", "route": {"shortName": "7", "mode": "BUS", "agency": {"name": "A"}},
+                           "stoptimesForDate": [{"scheduledArrival": 0, "scheduledDeparture": 0, "realtimeArrival": at - sd - 60, "realtimeDeparture": at - sd - 50},
+                                                {"scheduledArrival": 0, "scheduledDeparture": 0, "realtimeArrival": at - sd + 300, "realtimeDeparture": at - sd + 310}]}}
+        s.gql = fake
+        s._veh.update(t=time.time(), list=[{"id": "v", "trip": "x:live", "lon": 19.0, "lat": 50.0}])
+        s._sched.clear()
+        s._shapes["x:quiet"] = (time.time(), {"points": "", "length": 900, "stops": [], "sig": [], "all": [0, 900]})
+        r = s.api_sched({"bbox": ["18.99,49.99,19.01,50.01"]})
+        self.assertEqual([t["trip"] for t in r["trips"]], ["x:quiet"])
+        self.assertEqual([x[0] for x in r["trips"][0]["st"]], [0, 900])
+        self.assertEqual(r["trips"][0]["sd"], sd)
+        s._sched.clear()
+        with self.assertRaises(s.Bad):
+            s.api_sched({"bbox": ["1,2,3"]})
+        self.assertEqual(s.api_sched({"bbox": ["10,40,20,50"]})["trips"], [])
+
+
 class Serving(unittest.TestCase):
     def test_page_carries_build_id_on_every_asset(self):
         html = s.H.__new__(s.H).page().decode()
         import re
         ids = set(re.findall(r"\?v=([0-9a-f]{10})", html))
         self.assertEqual(len(ids), 1)
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "sched.js"):
             self.assertIn(f"/{n}?v=", html)
         self.assertIn(f'content="{ids.pop()}"', html)
 

@@ -130,11 +130,12 @@
       v.tRep = tRep;
       if (first) { v.s = v.sRep + v.vRep * Math.min(ageAtArrival, EXTRAP_MAX); v.vel = v.vRep; v.ns = 0; }
     }
-    for (const [id, v] of V) if (now - v.seen > STALE_DROP) V.delete(id);
+    for (const [id, v] of V) if (!v.sched && now - v.seen > STALE_DROP) V.delete(id);
   }
   function attachShape(v, info) {
     const sh = buildShape(info);
     if (!sh) return;
+    if (v.sched) { v.shape = sh; v.ray = null; v.seg = 0; v.seg0 = 0; return; }
     // continuity: project where the vehicle is drawn now onto the real shape
     let cur = { lon: v.lon, lat: v.lat };
     if (v.ray) { poseAt(v.ray, v.s); cur = { lon: lonOf(pose[0]), lat: latOf(pose[1]) }; }
@@ -156,8 +157,22 @@
     v[key] = i;
     return i;
   }
+  // ---- timetable vehicles (diorama): positions come from the schedule, at the shown time of day
+  const simLive = () => !window.Daylight?.enabled || (window.Daylight.mode === "live" && !window.Daylight.day);
+  const simEpoch = () => (simLive() ? Date.now() / 1000 : window.Daylight.time().getTime() / 1000);
+  function stepSched(v, dt) {
+    const sh = v.shape;
+    if (!sh) return 0;
+    const t = simEpoch() - v.sched.sd, p = window.Sched.position(v.sched.st, t, v.sched.hint);
+    v.s = Math.min(sh.length, p.s); v.vel = p.v;
+    const ia = cursor(sh, v, "seg", Math.min(sh.length, v.s + 6));
+    v.hx = sh.UX[ia]; v.hy = sh.UY[ia];
+    const first = v.sched.st[0][2], last = v.sched.st[v.sched.st.length - 1][1];
+    return p.phase === "before" ? (first - t < 45 ? 1 : 0) : p.phase === "after" ? Math.max(0, 1 - (t - last) / 20) : 1;
+  }
   // advances one vehicle by dt seconds; returns its draw alpha
   function step(v, dt, now) {
+    if (v.sched) return stepSched(v, dt);
     const sh = v.shape || v.ray;
     if (!sh) return 0.7;
     if (dt !== coefDt) coefficients(dt);
@@ -211,10 +226,13 @@
     const b = map.getBounds(), m = 0.25 * Math.max(b.getEast() - b.getWest(), 1e-4);
     const x0 = mercX(b.getWest() - m), x1 = mercX(b.getEast() + m), y1 = mercY(b.getSouth() - m), y0 = mercY(b.getNorth() + m);
     scene.beginFrame();
+    const live = simLive();
     const routeOn = hi.size > 0, dotAlpha = z < Z_MESH + 0.5 ? 1 : Math.max(0, 1 - (z - (Z_MESH + 0.5)) / 1.2);
     const dotSize = z < 12 ? 7 : z < 14 ? 10 : 14, labels = z >= Z_LABEL && z < 17.6, meshes = z >= Z_MESH;
     for (const v of V.values()) {
+      if (v.sched ? window.Daylight?.mode === "cycle" : !live) continue;
       const a = step(v, dt, nowSec), sh = v.shape || v.ray;
+      if (a < 0.02 || (v.sched && !sh)) continue;
       if (sh) { const i = cursor(sh, v, "seg0", v.s), t = (v.s - sh.cum[i]) / (sh.cum[i + 1] - sh.cum[i] || 1); v.mx = sh.MX[i] + (sh.MX[i + 1] - sh.MX[i]) * t; v.my = sh.MY[i] + (sh.MY[i + 1] - sh.MY[i]) * t; }
       if (v.mx < x0 || v.mx > x1 || v.my < y0 || v.my > y1) continue;
       const mine = hi.has(v.trip) || v.id === followId, alpha = a * (routeOn && !mine ? 0.35 : 1), dx = (v.mx - ox) / k, dy = (oy - v.my) / k;
@@ -265,7 +283,7 @@
     const opts = { center: [cam.lon, cam.lat], zoom: cam.zoom, animate: false };
     if (threeD) { const hd = (Math.atan2(v.hx, v.hy) * 180) / Math.PI, bear = map.getBearing(); opts.bearing = bear + (((hd - bear + 540) % 360) - 180) * (1 - Math.exp(-dt / 0.8)); }
     map.jumpTo(opts);
-    $("#follow-status").textContent = v.st === "STOPPED_AT" ? `At ${v.sn || "a stop"}` : v.sn ? `Next stop: ${v.sn}` : v.vel > 0.5 ? "Moving" : "Standing";
+    $("#follow-status").textContent = v.sched ? (v.vel > 0.5 ? "Following the timetable" : "Standing, by the timetable") : v.st === "STOPPED_AT" ? `At ${v.sn || "a stop"}` : v.sn ? `Next stop: ${v.sn}` : v.vel > 0.5 ? "Moving" : "Standing";
   }
   function showBar(v) {
     if (!followBar) {
@@ -312,14 +330,28 @@
 
   // the dark base map is used by the OS theme, or at night in diorama mode
   const isDark = () => (window.Daylight?.enabled ? window.Daylight.wantsDark() : matchMedia("(prefers-color-scheme: dark)").matches);
+  // one of six colours per building, stable for a given building (hashed from its height and base)
+  const pick6 = (list) => {
+    const key = ["%", ["floor", ["*", ["+", ["coalesce", ["get", "render_height"], 6], ["*", ["coalesce", ["get", "render_min_height"], 0], 3.7]], 13.37]], 6];
+    return ["match", key, 0, list[0], 1, list[1], 2, list[2], 3, list[3], 4, list[4], list[5]];
+  };
+  function buildingPalettes(dark) {
+    return dark
+      ? { walls: ["#3a3f48", "#403b3a", "#363c44", "#443f3a", "#393e3b", "#3f4048"], roofs: ["#5a3a34", "#4d3732", "#3d4249", "#4a403b", "#563f35", "#444a50"], flat: "#2f3338" }
+      : { walls: ["#e6dfd2", "#dad3c6", "#e0dcd4", "#d2ccc0", "#e4d8ca", "#d9d6cf"], roofs: ["#b4604a", "#9c5140", "#6d727a", "#85726a", "#a9745e", "#7a8088"], flat: "#8d9198" };
+  }
   // ---- layers: heatmap (MapLibre), 3D buildings (MapLibre), everything else is the custom layer
   function layers() {
     const css = (n, d) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d;
     if (!map.getSource("veh-heat")) map.addSource("veh-heat", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     const firstSymbol = (map.getStyle().layers.find((l) => l.type === "symbol") || {}).id;
     if (!map.getLayer("buildings-3d") && map.getSource("openmaptiles")) {
+      const P = buildingPalettes(isDark()), H = ["coalesce", ["get", "render_height"], 6], B = ["coalesce", ["get", "render_min_height"], 0];
       map.addLayer({ id: "buildings-3d", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 14,
-        paint: { "fill-extrusion-color": isDark() ? "#2d333d" : "#dcdfe3", "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6], "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0], "fill-extrusion-opacity": 0.9, "fill-extrusion-vertical-gradient": true } }, firstSymbol);
+        paint: { "fill-extrusion-color": pick6(P.walls), "fill-extrusion-height": H, "fill-extrusion-base": B, "fill-extrusion-opacity": 1, "fill-extrusion-vertical-gradient": true } }, firstSymbol);
+      // vector tiles carry no roof shape, so the roof is a thin cap in its own colour: tiles on low buildings, bare concrete and tar on tall ones
+      map.addLayer({ id: "buildings-roof", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 14.5,
+        paint: { "fill-extrusion-color": ["case", [">", H, 28], P.flat, pick6(P.roofs)], "fill-extrusion-height": ["+", H, ["case", [">", H, 28], 0.5, 1.6]], "fill-extrusion-base": H, "fill-extrusion-opacity": 1, "fill-extrusion-vertical-gradient": false } }, firstSymbol);
     }
     if (!map.getLayer("veh-heat")) {
       map.addLayer({ id: "veh-heat", type: "heatmap", source: "veh-heat", maxzoom: Z_HEAT_OUT, paint: {
@@ -336,7 +368,7 @@
   function syncVisibility() {
     if (!map) return;
     if (map.getLayer("veh-heat")) map.setLayoutProperty("veh-heat", "visibility", shown() ? "visible" : "none");
-    if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", threeD ? "visible" : "none");
+    for (const id of ["buildings-3d", "buildings-roof"]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", threeD ? "visible" : "none");
     if (scene) { scene.showDots = scene.showMeshes = scene.showLabels = shown(); }
     const bt = $("#btn-veh");
     if (bt) bt.hidden = !(ctx || force || followId !== null);
@@ -424,6 +456,33 @@
     for (const [name, mesh] of Object.entries(meshes)) { scene.registerMesh(name, mesh); scene.addBatch(name, name, caps[name]); }
     scene.meshZoom = Z_MESH;
   }
+  // trips with no live position, played back from the timetable
+  let schedBusy = false, schedAt = 0;
+  async function refreshSched() {
+    if (!ambient || !map || schedBusy || document.hidden || map.getZoom() < Z_MESH - 1 || (window.Daylight?.mode === "cycle")) return;
+    schedBusy = true;
+    try {
+      const b = map.getBounds(), w = (b.getEast() - b.getWest()) * 0.15, hh = (b.getNorth() - b.getSouth()) * 0.15, live = simLive();
+      const box = [b.getWest() - w, b.getSouth() - hh, b.getEast() + w, b.getNorth() + hh].map((x) => x.toFixed(5)).join(",");
+      const q = { bbox: box }; if (!live) { q.at = Math.round(simEpoch()); q.all = "1"; }
+      const r = await api("sched", q);
+      const keep = new Set(), liveTrips = new Set(); for (const o of V.values()) if (!o.sched && o.trip) liveTrips.add(o.trip);
+      for (const tr of r.trips || []) {
+        if (live && liveTrips.has(tr.trip)) continue;
+        const id = "S:" + tr.trip; keep.add(id);
+        let v = V.get(id);
+        if (!v) {
+          v = newVehicle({ id, lon: 0, lat: 0 }, T());
+          Object.assign(v, { sched: { sd: tr.sd, st: tr.st, hint: { i: 0 } }, line: tr.line, mode: tr.mode, ag: tr.ag, to: tr.to, trip: tr.trip, modelKey: tr.mode + "|" + tr.ag });
+          v.color = A.providerOf(tr.ag)?.color || FALLBACK[tr.mode] || "#44505c";
+          v.rgb = [1, 3, 5].map((i) => parseInt(v.color.slice(i, i + 2), 16));
+          V.set(id, v);
+        } else { v.sched.sd = tr.sd; v.sched.st = tr.st; }
+        if (!v.shape) ensureShape(v);
+      }
+      for (const [id, v] of V) if (v.sched && !keep.has(id) && id !== followId) V.delete(id);
+    } catch { /* the next refresh tries again */ } finally { schedBusy = false; }
+  }
   // road lanes for ambient traffic come from the tiles already on screen
   let laneKey = "";
   function loadLanes() {
@@ -440,6 +499,7 @@
   }
   function setAmbient(on) {
     ambient = !!on;
+    if (!ambient) { for (const [id, v] of V) if (v.sched) V.delete(id); } else refreshSched();
     if (ambient && !traffic) traffic = new window.Traffic.Traffic();
     laneKey = "";
     if (ambient) loadLanes();
@@ -456,9 +516,10 @@
     map.on("dragstart", (e) => { if (followId && e.originalEvent) stopFollow(); });
     map.on("zoomstart", (e) => { if (followId && cam && e.originalEvent) cam.free = true; });
     let deb = 0, deb2 = 0;
-    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); }, 400); });
+    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); }, 400); });
     map.on("sourcedata", (e) => { if (ambient && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); } });
     setInterval(refresh, 5000);
+    setInterval(refreshSched, 15000);
     map.touchPitch?.disable();
     if (threeD) set3d(true);
     refresh();

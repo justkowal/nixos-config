@@ -426,7 +426,7 @@ def shape_info(trip_id):
     cum = [0.0]
     for i in range(1, len(xy)):
         cum.append(cum[-1] + math.hypot(xy[i][0] - xy[i - 1][0], xy[i][1] - xy[i - 1][1]))
-    stops = []
+    stops, every, floor = [], [], 0.0
     for st in d["stops"] or []:
         px, py = st["lon"] * k * 111320.0, st["lat"] * 110540.0
         best = (1e18, 0.0)
@@ -436,6 +436,8 @@ def shape_info(trip_id):
                 best = (dd, cum[i] + t * (cum[i + 1] - cum[i]))
         if best[0] < 80:
             stops.append({"n": st["name"], "a": round(best[1])})
+        floor = max(floor, best[1])  # trip order is travel order, so distances never go back
+        every.append(round(floor))
     sg = signals()
     hit = {}
     for i in range(len(xy) - 1):
@@ -454,13 +456,10 @@ def shape_info(trip_id):
     for a in lights:  # one junction can hold several signal nodes
         if not merged or a - merged[-1] > 25:
             merged.append(a)
-    return {"points": d["tripGeometry"]["points"], "length": round(cum[-1]), "stops": stops, "sig": merged}
+    return {"points": d["tripGeometry"]["points"], "length": round(cum[-1]), "stops": stops, "sig": merged, "all": every}
 
 
-def api_shape(q):
-    tid = (q.get("trip") or [""])[0]
-    if not ID.fullmatch(tid):
-        raise Bad("bad trip id")
+def cached_shape(tid):
     hit = _shapes.get(tid)
     if hit and time.time() - hit[0] < 6 * 3600:
         return hit[1]
@@ -470,6 +469,74 @@ def api_shape(q):
             _shapes.pop(k, None)
     _shapes[tid] = (time.time(), info)
     return info
+
+
+def api_shape(q):
+    tid = (q.get("trip") or [""])[0]
+    if not ID.fullmatch(tid):
+        raise Bad("bad trip id")
+    return cached_shape(tid)
+
+
+# ---------------------------------------------------------------- scheduled trips (vehicles with no live position, played back from the timetable)
+SCHED_STOPS, SCHED_TRIPS = 45, 80
+_sched = {}
+
+
+def api_sched(q):
+    raw = (q.get("bbox") or [""])[0]
+    box = [float(x) for x in raw.split(",")] if raw else []
+    if len(box) != 4 or not (-180 <= box[0] < box[2] <= 180 and -90 <= box[1] < box[3] <= 90):
+        raise Bad("bbox must be minLon,minLat,maxLon,maxLat")
+    if box[2] - box[0] > 0.2 or box[3] - box[1] > 0.14:
+        return {"now": time.time(), "trips": [], "note": "zoom in"}
+    at = int(num((q.get("at") or [str(int(time.time()))])[0], time.time() - 3 * 86400, time.time() + 3 * 86400, "at"))
+    everything = (q.get("all") or [""])[0] == "1"  # a time other than now: the live feed says nothing about it
+    key = (round(box[0], 3), round(box[1], 3), round(box[2], 3), round(box[3], 3), at // 30, everything)
+    hit = _sched.get(key)
+    if hit and time.time() - hit[0] < 20:
+        return hit[1]
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    st = gql("query($a:Float!,$b:Float!,$c:Float!,$d:Float!){ stopsByBbox(minLat:$a, minLon:$b, maxLat:$c, maxLon:$d){ gtfsId lat lon } }", {"a": box[1], "b": box[0], "c": box[3], "d": box[2]})["stopsByBbox"]
+    st.sort(key=lambda x: (x["lon"] - cx) ** 2 + (x["lat"] - cy) ** 2)
+    ids = [x["gtfsId"] for x in st[:SCHED_STOPS] if ID.fullmatch(x["gtfsId"])]
+    out = {"now": time.time(), "at": at, "trips": []}
+    if not ids:
+        return out
+    part = " ".join(f's{i}: stop(id:{json.dumps(sid)}) {{ stoptimesWithoutPatterns(startTime:{at - 2400}, timeRange:6000, numberOfDepartures:40) {{ serviceDay trip {{ gtfsId }} }} }}' for i, sid in enumerate(ids))
+    seen = {}
+    for blk in gql("{ " + part + " }").values():
+        for x in (blk or {}).get("stoptimesWithoutPatterns") or []:
+            seen.setdefault(x["trip"]["gtfsId"], x["serviceDay"])
+    if not everything:
+        live = {v["trip"] for v in vehicles_snapshot() if v["trip"]}
+        seen = {t: d for t, d in seen.items() if t not in live}
+    chosen = [(t, d) for t, d in seen.items() if ID.fullmatch(t)][:SCHED_TRIPS]
+    if not chosen:
+        return out
+    part = " ".join(f't{i}: trip(id:{json.dumps(t)}) {{ tripHeadsign route {{ shortName mode agency {{ name }} }} stoptimesForDate(serviceDate:{json.dumps(datetime.datetime.fromtimestamp(d, TZ).strftime("%Y-%m-%d"))}) {{ scheduledArrival scheduledDeparture realtimeArrival realtimeDeparture }} }}' for i, (t, d) in enumerate(chosen))
+    res = gql("{ " + part + " }")
+    for i, (t, d) in enumerate(chosen):
+        tr = res.get(f"t{i}")
+        times = (tr or {}).get("stoptimesForDate") or []
+        if len(times) < 2:
+            continue
+        a0, a1 = d + times[0]["realtimeDeparture"], d + times[-1]["realtimeArrival"]
+        if a1 < at - 30 or a0 > at + 300:
+            continue
+        try:
+            sh = cached_shape(t)
+        except Bad:
+            continue
+        along = sh.get("all") or []
+        if len(along) != len(times):
+            continue
+        out["trips"].append({"trip": t, "line": tr["route"]["shortName"], "mode": tr["route"]["mode"], "ag": (tr["route"].get("agency") or {}).get("name"), "to": tr["tripHeadsign"], "sd": d,
+                             "st": [[along[j], x["realtimeArrival"], x["realtimeDeparture"]] for j, x in enumerate(times)]})
+    if len(_sched) > 60:
+        _sched.clear()
+    _sched[key] = (time.time(), out)
+    return out
 
 
 # ---------------------------------------------------------------- places (explore)
@@ -543,7 +610,7 @@ def api_note_set(device, b):
     return {"ok": True}
 
 
-ROUTES = {"/api/explore": api_explore, "/api/place/more": api_place_more, "/api/vehicles": api_vehicles, "/api/shape": api_shape, "/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan": api_plan, "/api/nearby": api_nearby,
+ROUTES = {"/api/explore": api_explore, "/api/place/more": api_place_more, "/api/vehicles": api_vehicles, "/api/shape": api_shape, "/api/sched": api_sched, "/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan": api_plan, "/api/nearby": api_nearby,
           "/api/departures": api_departures, "/api/trip": api_trip, "/api/info": api_info}
 
 
@@ -630,7 +697,7 @@ _build_cache = {"key": None, "id": ""}
 
 def build_id():
     """content hash of the shipped files; recomputed when one of them changes on disk (matters in development, deploys replace the store path)."""
-    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "app.css", "providers.json", "sw.js")
+    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "sched.js", "app.css", "providers.json", "sw.js")
     key = []
     for n in names:
         try:
@@ -741,7 +808,7 @@ class H(BaseHTTPRequestHandler):
             if not self.authed():
                 return self.j(401, {"error": "sign in"})
             # cached, read-only map data (vehicles, trip shapes) gets its own larger bucket
-            bulk = u.path in ("/api/vehicles", "/api/shape")
+            bulk = u.path in ("/api/vehicles", "/api/shape", "/api/sched")
             who = self.who() + ("|bulk" if bulk else "")
             if throttled(_hits, who, 900 if bulk else PER_MINUTE, 60):
                 return self.j(429, {"error": "slow down"})
@@ -759,7 +826,7 @@ class H(BaseHTTPRequestHandler):
         BUILD = build_id()
         with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
             html = f.read()
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "sched.js"):
             html = html.replace(f'"/{n}"', f'"/{n}?v={BUILD}"')
         return html.replace('content="dev"', f'content="{BUILD}"').encode()
 
