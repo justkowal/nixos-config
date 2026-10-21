@@ -98,7 +98,7 @@ in {
   systemd.services.maps-dirs = {
     description = "Create the maps data directories";
     wantedBy = ["multi-user.target"];
-    before = ["podman-mcp-nominatim.service" "podman-mcp-otp.service" "graph-watch.path" "maps-export-sync.timer"];
+    before = ["podman-mcp-nominatim.service" "podman-mcp-otp.service" "graph-watch.timer" "maps-export-sync.timer"];
     unitConfig.RequiresMountsFor = "/srv/data";
     serviceConfig = {
       Type = "oneshot";
@@ -106,7 +106,7 @@ in {
     };
     script = ''
       install -d -m 0755 ${data} ${data}/graph ${data}/graph/current ${data}/graph/previous ${data}/graph/quarantine \
-        ${data}/adapters ${data}/osm ${data}/export ${data}/export/adapters
+        ${data}/adapters ${data}/osm ${data}/export ${data}/export/adapters ${data}/graph/info
       install -d -m 0750 -o maps-push -g maps-push ${data}/graph/upload
     '';
   };
@@ -200,8 +200,12 @@ in {
       TimeoutStartSec = "20min";
     };
   };
-  systemd.paths.graph-watch = {
-    wantedBy = ["multi-user.target"];
-    pathConfig.PathExistsGlob = "${data}/graph/upload/*/READY";
+  # a path unit cannot see READY appear inside a new subdirectory, so a short timer polls for it
+  systemd.timers.graph-watch = {
+    wantedBy = ["timers.target"];
+    timerConfig = {
+      OnBootSec = "2min";
+      OnUnitActiveSec = "2min";
+    };
   };
 }

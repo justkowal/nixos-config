@@ -6,6 +6,10 @@ MIN_FREE_GB=${MIN_FREE_GB:-6}
 mkdir -p "$QUAR"
 log() { echo "graph-watch: $*"; }
 
+# the gateway reads the manifest from a stable folder, because it cannot follow the directory renames of a swap
+if [ -f "$CUR/manifest.json" ] && ! cmp -s "$CUR/manifest.json" "$G/info/manifest.json" 2>/dev/null; then
+  mkdir -p "$G/info"; cp "$CUR/manifest.json" "$G/info/manifest.json"
+fi
 dir=$(find "$UP" -mindepth 2 -maxdepth 2 -name READY -printf '%h\n' | sort | tail -1)
 [ -n "$dir" ] || { log "nothing to do"; exit 0; }
 name=$(basename "$dir")
@@ -81,6 +85,8 @@ if [ -z "$pip" ] || ! ready "$pip" || ! smoke "$pip" "$CUR/manifest.json"; then
   printf '{"rejected":"%s","reason":"production smoke failed after swap","at":"%s"}\n' "$name" "$(date -u +%FT%TZ)" > "$G/last-rejection.json"
   exit 1
 fi
+publish_info() { mkdir -p "$G/info"; cp "$CUR/manifest.json" "$G/info/manifest.json.tmp" && mv "$G/info/manifest.json.tmp" "$G/info/manifest.json"; }
+publish_info
 printf '{"swapped":"%s","at":"%s"}\n' "$name" "$(date -u +%FT%TZ)" > "$G/last-swap.json"
 # anything older that was left in the upload directory is superseded
 find "$UP" -mindepth 1 -maxdepth 1 -type d -name '2*' ! -name "$name" -exec rm -rf {} +

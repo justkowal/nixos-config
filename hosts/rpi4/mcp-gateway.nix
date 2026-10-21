@@ -187,7 +187,7 @@ in {
       };
       volumes = [
         codeMount
-        "${mapsData}/graph/current:/maps/graph:ro"
+        "${mapsData}/graph/info:/maps/graph:ro"
         "${dir}/policy:/policy:ro"
         "${dir}/state:/state:rw"
       ];

@@ -105,11 +105,19 @@ def feeds_loaded():
 
 
 def rebuild_pending():
+    """a request is pending until a graph built after it is live."""
     try:
         with open(REBUILD) as f:
-            return json.load(f)
+            req = json.load(f)
     except (OSError, ValueError):
         return None
+    built = manifest().get("built_at")
+    try:
+        if built and datetime.datetime.fromisoformat(built.replace("Z", "+00:00")) >= datetime.datetime.fromisoformat(req["requested_at"]):
+            return None
+    except (ValueError, KeyError):
+        pass
+    return req
 
 
 def request_rebuild(reason):
