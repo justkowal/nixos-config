@@ -1,0 +1,9 @@
+.....trip 38155599 rejected: HTTP 404
+.....circuit breaker OPEN for 21600s: HTTP 403
+........circuit breaker OPEN for 21600s: HTTP 403
+.circuit breaker OPEN for 21600s: 5 consecutive errors
+.............
+----------------------------------------------------------------------
+Ran 32 tests in 2.970s
+
+OK

@@ -1,0 +1,55 @@
+# Everything tunable lives here. Mount over /app/config.toml to override.
+# The spacing, budget and cooldown floors are also enforced in adapter/guard.py,
+# a smaller number in this file cannot make the adapter faster than that.
+
+[source]
+user_agent = "kowal-lab-maps-adapter/0.1 (personal use; contact hopkuba@gmail.com)"
+base_url = "http://komunikacjajurajska.kiedyprzyjedzie.pl"
+
+[server]
+port = 8080
+
+[breaker]
+cooldown_s = 21600
+error_run = 5
+kill_file = "/data/KILL"
+
+# One shared budget for the whole source. Lanes keep the realtime poll and the
+# static crawl from starving each other.
+[limits]
+spacing_s = 5
+jitter_s = 3
+hourly_budget = 100
+static_hourly = 40
+rt_hourly = 60
+
+[static]
+window_days = 7
+rebuild_interval_s = 1800
+stops_check_interval_s = 86400
+# Re-read a (stop, future date) timetable only after this many days.
+tt_refresh_days = 4
+# Probes of stops that no known trip serves, to find lines nobody has seen yet.
+probe_per_day = 40
+probe_retry_days = 30
+rejected_retry_s = 86400
+idle_sleep_s = 900
+# Stops whose timetables are always read. Everything else is discovered.
+seed_stops = ["622548", "676874", "2303517:2391682"]
+
+[realtime]
+# Only trips calling at these stops get live data. Place ids from /stops.
+priority_stops = ["622548", "676874", "2303517:2391682"]
+max_stops_per_call = 8
+idle_interval_s = 300
+boost_interval_s = 120
+boost_duration_s = 900
+trips_per_cycle_idle = 1
+trips_per_cycle_boost = 1
+# Only trips scheduled within this many seconds get a trip_execution call.
+execution_window_s = 2700
+max_age_s = 600
+match_horizon_s = 50400
+# Warsaw local time, no realtime requests in this window.
+quiet_start = "23:30"
+quiet_end = "04:00"
