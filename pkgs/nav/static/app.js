@@ -1,4 +1,5 @@
 "use strict";
+window.__sim = /[#&]sim=1/.test(location.hash);
 // Kowal Nav client. No framework: state object, small render functions, text set with textContent only (feed data is untrusted).
 
 const $ = (s, r = document) => r.querySelector(s);

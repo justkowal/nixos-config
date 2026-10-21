@@ -6,7 +6,7 @@
   const { S, api, h, icon, hm, dist, dur, $ } = A;
   const K = 111320;
   const G = { on: false, it: null, pts: [], legs: [], hint: 0, off: 0, watch: 0, wake: null, voice: A.store.get("voice", false), follow: true, lastKey: "", lastReroute: 0,
-              stopIdx: {}, said: new Set(), notice: "", noticeUntil: 0, lastEval: 0, evalDelays: "", target: 0, sim: 0, lastFix: null, timer: 0, heading: null, arrivedAt: 0 };
+              stopAlong: {}, said: new Set(), notice: "", noticeUntil: 0, lastEval: 0, evalDelays: "", target: 0, sim: 0, lastFix: null, timer: 0, heading: null, arrivedAt: 0 };
 
   const DIR = { LEFT: ["Turn left", -90], RIGHT: ["Turn right", 90], SLIGHTLY_LEFT: ["Bear left", -45], SLIGHTLY_RIGHT: ["Bear right", 45], HARD_LEFT: ["Turn sharp left", -135], HARD_RIGHT: ["Turn sharp right", 135],
                 UTURN_LEFT: ["Make a U-turn", 180], UTURN_RIGHT: ["Make a U-turn", 180], CONTINUE: ["Continue", 0], DEPART: ["Head out", 0], CIRCLE_CLOCKWISE: ["Take the roundabout", 0], CIRCLE_COUNTERCLOCKWISE: ["Take the roundabout", 0] };
@@ -33,21 +33,22 @@
       }
       legs.push({ li, i0, i1: pts.length - 1, c0: pts[i0].cum, c1: cum });
     });
-    G.pts = pts; G.legs = legs; G.hint = 0; G.stopIdx = {}; G.said.clear();
+    G.pts = pts; G.legs = legs; G.hint = 0; G.stopAlong = {}; G.said.clear();
+  }
+  function project(px, py, a, b) {
+    let best = { d: Infinity };
+    for (let i = a; i <= b; i++) {
+      const p = G.pts[i], q = G.pts[i + 1];
+      const dx = q.x - p.x, dy = q.y - p.y, len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, ((px - p.x) * dx + (py - p.y) * dy) / len2)) : 0;
+      const d = Math.hypot(px - (p.x + t * dx), py - (p.y + t * dy));
+      if (d < best.d) best = { d, i, along: p.cum + t * Math.sqrt(len2) };
+    }
+    return best;
   }
   function snap(px, py) {
-    let best = { d: Infinity };
-    const scan = (a, b) => {
-      for (let i = a; i <= b; i++) {
-        const p = G.pts[i], q = G.pts[i + 1];
-        const dx = q.x - p.x, dy = q.y - p.y, len2 = dx * dx + dy * dy;
-        const t = len2 ? Math.max(0, Math.min(1, ((px - p.x) * dx + (py - p.y) * dy) / len2)) : 0;
-        const d = Math.hypot(px - (p.x + t * dx), py - (p.y + t * dy));
-        if (d < best.d) best = { d, i, along: p.cum + t * Math.sqrt(len2) };
-      }
-    };
-    scan(Math.max(0, G.hint - 3), Math.min(G.pts.length - 2, G.hint + 90));
-    if (best.d > 120) scan(0, G.pts.length - 2);
+    let best = project(px, py, Math.max(0, G.hint - 3), Math.min(G.pts.length - 2, G.hint + 90));
+    if (best.d > 120) best = project(px, py, 0, G.pts.length - 2);
     G.hint = best.i;
     return best;
   }
@@ -93,10 +94,10 @@
       return { key: `b${seg.li}`, leg: seg.li, icon: L.mode, meters: null, text: `Board ${L.line} to ${L.headsign || L.to.name}`,
                then: `${L.from.name}, ${hm(L.start)}${late(L)}${wait > 0 ? `, in ${wait} min` : wait === 0 ? ", now" : ""}` };
     }
-    let i = G.stopIdx[seg.li] || 0;
-    const [sx, sy] = [pos.x, pos.y];
-    while (i < stops.length - 1 && Math.hypot(...xy(stops[i].lon, stops[i].lat).map((v, n) => v - [sx, sy][n])) < 70) i++;
-    G.stopIdx[seg.li] = i;
+    // position of each stop along the route, so a skipped GPS fix cannot leave the countdown behind
+    if (!G.stopAlong[seg.li]) G.stopAlong[seg.li] = stops.map((st) => project(...xy(st.lon, st.lat), seg.i0, Math.max(seg.i0, seg.i1 - 1)).along);
+    let i = G.stopAlong[seg.li].findIndex((a) => a > along + 25);
+    if (i < 0) i = stops.length - 1;
     const remaining = stops.length - i;
     return { key: `t${seg.li}-${remaining === 1 ? "last" : i}`, leg: seg.li, icon: L.mode, meters: left,
              text: remaining === 1 ? `Get off at ${L.to.name}` : `${remaining} stops to ${L.to.name}`,
@@ -264,7 +265,7 @@
     $("#g-recenter").hidden = true;
     A.drawRoute(G.it, { fit: false });
     wake();
-    if (/[#&]sim=1/.test(location.hash)) simulate();
+    if (window.__sim) simulate();
     else if (navigator.geolocation) {
       G.watch = navigator.geolocation.watchPosition((p) => onFix({ lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, heading: p.coords.heading, speed: p.coords.speed }),
         (e) => { $("#g-text").textContent = e.code === 1 ? "Location access is blocked. Allow it for this site to navigate." : "Waiting for a GPS fix..."; },
@@ -291,7 +292,7 @@
   function simulate() {
     let s = 0;
     G.sim = setInterval(() => {
-      s += 14;
+      s += window.__simSpeed || 14;
       const total = G.pts[G.pts.length - 1].cum;
       if (s > total) s = total;
       let i = 0;
