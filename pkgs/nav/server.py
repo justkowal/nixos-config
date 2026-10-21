@@ -2,6 +2,7 @@
 
 Auth is one passphrase (NAV_SECRET) exchanged for a signed, HttpOnly cookie. The API never writes anything and takes no free-form GraphQL.
 """
+import collections
 import datetime
 import hashlib
 import hmac
@@ -658,6 +659,34 @@ def api_roofs(q):
     return {"ways": out, "ready": ready, "attribution": "© OpenStreetMap contributors"}
 
 
+# ---------------------------------------------------------------- elevation tiles (Terrarium PNG from the AWS open data set), proxied so the page stays same-origin
+DEM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+_dem = collections.OrderedDict()
+_dem_lock = threading.Lock()
+DEM_KEEP = 400
+
+
+def dem_tile(z, x, y):
+    if not (0 <= z <= 15 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
+        raise Bad("tile out of range")
+    key = (z, x, y)
+    with _dem_lock:
+        if key in _dem:
+            _dem.move_to_end(key)
+            return _dem[key]
+    req = urllib.request.Request(DEM_URL.format(z=z, x=x, y=y), headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = r.read(800_000)
+    if not data.startswith(b"\x89PNG"):
+        raise Bad("not a tile", 502)
+    with _dem_lock:
+        _dem[key] = data
+        while len(_dem) > DEM_KEEP:
+            _dem.popitem(last=False)
+    return data
+
+
+
 # ---------------------------------------------------------------- places (explore)
 def api_explore(q):
     one = lambda k, d="": (q.get(k) or [d])[0]
@@ -816,7 +845,7 @@ _build_cache = {"key": None, "id": ""}
 
 def build_id():
     """content hash of the shipped files; recomputed when one of them changes on disk (matters in development, deploys replace the store path)."""
-    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "sched.js", "roofs.js", "app.css", "providers.json", "sw.js")
+    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js", "app.css", "providers.json", "sw.js")
     key = []
     for n in names:
         try:
@@ -905,6 +934,21 @@ class H(BaseHTTPRequestHandler):
                 except Exception:
                     return self.j(404, {"error": "no image"})
                 return self.send(200, data, ctype, extra=[("Cache-Control", "private, max-age=86400")])
+            if u.path == "/api/dem":
+                if not self.authed():
+                    return self.j(401, {"error": "sign in"})
+                who = self.who() + "|bulk"
+                if throttled(_hits, who, 900, 60):
+                    return self.j(429, {"error": "slow down"})
+                note(_hits, who)
+                try:
+                    q = urllib.parse.parse_qs(u.query)
+                    data = dem_tile(*(int((q.get(k) or ["-1"])[0]) for k in ("z", "x", "y")))
+                except Bad as e:
+                    return self.j(e.code, {"error": str(e)})
+                except Exception:
+                    return self.j(502, {"error": "elevation unavailable"})
+                return self.send(200, data, "image/png", extra=[("Cache-Control", "private, max-age=604800")])
             if u.path in ("/api/place", "/api/saved") and DB:
                 if not self.authed():
                     return self.j(401, {"error": "sign in"})
@@ -945,7 +989,7 @@ class H(BaseHTTPRequestHandler):
         BUILD = build_id()
         with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
             html = f.read()
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "sched.js", "roofs.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js"):
             html = html.replace(f'"/{n}"', f'"/{n}?v={BUILD}"')
         return html.replace('content="dev"', f'content="{BUILD}"').encode()
 

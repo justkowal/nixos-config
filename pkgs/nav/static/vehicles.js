@@ -226,6 +226,7 @@
     const b = map.getBounds(), m = 0.25 * Math.max(b.getEast() - b.getWest(), 1e-4);
     const x0 = mercX(b.getWest() - m), x1 = mercX(b.getEast() + m), y1 = mercY(b.getSouth() - m), y0 = mercY(b.getNorth() + m);
     scene.beginFrame();
+    const zAt = terrain.on && dem ? (mx, my) => dem.sampleMerc(mx, my) : () => 0;  // ground elevation under a mercator point
     const live = simLive(), dark = scene.light.night, lights = dark > 0.12 ? Math.min(1, (dark - 0.1) / 0.5) : 0, bh = scene.batches.get("b_head")?.batch, bt = scene.batches.get("b_tail")?.batch;
     const routeOn = hi.size > 0, dotAlpha = z < Z_MESH + 0.5 ? 1 : Math.max(0, 1 - (z - (Z_MESH + 0.5)) / 1.2);
     const dotSize = z < 12 ? 7 : z < 14 ? 10 : 14, labels = z >= Z_LABEL && z < 17.6, meshes = z >= Z_MESH;
@@ -237,24 +238,25 @@
       if (v.mx < x0 || v.mx > x1 || v.my < y0 || v.my > y1) continue;
       const mine = hi.has(v.trip) || v.id === followId, alpha = a * (routeOn && !mine ? 0.35 : 1), dx = (v.mx - ox) / k, dy = (oy - v.my) / k;
       if (dotAlpha > 0.02) {
-        if (mine) scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], 90, dotSize * 2.1, -1);
-        scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], Math.round(255 * alpha * dotAlpha), dotSize, -1);
-        if (labels && v.line) scene.addLabel(v.line, dx, dy);
+        const gz = zAt(v.mx, v.my);
+        if (mine) scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], 90, dotSize * 2.1, -1, gz);
+        scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], Math.round(255 * alpha * dotAlpha), dotSize, -1, gz);
+        if (labels && v.line) scene.addLabel(v.line, dx, dy, gz);
       }
       if (meshes && sh) {
         if (!v.model) { v.model = modelFor(v); const L = livery(v); v.liv = scene.palette.id(L); v.tint = window.Fleet.jitter(L.body, v.id); }
         const al = Math.round(255 * alpha), cars = v.model.cars, bend = cars.length > 1, tn = v.tint;
         for (let i = 0; i < cars.length; i++) {
           const cd = cars[i];
-          let cx = dx, cy = dy, fx = v.hx, fy = v.hy;
-          if (bend) { poseAt(sh, v.s + cd.c); cx = (pose[0] - ox) / k; cy = (oy - pose[1]) / k; fx = pose[2]; fy = pose[3]; }
+          let cx = dx, cy = dy, fx = v.hx, fy = v.hy, cz = zAt(v.mx, v.my);
+          if (bend) { poseAt(sh, v.s + cd.c); cx = (pose[0] - ox) / k; cy = (oy - pose[1]) / k; fx = pose[2]; fy = pose[3]; cz = zAt(pose[0], pose[1]); }
           const tx = fx, ty = fy;  // the direction of travel, before a reversed car is turned round
           if (cd.flip) { fx = -fx; fy = -fy; }
-          scene.batches.get(cd.mesh).batch.push(cx, cy, fx, fy, v.liv, al, 0, tn[0], tn[1], tn[2], 255);
+          scene.batches.get(cd.mesh).batch.push(cx, cy, fx, fy, v.liv, al, 0, tn[0], tn[1], tn[2], 255, cz);
           if (lights && bh) {  // headlight cones at the front of the first car, tail cones at the back of the last
             const hl = (window.Fleet.LEN[cd.mesh] || 10) / 2;
-            if (i === cars.length - 1) bh.push(cx + tx * hl, cy + ty * hl, tx, ty, 0, Math.round(190 * lights * alpha), 0, 255, 246, 214, 255);
-            if (i === 0) bt.push(cx - tx * hl, cy - ty * hl, tx, ty, 0, Math.round(170 * lights * alpha), 0, 255, 34, 22, 255);
+            if (i === cars.length - 1) bh.push(cx + tx * hl, cy + ty * hl, tx, ty, 0, Math.round(190 * lights * alpha), 0, 255, 246, 214, 255, cz);
+            if (i === 0) bt.push(cx - tx * hl, cy - ty * hl, tx, ty, 0, Math.round(170 * lights * alpha), 0, 255, 34, 22, 255, cz);
           }
         }
       }
@@ -267,12 +269,12 @@
       const night = scene.light.night, mpp = (78271.517 * Math.cos((c.lat * Math.PI) / 180)) / Math.pow(2, z), glow = night > 0.2 ? Math.min(1, (night - 0.2) / 0.5) : 0;
       for (const list of ["trees", "lamps", "benches", "bins", "stops"]) for (const o of decor.items[list]) {
         if (o.mx < x0 || o.mx > x1 || o.my < y0 || o.my > y1) continue;
-        const dx = (o.mx - ox) / k, dy = (oy - o.my) / k, tinted = o.kind.startsWith("tree") || o.kind === "bin";
-        scene.batches.get("w_" + o.kind)?.batch.push(dx, dy, o.fx, o.fy, decor.liv[o.kind], 255, 0, o.tint[0], o.tint[1], o.tint[2], tinted ? 255 : 0);
+        const dx = (o.mx - ox) / k, dy = (oy - o.my) / k, tinted = o.kind.startsWith("tree") || o.kind === "bin", gz = zAt(o.mx, o.my);
+        scene.batches.get("w_" + o.kind)?.batch.push(dx, dy, o.fx, o.fy, decor.liv[o.kind], 255, 0, o.tint[0], o.tint[1], o.tint[2], tinted ? 255 : 0, gz);
         if (glow && o.kind === "lamp") {  // a cone of light from the lamp head down to a pool on the road, plus a small halo at the lamp
-          scene.batches.get("b_lamp")?.batch.push(dx, dy, o.fx, o.fy, 0, Math.round(190 * glow), 0, 255, 188, 96, 255);
-          scene.dots.push(dx - o.fy * 1.4, dy + o.fx * 1.4, 255, 200, 120, Math.round(70 * glow), -Math.min(60, 3.2 / mpp), -1);
-        } else if (glow && o.kind === "busstop") scene.dots.push(dx, dy, 255, 200, 120, Math.round(60 * glow), -Math.min(60, 4 / mpp), -1);
+          scene.batches.get("b_lamp")?.batch.push(dx, dy, o.fx, o.fy, 0, Math.round(190 * glow), 0, 255, 188, 96, 255, gz);
+          scene.dots.push(dx - o.fy * 1.4, dy + o.fx * 1.4, 255, 200, 120, Math.round(70 * glow), -Math.min(60, 3.2 / mpp), -1, gz + 6.9);
+        } else if (glow && o.kind === "busstop") scene.dots.push(dx, dy, 255, 200, 120, Math.round(60 * glow), -Math.min(60, 4 / mpp), -1, gz + 2);
       }
     }
     if (traffic && ambient && meshes) {
@@ -280,11 +282,12 @@
       traffic.step(dt);
       const bhc = bh, btc = bt;
       traffic.write(ox, oy, k, x0, x1, y0, y1, (type, dx, dy, fx, fy, a, tn, len) => {
-        scene.batches.get("car_" + type).batch.push(dx, dy, fx, fy, 0, Math.round(255 * a), 0, tn[0], tn[1], tn[2], 255);
+        const gz = zAt(ox + dx * k, oy - dy * k);
+        scene.batches.get("car_" + type).batch.push(dx, dy, fx, fy, 0, Math.round(255 * a), 0, tn[0], tn[1], tn[2], 255, gz);
         if (lights && bhc) {
           const hl = len / 2;
-          bhc.push(dx + fx * hl, dy + fy * hl, fx, fy, 0, Math.round(170 * lights * a), 0, 255, 246, 214, 255);
-          btc.push(dx - fx * hl, dy - fy * hl, fx, fy, 0, Math.round(150 * lights * a), 0, 255, 34, 22, 255);
+          bhc.push(dx + fx * hl, dy + fy * hl, fx, fy, 0, Math.round(170 * lights * a), 0, 255, 246, 214, 255, gz);
+          btc.push(dx - fx * hl, dy - fy * hl, fx, fy, 0, Math.round(150 * lights * a), 0, 255, 34, 22, 255, gz);
         }
       });
     }
@@ -390,6 +393,7 @@
         "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 10.4, 0.9, Z_HEAT_OUT, 0] } });
     }
     if (scene && !map.getLayer(scene.id)) map.addLayer(scene.layer);
+    if (terrain.on) applyTerrain();
     scene?.labels.theme(isDark() ? "#eef1f4" : "#14181d", isDark() ? "#1b1f24" : "#ffffff");
     window.Daylight?.syncTheme?.(isDark());
     syncVisibility();
@@ -513,6 +517,40 @@
     ingest([{ id: v.id, lat: fix.lat, lon: fix.lon, hd: fix.heading, sp: fix.speed != null && fix.speed >= 0 ? fix.speed : null, ts: now, line: v.line, mode: v.mode, ag: v.ag, to: v.to, trip: v.trip, st: v.st, sn: v.sn }], now);
     return true;
   }
+  // ---- terrain: MapLibre drapes the map and the buildings on the DEM, and our own sampler of the same tiles lifts everything we draw
+  const terrain = { on: false, exaggeration: 2 };
+  let dem = null;
+  const demUrl = () => location.origin + "/api/dem?z={z}&x={x}&y={y}";
+  function applyTerrain() {
+    if (!map || !map.getStyle()) return;  // isStyleLoaded() is false while tiles load, which would skip this for good
+    if (!map.getSource("dem")) map.addSource("dem", { type: "raster-dem", tiles: [demUrl()], encoding: "terrarium", tileSize: 256, maxzoom: 14, attribution: "Elevation: Mapzen terrain tiles (SRTM, EU-DEM, NED), AWS Open Data" });
+    if (!map.getSource("dem-hs")) map.addSource("dem-hs", { type: "raster-dem", tiles: [demUrl()], encoding: "terrarium", tileSize: 256, maxzoom: 14 });  // a second source for the shading, as MapLibre advises
+    if (!map.getLayer("dem-hill")) {
+      const first = (map.getStyle().layers.find((l) => l.type === "symbol") || {}).id;
+      map.addLayer({ id: "dem-hill", type: "hillshade", source: "dem-hs", maxzoom: 16, paint: { "hillshade-exaggeration": 0.3, "hillshade-illumination-anchor": "map", "hillshade-shadow-color": "#2a2f3a", "hillshade-highlight-color": "#ffffff", "hillshade-accent-color": "#6b7280" } }, map.getLayer("buildings-3d") ? "buildings-3d" : first);
+    }
+    map.setLayoutProperty("dem-hill", "visibility", terrain.on ? "visible" : "none");
+    if (terrain.on) map.setTerrain({ source: "dem", exaggeration: terrain.exaggeration }); else map.setTerrain(null);
+    if (dem) dem.exaggeration = terrain.on ? terrain.exaggeration : 1;
+  }
+  let rebuildTimer = 0;
+  function terrainChanged() {
+    clearTimeout(rebuildTimer);
+    rebuildTimer = setTimeout(() => { if (roofs.ways.size) rebuildRoofs(); map?.triggerRepaint(); }, 400);
+  }
+  function setTerrain(level) {  // 0 = flat, otherwise the vertical exaggeration
+    terrain.on = level > 0;
+    if (level > 0) terrain.exaggeration = level;
+    if (terrain.on && !dem && window.DemLib) dem = new window.DemLib.Dem({ zoom: 14, fetchTile: window.DemLib.browserFetcher((z, x, y) => `/api/dem?z=${z}&x=${x}&y=${y}`), onload: terrainChanged });
+    applyTerrain();
+    if (dem) { dem.exaggeration = terrain.on ? terrain.exaggeration : 1; ensureDem(); }
+    terrainChanged();
+  }
+  function ensureDem() {
+    if (!terrain.on || !dem || !map) return;
+    const b = map.getBounds(), w = (b.getEast() - b.getWest()) * 0.3, h = (b.getNorth() - b.getSouth()) * 0.3;
+    dem.retry(); dem.ensure(b.getWest() - w, b.getSouth() - h, b.getEast() + w, b.getNorth() + h);
+  }
   // street details: trees, lamps, benches, bins and bus stops, placed on the traffic lanes and kept off buildings
   const decor = { items: null, liv: {}, lanesAt: null };
   const ring2local = (ring, A, kx) => ring.map(([lo, la]) => [(lo - A.lon) * kx, (la - A.lat) * 111320]);
@@ -542,7 +580,8 @@
   const capH = (w) => { const base = w.h || (w.lv ? w.lv * 3.1 : 6); return base + (base > 28 ? 0.5 : 1.6); };  // the flat cap layer is what the roof stands on
   function rebuildRoofs() {
     if (!scene || !window.Roofs) return;
-    const { meshes } = window.Roofs.build([...roofs.ways.values()], roofs.anchor, capH);
+    const ground = (w) => { if (!terrain.on || !dem) return 0; let x = 0, y = 0; for (const p of w.pts) { x += p[0]; y += p[1]; } return dem.sample(x / w.pts.length, y / w.pts.length); };
+    const { meshes } = window.Roofs.build([...roofs.ways.values()], roofs.anchor, (w) => capH(w) + ground(w));
     for (const name of [...roofs.meshes.keys()]) if (!meshes.has(name)) { scene.dropMesh("roof:" + name); roofs.meshes.delete(name); }
     for (const [hex, mesh] of meshes) { scene.setDynamicMesh("roof:" + hex, mesh); roofs.meshes.set(hex, hex.length === 7 ? [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) : [128, 128, 128]); }
   }
@@ -631,7 +670,7 @@
     map.on("dragstart", (e) => { if (followId && e.originalEvent) stopFollow(); });
     map.on("zoomstart", (e) => { if (followId && cam && e.originalEvent) cam.free = true; });
     let deb = 0, deb2 = 0;
-    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); loadRoofs(); }, 400); });
+    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); loadRoofs(); ensureDem(); }, 400); });
     map.on("sourcedata", (e) => { if (ambient && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); } });
     setInterval(refresh, 5000);
     setInterval(refreshSched, 15000);
@@ -643,7 +682,7 @@
 
   window.Vehicles = {
     init, follow, followTrip, stopFollow, set3d, is3d: () => threeD, scene: () => scene,
-    decor: () => decor, rideSync, loadRoofs, roofs: () => roofs, setAmbient, ambient: () => ambient, traffic: () => traffic,
+    setTerrain, terrain: () => ({ ...terrain }), dem: () => dem, decor: () => decor, rideSync, loadRoofs, roofs: () => roofs, setAmbient, ambient: () => ambient, traffic: () => traffic,
     setContext: (c) => { ctx = !!c; syncVisibility(); if (shown()) refresh(); }, setForce: (f) => { force = !!f; syncVisibility(); if (shown()) refresh(); },
     highlight: (ids) => { hi = new Set(ids || []); },
     stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on: shown(), threeD, zoom: map ? +map.getZoom().toFixed(1) : null, render: scene?.stats }),

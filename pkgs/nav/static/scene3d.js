@@ -132,16 +132,16 @@
   const bellowsMesh = (len, wid, h) => new MeshBuilder().box(-len / 2, len / 2, -wid / 2, wid / 2, 0.95, h - 0.5, PART.DARK).build();
 
   // ---- instance batches: a fixed stride of 20 bytes, filled by JS every frame (dynamic) or once (static)
-  //   f32: dx, dy (metres from the frame origin), fx, fy (unit forward vector east, north); u8: livery, alpha 0..255, flags, spare; u8: tint r, g, b, amount
+  //   f32: dx, dy (metres from the frame origin), fx, fy (unit forward vector east, north); u8: livery, alpha 0..255, flags, spare; u8: tint r, g, b, amount; f32: z (ground elevation in metres)
   //   the tint moves the body part toward an arbitrary colour (amount 255 replaces it), so colours are not limited to the palette
-  const STRIDE = 24;
+  const STRIDE = 28;
   class InstanceBatch {
     constructor(capacity) { this.capacity = capacity; this.count = 0; this.buf = new ArrayBuffer(capacity * STRIDE); this.f32 = new Float32Array(this.buf); this.u8 = new Uint8Array(this.buf); }
     clear() { this.count = 0; }
-    push(dx, dy, fx, fy, livery, alpha = 255, flags = 0, tr = 0, tg = 0, tb = 0, ta = 0) {
+    push(dx, dy, fx, fy, livery, alpha = 255, flags = 0, tr = 0, tg = 0, tb = 0, ta = 0, z = 0) {
       if (this.count >= this.capacity) return false;
-      const i = this.count++, o = i * 6;
-      this.f32[o] = dx; this.f32[o + 1] = dy; this.f32[o + 2] = fx; this.f32[o + 3] = fy;
+      const i = this.count++, o = i * 7;
+      this.f32[o] = dx; this.f32[o + 1] = dy; this.f32[o + 2] = fx; this.f32[o + 3] = fy; this.f32[o + 6] = z;
       const b = i * STRIDE + 16;
       this.u8[b] = livery; this.u8[b + 1] = alpha; this.u8[b + 2] = flags; this.u8[b + 3] = 0;
       this.u8[b + 4] = tr; this.u8[b + 5] = tg; this.u8[b + 6] = tb; this.u8[b + 7] = ta;
@@ -154,10 +154,10 @@
   class DotBatch {
     constructor(capacity) { this.capacity = capacity; this.count = 0; this.buf = new ArrayBuffer(capacity * DOT_STRIDE); this.f32 = new Float32Array(this.buf); this.u8 = new Uint8Array(this.buf); }
     clear() { this.count = 0; }
-    push(dx, dy, r, g, b, a, size, label = -1) {
+    push(dx, dy, r, g, b, a, size, label = -1, z = 0) {
       if (this.count >= this.capacity) return false;
       const i = this.count++, o = i * 6;
-      this.f32[o] = dx; this.f32[o + 1] = dy; this.f32[o + 3] = size; this.f32[o + 4] = label;
+      this.f32[o] = dx; this.f32[o + 1] = dy; this.f32[o + 3] = size; this.f32[o + 4] = label; this.f32[o + 5] = z;
       const q = i * DOT_STRIDE + 8;
       this.u8[q] = r; this.u8[q + 1] = g; this.u8[q + 2] = b; this.u8[q + 3] = a;
       return true;
@@ -196,12 +196,12 @@ precision highp float;
 uniform mat4 u_matrix; uniform vec3 u_sun; uniform vec3 u_sunColor; uniform vec3 u_ambient; uniform float u_night; uniform vec3 u_bg;
 uniform vec3 u_liv[128];
 in vec3 a_pos; in vec3 a_nrm; in float a_part;
-in vec2 i_pos; in vec2 i_dir; in vec4 i_meta; in vec4 i_tint;
+in vec2 i_pos; in vec2 i_dir; in vec4 i_meta; in vec4 i_tint; in float i_z;
 out vec3 v_col;
 void main() {
   vec2 f = i_dir, l = vec2(-f.y, f.x);
   vec2 en = f * a_pos.x + l * a_pos.y;
-  gl_Position = u_matrix * vec4(vec3(i_pos + en, a_pos.z), 1.0);
+  gl_Position = u_matrix * vec4(vec3(i_pos + en, a_pos.z + i_z), 1.0);
   vec3 n = normalize(vec3(f * a_nrm.x + l * a_nrm.y, a_nrm.z));
   int liv = int(i_meta.x + 0.5), part = int(a_part + 0.5);
   vec3 base = part < 4 ? u_liv[liv * 4 + part] : part == 4 ? vec3(0.012, 0.02, 0.035) : part == 5 ? vec3(0.015, 0.017, 0.02) : part == 6 ? vec3(0.9, 0.85, 0.6) : vec3(0.7, 0.02, 0.02);
@@ -222,11 +222,11 @@ void main() { o = vec4(pow(v_col, vec3(1.0 / 2.2)), 1.0); }`;
 precision highp float;
 uniform mat4 u_matrix;
 in vec3 a_pos; in vec3 a_nrm; in float a_part;
-in vec2 i_pos; in vec2 i_dir; in vec4 i_meta; in vec4 i_tint;
+in vec2 i_pos; in vec2 i_dir; in vec4 i_meta; in vec4 i_tint; in float i_z;
 out vec3 v_col;
 void main() {
   vec2 f = i_dir, l = vec2(-f.y, f.x);
-  gl_Position = u_matrix * vec4(vec3(i_pos + f * a_pos.x + l * a_pos.y, a_pos.z), 1.0);
+  gl_Position = u_matrix * vec4(vec3(i_pos + f * a_pos.x + l * a_pos.y, a_pos.z + i_z), 1.0);
   v_col = i_tint.rgb * (i_meta.y / 255.0) * a_part;
 }`;
   const FS_BEAM = `#version 300 es
@@ -237,9 +237,9 @@ void main() { o = vec4(v_col * u_night, 1.0); }`;
   const VS_DOT = `#version 300 es
 precision highp float;
 uniform mat4 u_matrix; uniform float u_dpr;
-in vec2 i_pos; in vec4 i_col; in float i_size;
+in vec2 i_pos; in vec4 i_col; in float i_size; in float i_z;
 out vec4 v_col; out float v_soft;
-void main() { gl_Position = u_matrix * vec4(i_pos, 0.0, 1.0); gl_PointSize = abs(i_size) * u_dpr; v_col = i_col; v_soft = i_size < 0.0 ? 1.0 : 0.0; }`;
+void main() { gl_Position = u_matrix * vec4(i_pos, i_z, 1.0); gl_PointSize = abs(i_size) * u_dpr; v_col = i_col; v_soft = i_size < 0.0 ? 1.0 : 0.0; }`;
   const FS_DOT = `#version 300 es
 precision mediump float;
 in vec4 v_col; in float v_soft; out vec4 o;
@@ -254,11 +254,11 @@ void main() {
   const VS_LABEL = `#version 300 es
 precision highp float;
 uniform mat4 u_matrix; uniform vec2 u_viewport; uniform vec2 u_atlas; uniform vec2 u_cell; uniform float u_dpr;
-in vec2 i_pos; in float i_cell; in float i_w;
+in vec2 i_pos; in float i_cell; in float i_w; in float i_z;
 out vec2 v_uv;
 void main() {
   vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
-  vec4 p = u_matrix * vec4(i_pos, 0.0, 1.0);
+  vec4 p = u_matrix * vec4(i_pos, i_z, 1.0);
   vec2 px = (c * vec2(i_w, u_cell.y) - vec2(i_w * 0.5, u_cell.y + 12.0)) * u_dpr;
   p.xy += px * vec2(2.0, -2.0) / u_viewport * p.w;
   gl_Position = p;
@@ -273,7 +273,7 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
   function program(gl, vs, fs) {
     const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
     const p = gl.createProgram();
-    ["a_pos", "a_nrm", "a_part", "i_pos", "i_dir", "i_meta", "i_tint"].forEach((n, i) => gl.bindAttribLocation(p, i, n));  // the mesh and beam programs share their vertex arrays
+    ["a_pos", "a_nrm", "a_part", "i_pos", "i_dir", "i_meta", "i_tint", "i_z"].forEach((n, i) => gl.bindAttribLocation(p, i, n));  // the mesh and beam programs share their vertex arrays
     gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
     return p;
@@ -301,7 +301,7 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
     const S = {
       id: opts.id || "scene3d", map: null, gl: null, meshes: new Map(), batches: new Map(), palette: new Palette(), labels: new Labels(),
       frame: { ox: 0, oy: 0, k: 1, zoom: 10, dpr: 1 }, light: { sun: [0, 0, 1], sunColor: [1, 1, 1], ambient: [0.5, 0.5, 0.5], night: 0, bg: [0.9, 0.9, 0.9] },
-      dots: new DotBatch(8192), labelInst: new Float32Array(2048 * 4), labelCount: 0, showDots: true, showMeshes: true, showLabels: true, stats: { draws: 0, triangles: 0, instances: 0 },
+      dots: new DotBatch(8192), labelInst: new Float32Array(2048 * 5), labelCount: 0, showDots: true, showMeshes: true, showLabels: true, stats: { draws: 0, triangles: 0, instances: 0 },
     };
     S.registerMesh = (name, mesh) => { S.meshes.set(name, { mesh, gpu: null }); };
     S.addBatch = (name, mesh, capacity, opts) => { const b = new InstanceBatch(capacity); S.batches.set(name, { mesh, batch: b, gpu: null, beam: !!(opts && opts.beam) }); return b; };
@@ -318,7 +318,7 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
       for (const [n, size, off] of [["a_pos", 3, 0], ["a_nrm", 3, 12], ["a_part", 1, 24]]) { const l = attr(S.progMesh, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 28, off); }
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.index, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, inst); gl.bufferData(gl.ARRAY_BUFFER, b.batch.capacity * STRIDE, gl.DYNAMIC_DRAW);
-      for (const [n, size, type, norm, off] of [["i_pos", 2, gl.FLOAT, false, 0], ["i_dir", 2, gl.FLOAT, false, 8], ["i_meta", 4, gl.UNSIGNED_BYTE, false, 16], ["i_tint", 4, gl.UNSIGNED_BYTE, true, 20]]) {
+      for (const [n, size, type, norm, off] of [["i_pos", 2, gl.FLOAT, false, 0], ["i_dir", 2, gl.FLOAT, false, 8], ["i_meta", 4, gl.UNSIGNED_BYTE, false, 16], ["i_tint", 4, gl.UNSIGNED_BYTE, true, 20], ["i_z", 1, gl.FLOAT, false, 24]]) {
         const l = attr(S.progMesh, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, type, norm, STRIDE, off); gl.vertexAttribDivisor(l, 1);
       }
       gl.bindVertexArray(null);
@@ -348,14 +348,14 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
       // dots
       S.dotVao = gl.createVertexArray(); S.dotBuf = gl.createBuffer();
       gl.bindVertexArray(S.dotVao); gl.bindBuffer(gl.ARRAY_BUFFER, S.dotBuf); gl.bufferData(gl.ARRAY_BUFFER, S.dots.capacity * DOT_STRIDE, gl.DYNAMIC_DRAW);
-      for (const [n, size, type, norm, off] of [["i_pos", 2, gl.FLOAT, false, 0], ["i_col", 4, gl.UNSIGNED_BYTE, true, 8], ["i_size", 1, gl.FLOAT, false, 12]]) {
+      for (const [n, size, type, norm, off] of [["i_pos", 2, gl.FLOAT, false, 0], ["i_col", 4, gl.UNSIGNED_BYTE, true, 8], ["i_size", 1, gl.FLOAT, false, 12], ["i_z", 1, gl.FLOAT, false, 20]]) {
         const l = attr(S.progDot, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, type, norm, DOT_STRIDE, off); gl.vertexAttribDivisor(l, 1);
       }
       gl.bindVertexArray(null);
       // labels
       S.labVao = gl.createVertexArray(); S.labBuf = gl.createBuffer(); S.labTex = gl.createTexture();
       gl.bindVertexArray(S.labVao); gl.bindBuffer(gl.ARRAY_BUFFER, S.labBuf); gl.bufferData(gl.ARRAY_BUFFER, S.labelInst.byteLength, gl.DYNAMIC_DRAW);
-      for (const [n, size, off] of [["i_pos", 2, 0], ["i_cell", 1, 8], ["i_w", 1, 12]]) { const l = attr(S.progLabel, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 16, off); gl.vertexAttribDivisor(l, 1); }
+      for (const [n, size, off] of [["i_pos", 2, 0], ["i_cell", 1, 8], ["i_w", 1, 12], ["i_z", 1, 16]]) { const l = attr(S.progLabel, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 20, off); gl.vertexAttribDivisor(l, 1); }
       gl.bindVertexArray(null);
       gl.bindTexture(gl.TEXTURE_2D, S.labTex);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -363,11 +363,11 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
       S.labels.dirty = true;
     }
 
-    S.addLabel = (text, dx, dy) => {
+    S.addLabel = (text, dx, dy, z = 0) => {
       const c = S.labels.cell(text);
       if (!c || S.labelCount >= 2048) return;
-      const o = S.labelCount++ * 4;
-      S.labelInst[o] = dx; S.labelInst[o + 1] = dy; S.labelInst[o + 2] = c.i; S.labelInst[o + 3] = c.w;
+      const o = S.labelCount++ * 5;
+      S.labelInst[o] = dx; S.labelInst[o + 1] = dy; S.labelInst[o + 2] = c.i; S.labelInst[o + 3] = c.w; S.labelInst[o + 4] = z;
     };
     S.beginFrame = () => { for (const b of S.batches.values()) b.batch.clear(); S.dots.clear(); S.labelCount = 0; };
 
@@ -426,7 +426,7 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
           const cv = S.map.getCanvas();
           gl.uniformMatrix4fv(S.uLabel.u_matrix, false, m32); gl.uniform2f(S.uLabel.u_viewport, cv.width, cv.height); gl.uniform2f(S.uLabel.u_atlas, S.labels.cols, S.labels.rows);
           gl.uniform2f(S.uLabel.u_cell, S.labels.cw, S.labels.ch); gl.uniform1f(S.uLabel.u_dpr, fr.dpr); gl.uniform1i(S.uLabel.u_tex, 0);
-          gl.bindVertexArray(S.labVao); gl.bindBuffer(gl.ARRAY_BUFFER, S.labBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, S.labelInst.subarray(0, S.labelCount * 4));
+          gl.bindVertexArray(S.labVao); gl.bindBuffer(gl.ARRAY_BUFFER, S.labBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, S.labelInst.subarray(0, S.labelCount * 5));
           gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, S.labelCount); draws++;
         }
         gl.bindVertexArray(null); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);

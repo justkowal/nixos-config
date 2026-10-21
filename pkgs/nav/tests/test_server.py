@@ -199,13 +199,44 @@ class Roofs(unittest.TestCase):
         self.assertEqual(s.api_roofs({"cells": ["1,2"]})["ready"], ["1,2"])
 
 
+class Elevation(unittest.TestCase):
+    def test_tiles_are_validated_cached_and_bounded(self):
+        calls = []
+        class R:
+            def __init__(self, b): self.b = b
+            def read(self, n): return self.b
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        orig = s.urllib.request.urlopen
+        s.urllib.request.urlopen = lambda req, timeout=0: (calls.append(req.full_url), R(b"\x89PNG\r\n" + b"x" * 20))[1]
+        try:
+            s._dem.clear()
+            self.assertTrue(s.dem_tile(14, 8800, 5600).startswith(b"\x89PNG"))
+            s.dem_tile(14, 8800, 5600)
+            self.assertEqual(len(calls), 1, "the second request is served from memory")
+            self.assertIn("/terrarium/14/8800/5600.png", calls[0])
+            for bad in ((16, 0, 0), (3, 8, 0), (3, 0, -1)):
+                with self.assertRaises(s.Bad):
+                    s.dem_tile(*bad)
+            s.DEM_KEEP = 3
+            for i in range(6):
+                s.dem_tile(10, i, 0)
+            self.assertLessEqual(len(s._dem), 3)
+            s.urllib.request.urlopen = lambda req, timeout=0: R(b"<html>")
+            with self.assertRaises(s.Bad):
+                s.dem_tile(10, 99, 9)
+        finally:
+            s.urllib.request.urlopen = orig
+            s.DEM_KEEP = 400
+
+
 class Serving(unittest.TestCase):
     def test_page_carries_build_id_on_every_asset(self):
         html = s.H.__new__(s.H).page().decode()
         import re
         ids = set(re.findall(r"\?v=([0-9a-f]{10})", html))
         self.assertEqual(len(ids), 1)
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "sched.js", "roofs.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js"):
             self.assertIn(f"/{n}?v=", html)
         self.assertIn(f'content="{ids.pop()}"', html)
 

@@ -4,6 +4,9 @@
 (() => {
   const A = window.App;
   const { $ } = A;
+  const LEVELS = [0, 1, 2, 4];  // terrain: off, true scale, and two exaggerations
+  let terrainAt = 2;
+  try { const raw = localStorage.getItem("dio-terrain"); if (raw !== null && LEVELS.includes(+raw)) terrainAt = +raw; } catch { /* private mode */ }
   let on = false, idleTimer = 0, orbitFrame = 0, orbitLast = 0, clockTimer = 0, saved = null;
 
   const poke = () => {
@@ -42,7 +45,7 @@
     saved = { three: V.is3d(), pitch: map.getPitch(), zoom: map.getZoom(), bearing: map.getBearing() };
     document.body.classList.add("dio-on");
     $("#diorama").hidden = false;
-    D.syncTheme(); D.enable(true); V.setForce(true); V.setAmbient(true);
+    D.syncTheme(); D.enable(true); V.setForce(true); V.setAmbient(true); V.setTerrain(terrainAt); syncTerrain();
     if (!V.is3d()) V.set3d(true);
     map.easeTo({ pitch: Math.max(map.getPitch(), 60), zoom: Math.max(map.getZoom(), 16), duration: 1000 });
     syncClock();
@@ -58,7 +61,7 @@
     setOrbit(false); clearInterval(clockTimer); clearTimeout(idleTimer);
     document.body.classList.remove("dio-on");
     $("#diorama").hidden = true;
-    D.enable(false); D.setDay(null); D.setLive(); V.setForce(false); V.setAmbient(false);
+    D.enable(false); D.setDay(null); D.setLive(); V.setForce(false); V.setAmbient(false); V.setTerrain(0);
     if (!saved?.three && V.is3d()) V.set3d(false);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     history.replaceState(null, "", location.pathname);
@@ -75,6 +78,12 @@
   $("#dio-set").addEventListener("click", jump("sunset"));
   $("#dio-date").addEventListener("change", (e) => { const D = window.Daylight; D.setDay(e.target.value || null); if (!e.target.value) D.setLive(); syncClock(); poke(); });
   $("#dio-play").addEventListener("click", () => { const D = window.Daylight; if (D.mode === "cycle") D.pause(); else D.play(16); syncClock(); poke(); });
+  function syncTerrain() { const b = $("#dio-terrain"); b.setAttribute("aria-pressed", terrainAt > 0); b.textContent = terrainAt ? `Terrain ${terrainAt}x` : "Terrain off"; }
+  $("#dio-terrain").addEventListener("click", () => {
+    terrainAt = LEVELS[(LEVELS.indexOf(terrainAt) + 1) % LEVELS.length];
+    try { localStorage.setItem("dio-terrain", String(terrainAt)); } catch { /* private mode */ }
+    window.Vehicles.setTerrain(terrainAt); syncTerrain(); poke();
+  });
   $("#dio-orbit").addEventListener("click", () => { setOrbit($("#dio-orbit").getAttribute("aria-pressed") !== "true"); poke(); });
   $("#dio-slider").addEventListener("input", (e) => { window.Daylight.setMinutes(+e.target.value); syncClock(); poke(); });
   for (const ev of ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"]) document.addEventListener(ev, poke, { passive: true });

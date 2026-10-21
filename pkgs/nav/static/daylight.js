@@ -111,6 +111,7 @@
       try {
         const azDeg = (s.az / RAD + 360) % 360, polar = clamp(90 - Math.max(s.alt, 4), 8, 86);
         map.setLight({ anchor: "map", color: hex(s.alt > -1 ? s.sunColor.map((v) => v + 0.12 * (1 - s.night)) : [0.3, 0.35, 0.6]), intensity: clamp(0.25 + 0.55 * s.day), position: [1.5, azDeg, polar] });
+        if (map.getLayer("dem-hill")) { map.setPaintProperty("dem-hill", "hillshade-illumination-direction", azDeg); map.setPaintProperty("dem-hill", "hillshade-exaggeration", s.alt > 0 ? clamp(0.22 + 0.35 * (1 - Math.min(1, s.alt / 50)), 0.2, 0.6) : 0.12); }  // long shadows at low sun
         map.setSky({ "sky-color": hex(s.sky), "horizon-color": hex(s.horizon), "fog-color": hex(s.horizon), "fog-ground-blend": 0.6, "horizon-fog-blend": 0.8, "sky-horizon-blend": 0.6, "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 12, 0.4] });
       } catch { /* an older runtime without sky support */ }
       const dark = D._dark ? s.night > 0.35 : s.night > 0.6;  // hysteresis so the style does not flicker at dusk

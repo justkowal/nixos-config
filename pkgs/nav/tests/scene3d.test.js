@@ -79,29 +79,30 @@ test("meshes fit their stated size and sit on the ground", () => {
   assert.ok(z0 >= 0 && z0 < 0.1 && z1 > 3.3 && z1 < 3.8, "height");
 });
 
-test("instance batches pack a 24 byte stride with a tint and respect capacity", () => {
+test("instance batches pack a 28 byte stride with a tint and an elevation, and respect capacity", () => {
   const b = new S.InstanceBatch(2);
-  assert.ok(b.push(1.5, -2.5, 0, 1, 7, 128, 3, 10, 20, 30, 200));
+  assert.ok(b.push(1.5, -2.5, 0, 1, 7, 128, 3, 10, 20, 30, 200, 42.5));
   assert.ok(b.push(3, 4, 1, 0, 9));
   assert.equal(b.push(0, 0, 0, 0, 0), false);
   assert.equal(b.count, 2);
   const v = b.view(), dv = new DataView(v.buffer, v.byteOffset, v.byteLength);
-  assert.equal(v.length, 48);
+  assert.equal(v.length, 56);
+  assert.equal(dv.getFloat32(24, true), 42.5); assert.equal(dv.getFloat32(52, true), 0);
   assert.equal(dv.getFloat32(0, true), 1.5); assert.equal(dv.getFloat32(4, true), -2.5); assert.equal(dv.getFloat32(12, true), 1);
   assert.deepEqual([v[16], v[17], v[18]], [7, 128, 3]);
   assert.deepEqual([v[20], v[21], v[22], v[23]], [10, 20, 30, 200]);
-  assert.equal(v[40], 9); assert.equal(v[41], 255); assert.deepEqual([v[44], v[45], v[46], v[47]], [0, 0, 0, 0]);
+  assert.equal(v[44], 9); assert.equal(v[45], 255); assert.deepEqual([v[48], v[49], v[50], v[51]], [0, 0, 0, 0]);
   b.clear(); assert.equal(b.count, 0);
 });
 
 test("dot batches pack colour, size and label", () => {
   const d = new S.DotBatch(4);
-  d.push(10, 20, 255, 128, 0, 200, 9, 5);
+  d.push(10, 20, 255, 128, 0, 200, 9, 5, 33);
   const v = d.view(), dv = new DataView(v.buffer, v.byteOffset, v.byteLength);
   assert.equal(v.length, 24);
   assert.equal(dv.getFloat32(0, true), 10); assert.equal(dv.getFloat32(4, true), 20);
   assert.deepEqual([v[8], v[9], v[10], v[11]], [255, 128, 0, 200]);
-  assert.equal(dv.getFloat32(12, true), 9); assert.equal(dv.getFloat32(16, true), 5);
+  assert.equal(dv.getFloat32(12, true), 9); assert.equal(dv.getFloat32(16, true), 5); assert.equal(dv.getFloat32(20, true), 33);
 });
 
 test("palette gives stable ids, linearises colours and falls back when full", () => {
