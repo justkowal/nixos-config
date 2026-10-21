@@ -253,6 +253,10 @@
         }
       }
     }
+    if (meshes && roofs.anchor && threeD) {
+      const A = roofs.anchor, ax = mercX(A.lon), ay = mercY(A.lat), rx = (ax - ox) / k, ry = (oy - ay) / k;
+      for (const [hex, rgb] of roofs.meshes) scene.batches.get("roof:" + hex)?.batch.push(rx, ry, 1, 0, 0, 255, 0, rgb[0], rgb[1], rgb[2], 255);
+    }
     if (traffic && ambient && meshes) {
       traffic.setHour(window.Daylight ? window.Daylight.clockHour() : new Date().getHours());
       traffic.step(dt);
@@ -456,6 +460,34 @@
     for (const [name, mesh] of Object.entries(meshes)) { scene.registerMesh(name, mesh); scene.addBatch(name, name, caps[name]); }
     scene.meshZoom = Z_MESH;
   }
+  // roof shapes from OSM (roof:shape): streamed in 0.01 degree cells, built into one mesh per colour around a fixed anchor
+  const roofs = { cells: new Map(), ways: new Map(), anchor: null, meshes: new Map(), busy: false, key: "" };
+  const capH = (w) => { const base = w.h || (w.lv ? w.lv * 3.1 : 6); return base + (base > 28 ? 0.5 : 1.6); };  // the flat cap layer is what the roof stands on
+  function rebuildRoofs() {
+    if (!scene || !window.Roofs) return;
+    const { meshes } = window.Roofs.build([...roofs.ways.values()], roofs.anchor, capH);
+    for (const name of [...roofs.meshes.keys()]) if (!meshes.has(name)) { scene.dropMesh("roof:" + name); roofs.meshes.delete(name); }
+    for (const [hex, mesh] of meshes) { scene.setDynamicMesh("roof:" + hex, mesh); roofs.meshes.set(hex, hex.length === 7 ? [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) : [128, 128, 128]); }
+  }
+  async function loadRoofs() {
+    if (!threeD || !map || !scene || roofs.busy || map.getZoom() < Z_MESH) return;
+    const c = map.getCenter(), b = map.getBounds(), cx0 = Math.floor(b.getWest() / 0.01), cx1 = Math.floor(b.getEast() / 0.01), cy0 = Math.floor(b.getSouth() / 0.01), cy1 = Math.floor(b.getNorth() / 0.01);
+    const want = [];
+    for (let x = cx0; x <= cx1; x++) for (let y = cy0; y <= cy1; y++) if (!roofs.cells.has(x + "," + y)) want.push([x, y]);
+    if (!want.length) return;
+    want.sort((p, q) => Math.hypot(p[0] * 0.01 - c.lng, p[1] * 0.01 - c.lat) - Math.hypot(q[0] * 0.01 - c.lng, q[1] * 0.01 - c.lat));
+    const take = want.slice(0, 4);
+    if (!roofs.anchor || Math.abs(roofs.anchor.lon - c.lng) > 0.05 || Math.abs(roofs.anchor.lat - c.lat) > 0.03) roofs.anchor = { lon: +c.lng.toFixed(2), lat: +c.lat.toFixed(2) };
+    roofs.busy = true;
+    try {
+      const r = await api("roofs", { cells: take.map((p) => p.join(",")).join(";") });
+      for (const id of r.ready) roofs.cells.set(id, true);
+      for (const w of r.ways) roofs.ways.set(w.id, w);
+      rebuildRoofs();
+      if (r.ready.length < take.length) { roofs.busy = false; setTimeout(loadRoofs, 8000); return; }  // the server is still fetching some cells
+    } catch { /* retried on the next move */ } finally { roofs.busy = false; }
+    if (want.length > take.length) setTimeout(loadRoofs, 1500);
+  }
   // trips with no live position, played back from the timetable
   let schedBusy = false, schedAt = 0;
   async function refreshSched() {
@@ -516,7 +548,7 @@
     map.on("dragstart", (e) => { if (followId && e.originalEvent) stopFollow(); });
     map.on("zoomstart", (e) => { if (followId && cam && e.originalEvent) cam.free = true; });
     let deb = 0, deb2 = 0;
-    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); }, 400); });
+    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); loadRoofs(); }, 400); });
     map.on("sourcedata", (e) => { if (ambient && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); } });
     setInterval(refresh, 5000);
     setInterval(refreshSched, 15000);
@@ -528,7 +560,7 @@
 
   window.Vehicles = {
     init, follow, followTrip, stopFollow, set3d, is3d: () => threeD, scene: () => scene,
-    setAmbient, ambient: () => ambient, traffic: () => traffic,
+    loadRoofs, roofs: () => roofs, setAmbient, ambient: () => ambient, traffic: () => traffic,
     setContext: (c) => { ctx = !!c; syncVisibility(); if (shown()) refresh(); }, setForce: (f) => { force = !!f; syncVisibility(); if (shown()) refresh(); },
     highlight: (ids) => { hi = new Set(ids || []); },
     stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on: shown(), threeD, zoom: map ? +map.getZoom().toFixed(1) : null, render: scene?.stats }),

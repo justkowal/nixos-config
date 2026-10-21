@@ -539,6 +539,119 @@ def api_sched(q):
     return out
 
 
+# ---------------------------------------------------------------- roof shapes (OSM roof:shape)
+# Served from roofs.json next to the graph manifest when the build produced one; otherwise fetched from Overpass cell by cell in the background.
+ROOF_FILE = os.environ.get("NAV_ROOFS", os.path.join(os.path.dirname(MANIFEST), "roofs.json"))
+OVERPASS = ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter")
+ROOF_CELL = 0.01
+_roofs = {}
+_roof_busy = set()
+_roof_file = {"mtime": None, "grid": {}}
+_roof_lock = threading.Lock()  # one Overpass request at a time, as its usage policy asks
+
+
+def _num(v):
+    if isinstance(v, (int, float)):
+        return float(v)
+    m = re.match(r"\s*(\d+(?:[.,]\d+)?)", v or "")
+    return float(m.group(1).replace(",", ".")) if m else None
+
+
+def roof_way(wid, t, ring):
+    shape = t.get("roof:shape")
+    if not t.get("building") or not shape or shape == "flat" or not 4 <= len(ring) <= 60:
+        return None
+    return {"id": wid, "shape": shape[:20], "h": _num(t.get("height") or t.get("building:height")), "lv": _num(t.get("building:levels")), "rh": _num(t.get("roof:height")),
+            "rlv": _num(t.get("roof:levels")), "col": (t.get("roof:colour") or "")[:20] or None, "mat": (t.get("roof:material") or "")[:20] or None, "dir": _num(t.get("roof:direction")),
+            "pts": [[round(x, 6), round(y, 6)] for x, y in ring]}
+
+
+def roof_ways(elements):
+    out = []
+    for e in elements:
+        w = e.get("type") == "way" and roof_way(e["id"], e.get("tags") or {}, [(p["lon"], p["lat"]) for p in e.get("geometry") or []])
+        if w:
+            out.append(w)
+    return out
+
+
+def roof_grid():
+    """The build artefact indexed by cell of the first vertex, or None when there is no file."""
+    try:
+        m = os.stat(ROOF_FILE).st_mtime
+    except OSError:
+        return None
+    if _roof_file["mtime"] != m:
+        grid = {}
+        try:
+            for w in json.load(open(ROOF_FILE)):
+                w["pts"] = [[x, y] for x, y in w["pts"]]
+                for k in ("h", "lv", "rh", "rlv", "dir"):
+                    w[k] = _num(w.get(k))
+                grid.setdefault((math.floor(w["pts"][0][0] / ROOF_CELL), math.floor(w["pts"][0][1] / ROOF_CELL)), []).append(w)
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        _roof_file.update(mtime=m, grid=grid)
+    return _roof_file["grid"]
+
+
+def _overpass_cell(cx, cy):
+    w, s_, e, n = cx * ROOF_CELL, cy * ROOF_CELL, (cx + 1) * ROOF_CELL, (cy + 1) * ROOF_CELL
+    q = f'[out:json][timeout:60];way["roof:shape"]({s_},{w},{n},{e});out tags geom 1500;'
+    ways, ok = [], False
+    with _roof_lock:
+        for url in OVERPASS:
+            try:
+                req = urllib.request.Request(url, data=urllib.parse.urlencode({"data": q}).encode(), headers={"User-Agent": UA})
+                with urllib.request.urlopen(req, timeout=70) as r:
+                    ways = roof_ways(json.load(r).get("elements", []))
+                ok = True
+                break
+            except (OSError, ValueError):
+                continue
+    if len(_roofs) > 400:
+        _roofs.clear()
+    _roofs[(cx, cy)] = (time.time() + (24 * 3600 if ok else 120), ways, ok)
+    _roof_busy.discard((cx, cy))
+
+
+def roof_cell(cx, cy):
+    """(ways, ready): a cell not known yet starts a background fetch and is not ready."""
+    grid = roof_grid()
+    if grid is not None:
+        return grid.get((cx, cy), []), True
+    hit = _roofs.get((cx, cy))
+    if hit and time.time() < hit[0]:
+        return hit[1], hit[2]
+    if (cx, cy) not in _roof_busy:
+        _roof_busy.add((cx, cy))
+        threading.Thread(target=_overpass_cell, args=(cx, cy), daemon=True).start()
+    return (hit[1] if hit else []), False
+
+
+def api_roofs(q):
+    raw = (q.get("cells") or [""])[0]
+    cells = []
+    for part in raw.split(";")[:6]:
+        try:
+            cx, cy = (int(x) for x in part.split(","))
+        except ValueError:
+            raise Bad("cells must be cx,cy;cx,cy")
+        if not (-18000 <= cx <= 18000 and -9000 <= cy <= 9000):
+            raise Bad("cell out of range")
+        cells.append((cx, cy))
+    seen, out, ready = set(), [], []
+    for c in cells:
+        ways, ok = roof_cell(*c)
+        if ok:
+            ready.append(f"{c[0]},{c[1]}")
+        for w in ways:
+            if w["id"] not in seen:
+                seen.add(w["id"])
+                out.append(w)
+    return {"ways": out, "ready": ready, "attribution": "© OpenStreetMap contributors"}
+
+
 # ---------------------------------------------------------------- places (explore)
 def api_explore(q):
     one = lambda k, d="": (q.get(k) or [d])[0]
@@ -610,7 +723,7 @@ def api_note_set(device, b):
     return {"ok": True}
 
 
-ROUTES = {"/api/explore": api_explore, "/api/place/more": api_place_more, "/api/vehicles": api_vehicles, "/api/shape": api_shape, "/api/sched": api_sched, "/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan": api_plan, "/api/nearby": api_nearby,
+ROUTES = {"/api/explore": api_explore, "/api/place/more": api_place_more, "/api/vehicles": api_vehicles, "/api/shape": api_shape, "/api/sched": api_sched, "/api/roofs": api_roofs, "/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan": api_plan, "/api/nearby": api_nearby,
           "/api/departures": api_departures, "/api/trip": api_trip, "/api/info": api_info}
 
 
@@ -697,7 +810,7 @@ _build_cache = {"key": None, "id": ""}
 
 def build_id():
     """content hash of the shipped files; recomputed when one of them changes on disk (matters in development, deploys replace the store path)."""
-    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "sched.js", "app.css", "providers.json", "sw.js")
+    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "sched.js", "roofs.js", "app.css", "providers.json", "sw.js")
     key = []
     for n in names:
         try:
@@ -808,7 +921,7 @@ class H(BaseHTTPRequestHandler):
             if not self.authed():
                 return self.j(401, {"error": "sign in"})
             # cached, read-only map data (vehicles, trip shapes) gets its own larger bucket
-            bulk = u.path in ("/api/vehicles", "/api/shape", "/api/sched")
+            bulk = u.path in ("/api/vehicles", "/api/shape", "/api/sched", "/api/roofs")
             who = self.who() + ("|bulk" if bulk else "")
             if throttled(_hits, who, 900 if bulk else PER_MINUTE, 60):
                 return self.j(429, {"error": "slow down"})
@@ -826,7 +939,7 @@ class H(BaseHTTPRequestHandler):
         BUILD = build_id()
         with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
             html = f.read()
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "sched.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "sched.js", "roofs.js"):
             html = html.replace(f'"/{n}"', f'"/{n}?v={BUILD}"')
         return html.replace('content="dev"', f'content="{BUILD}"').encode()
 

@@ -289,6 +289,34 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
     S.setFrame = (f) => Object.assign(S.frame, f);
     S.setLight = (l) => Object.assign(S.light, l);
 
+    // one VAO per batch: the mesh buffers plus that batch's own instance buffer
+    function buildGpu(gl, b) {
+      const attr = (p, n) => gl.getAttribLocation(p, n);
+      if (b.gpu) { gl.deleteVertexArray(b.gpu.vao); gl.deleteBuffer(b.gpu.vb); gl.deleteBuffer(b.gpu.ib); gl.deleteBuffer(b.gpu.inst); b.gpu = null; }
+      const mesh = S.meshes.get(b.mesh).mesh, vao = gl.createVertexArray(), vb = gl.createBuffer(), ib = gl.createBuffer(), inst = gl.createBuffer();
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, mesh.vertex, gl.STATIC_DRAW);
+      for (const [n, size, off] of [["a_pos", 3, 0], ["a_nrm", 3, 12], ["a_part", 1, 24]]) { const l = attr(S.progMesh, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 28, off); }
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.index, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, inst); gl.bufferData(gl.ARRAY_BUFFER, b.batch.capacity * STRIDE, gl.DYNAMIC_DRAW);
+      for (const [n, size, type, norm, off] of [["i_pos", 2, gl.FLOAT, false, 0], ["i_dir", 2, gl.FLOAT, false, 8], ["i_meta", 4, gl.UNSIGNED_BYTE, false, 16], ["i_tint", 4, gl.UNSIGNED_BYTE, true, 20]]) {
+        const l = attr(S.progMesh, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, type, norm, STRIDE, off); gl.vertexAttribDivisor(l, 1);
+      }
+      gl.bindVertexArray(null);
+      b.gpu = { vao, vb, ib, inst, triangles: mesh.triangles };
+    }
+    // a mesh whose geometry changes at runtime (world details streamed from data); it has one instance, so its vertices carry the placement
+    S.setDynamicMesh = (name, mesh) => {
+      S.meshes.set(name, { mesh, gpu: null });
+      let b = S.batches.get(name);
+      if (!b) { b = { mesh: name, batch: new InstanceBatch(1), gpu: null }; S.batches.set(name, b); }
+      b.pending = true;  // uploaded inside render(), where MapLibre expects GL state to change
+      return b.batch;
+    };
+    S.dropMesh = (name) => {
+      const b = S.batches.get(name);
+      if (b) b.drop = true;
+    };
     function initGL(gl) {
       S.gl = gl;
       S.progMesh = program(gl, VS_MESH, FS_MESH); S.progDot = program(gl, VS_DOT, FS_DOT); S.progLabel = program(gl, VS_LABEL, FS_LABEL);
@@ -297,19 +325,7 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
       S.uLabel = Object.fromEntries(["u_matrix", "u_viewport", "u_atlas", "u_cell", "u_dpr", "u_tex"].map((n) => [n, gl.getUniformLocation(S.progLabel, n)]));
       const attr = (p, n) => gl.getAttribLocation(p, n);
       // meshes: one VAO per batch (mesh buffers + that batch's instance buffer)
-      for (const b of S.batches.values()) {
-        const mesh = S.meshes.get(b.mesh).mesh, vao = gl.createVertexArray(), vb = gl.createBuffer(), ib = gl.createBuffer(), inst = gl.createBuffer();
-        gl.bindVertexArray(vao);
-        gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, mesh.vertex, gl.STATIC_DRAW);
-        for (const [n, size, off] of [["a_pos", 3, 0], ["a_nrm", 3, 12], ["a_part", 1, 24]]) { const l = attr(S.progMesh, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 28, off); }
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.index, gl.STATIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, inst); gl.bufferData(gl.ARRAY_BUFFER, b.batch.capacity * STRIDE, gl.DYNAMIC_DRAW);
-        for (const [n, size, type, norm, off] of [["i_pos", 2, gl.FLOAT, false, 0], ["i_dir", 2, gl.FLOAT, false, 8], ["i_meta", 4, gl.UNSIGNED_BYTE, false, 16], ["i_tint", 4, gl.UNSIGNED_BYTE, true, 20]]) {
-          const l = attr(S.progMesh, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, type, norm, STRIDE, off); gl.vertexAttribDivisor(l, 1);
-        }
-        gl.bindVertexArray(null);
-        b.gpu = { vao, vb, ib, inst, triangles: mesh.triangles };
-      }
+      for (const b of S.batches.values()) buildGpu(gl, b);
       // dots
       S.dotVao = gl.createVertexArray(); S.dotBuf = gl.createBuffer();
       gl.bindVertexArray(S.dotVao); gl.bindBuffer(gl.ARRAY_BUFFER, S.dotBuf); gl.bufferData(gl.ARRAY_BUFFER, S.dots.capacity * DOT_STRIDE, gl.DYNAMIC_DRAW);
@@ -346,6 +362,10 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
         if (!main) return;
         const fr = S.frame, M = mul(main, localToMercator(fr.ox, fr.oy, fr.k)), m32 = new Float32Array(M);
         let draws = 0, tris = 0, inst = 0;
+        for (const [name, b] of S.batches) {
+          if (b.drop) { if (b.gpu) { gl.deleteVertexArray(b.gpu.vao); gl.deleteBuffer(b.gpu.vb); gl.deleteBuffer(b.gpu.ib); gl.deleteBuffer(b.gpu.inst); } S.batches.delete(name); S.meshes.delete(name); }
+          else if (b.pending) { b.pending = false; buildGpu(gl, b); }
+        }
         if (S.showMeshes && fr.zoom >= S.meshZoom) {
           gl.useProgram(S.progMesh);
           const L = S.light;

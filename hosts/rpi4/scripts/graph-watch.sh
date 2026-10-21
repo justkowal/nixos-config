@@ -11,6 +11,7 @@ if [ -f "$CUR/manifest.json" ] && ! cmp -s "$CUR/manifest.json" "$G/info/manifes
   mkdir -p "$G/info"; cp "$CUR/manifest.json" "$G/info/manifest.json"
 fi
 if [ -f "$CUR/signals.json" ] && ! cmp -s "$CUR/signals.json" "$G/info/signals.json" 2>/dev/null; then cp "$CUR/signals.json" "$G/info/signals.json"; fi
+if [ -f "$CUR/roofs.json" ] && ! cmp -s "$CUR/roofs.json" "$G/info/roofs.json" 2>/dev/null; then cp "$CUR/roofs.json" "$G/info/roofs.json"; fi
 dir=$(find "$UP" -mindepth 2 -maxdepth 2 -name READY -printf '%h\n' | sort | tail -1)
 [ -n "$dir" ] || { log "nothing to do"; exit 0; }
 name=$(basename "$dir")
@@ -94,6 +95,7 @@ publish_info() {
   mkdir -p "$G/info"; cp "$CUR/manifest.json" "$G/info/manifest.json.tmp" && mv "$G/info/manifest.json.tmp" "$G/info/manifest.json"
   # optional extra for the navigation app; a graph without it simply has no traffic light animation
   if [ -f "$CUR/signals.json" ] && jq -e 'type=="array" and length<60000' "$CUR/signals.json" >/dev/null 2>&1; then cp "$CUR/signals.json" "$G/info/signals.json.tmp" && mv "$G/info/signals.json.tmp" "$G/info/signals.json"; fi
+  if [ -f "$CUR/roofs.json" ] && jq -e 'type=="array" and length<400000' "$CUR/roofs.json" >/dev/null 2>&1; then cp "$CUR/roofs.json" "$G/info/roofs.json.tmp" && mv "$G/info/roofs.json.tmp" "$G/info/roofs.json"; fi
 }
 publish_info
 printf '{"swapped":"%s","at":"%s"}\n' "$name" "$(date -u +%FT%TZ)" > "$G/last-swap.json"

@@ -125,6 +125,12 @@ nix shell nixpkgs#osmium-tool nixpkgs#jq -c bash -c "osmium tags-filter -O -o '$
   && tr -d '\\036' < '$G/sig.geojsonseq' | jq -sc '[.[]|[(.geometry.coordinates[0]*100000|round/100000),(.geometry.coordinates[1]*100000|round/100000)]]' > '$G/signals.json'" \
   && log "signals: $(jq length "$G/signals.json") nodes" || log "signals: extraction failed, the app animates without traffic lights"
 rm -f "$G/sig.pbf" "$G/sig.geojsonseq"
+# roof shapes for the navigation app's 3D buildings (gabled, hipped, pyramidal, skillion, dome); optional, a few MB
+nix shell nixpkgs#osmium-tool nixpkgs#jq -c bash -c "osmium tags-filter -O -o '$G/roof.pbf' '$W/osm/scope-pruned.osm.pbf' w/roof:shape \
+  && osmium export -O -f geojsonseq --geometry-types=polygon -a id -o '$G/roof.geojsonseq' '$G/roof.pbf' \
+  && tr -d '\\036' < '$G/roof.geojsonseq' | jq -sc '[.[] | select(.properties.building != null and .properties[\"roof:shape\"] != \"flat\") | {id: .properties[\"@id\"], shape: .properties[\"roof:shape\"], h: (.properties.height // .properties[\"building:height\"]), lv: .properties[\"building:levels\"], rh: .properties[\"roof:height\"], rlv: .properties[\"roof:levels\"], col: .properties[\"roof:colour\"], mat: .properties[\"roof:material\"], dir: .properties[\"roof:direction\"], pts: [.geometry.coordinates[0][] | [(.[0]*1000000|round/1000000), (.[1]*1000000|round/1000000)]]} | select((.pts|length) >= 4 and (.pts|length) <= 60)]' > '$G/roofs.json'" \
+  && log "roofs: $(jq length "$G/roofs.json") buildings" || log "roofs: extraction failed, the app falls back to Overpass"
+rm -f "$G/roof.pbf" "$G/roof.geojsonseq"
 log "build: OTP $OTP_IMAGE"
 docker image inspect "$OTP_IMAGE" >/dev/null 2>&1 || docker pull -q "$OTP_IMAGE" >/dev/null
 t0=$(date +%s)
@@ -156,7 +162,7 @@ PYEOF
 # ---- 5. push: upload directory only, the READY marker last so the Pi never sees a half-copied graph
 if [ $PUSH = 1 ]; then
   log "push: maps-push@$PI_HOST:$STAMP"
-  rs -a -e "$(sshopt "$PUSH_KEY")" "$G/graph.obj" "$G/build-config.json" "$G/router-config.json" "$G/manifest.json" $([ -f "$G/signals.json" ] && echo "$G/signals.json") "maps-push@$PI_HOST:./$STAMP/"
+  rs -a -e "$(sshopt "$PUSH_KEY")" "$G/graph.obj" "$G/build-config.json" "$G/router-config.json" "$G/manifest.json" $([ -f "$G/signals.json" ] && echo "$G/signals.json") $([ -f "$G/roofs.json" ] && echo "$G/roofs.json") "maps-push@$PI_HOST:./$STAMP/"
   : > "$G/READY"
   rs -a -e "$(sshopt "$PUSH_KEY")" "$G/READY" "maps-push@$PI_HOST:./$STAMP/READY"
   log "pushed; the Pi verifies, stage-tests and swaps it in on its own"

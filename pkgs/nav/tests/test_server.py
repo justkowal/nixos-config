@@ -151,13 +151,55 @@ class Scheduled(unittest.TestCase):
         self.assertEqual(s.api_sched({"bbox": ["10,40,20,50"]})["trips"], [])
 
 
+class Roofs(unittest.TestCase):
+    RING = [{"lat": 50.0, "lon": 19.0}, {"lat": 50.0, "lon": 19.001}, {"lat": 50.001, "lon": 19.001}, {"lat": 50.001, "lon": 19.0}, {"lat": 50.0, "lon": 19.0}]
+
+    def test_overpass_elements_are_trimmed_and_flat_roofs_dropped(self):
+        els = [{"type": "way", "id": 1, "tags": {"building": "yes", "roof:shape": "gabled", "height": "12.5 m", "roof:colour": "red", "building:levels": "4"}, "geometry": self.RING},
+               {"type": "way", "id": 2, "tags": {"building": "yes", "roof:shape": "flat"}, "geometry": self.RING},
+               {"type": "way", "id": 3, "tags": {"building": "yes", "roof:shape": "hipped"}, "geometry": self.RING[:2]},
+               {"type": "way", "id": 4, "tags": {"roof:shape": "hipped"}, "geometry": self.RING}]
+        out = s.roof_ways(els)
+        self.assertEqual([w["id"] for w in out], [1])
+        self.assertEqual((out[0]["h"], out[0]["lv"], out[0]["col"]), (12.5, 4.0, "red"))
+        self.assertEqual(out[0]["pts"][0], [19.0, 50.0])
+
+    def test_build_file_wins_and_cells_report_readiness(self):
+        f = os.path.join(tempfile.mkdtemp(), "roofs.json")
+        json.dump([{"id": 9, "shape": "gabled", "h": "10", "lv": None, "rh": None, "rlv": None, "col": None, "mat": None, "dir": None, "pts": [[19.002, 50.002], [19.003, 50.002], [19.003, 50.003], [19.002, 50.003], [19.002, 50.002]]}], open(f, "w"))
+        s.ROOF_FILE = f
+        s._roof_file.update(mtime=None, grid={})
+        r = s.api_roofs({"cells": ["1900,5000;1901,5000"]})
+        self.assertEqual([w["id"] for w in r["ways"]], [9])
+        self.assertEqual(r["ways"][0]["h"], 10.0)
+        self.assertEqual(r["ready"], ["1900,5000", "1901,5000"])
+        with self.assertRaises(s.Bad):
+            s.api_roofs({"cells": ["a,b"]})
+        with self.assertRaises(s.Bad):
+            s.api_roofs({"cells": ["99999,1"]})
+
+    def test_without_a_file_a_cell_is_fetched_in_the_background(self):
+        s.ROOF_FILE = "/nonexistent/roofs.json"
+        s._roofs.clear(); s._roof_busy.clear()
+        started = []
+        orig = s.threading.Thread
+        s.threading.Thread = lambda target, args, daemon: type("T", (), {"start": lambda self: started.append(args)})()
+        try:
+            r = s.api_roofs({"cells": ["1,2"]})
+        finally:
+            s.threading.Thread = orig
+        self.assertEqual((r["ways"], r["ready"], started), ([], [], [(1, 2)]))
+        s._roofs[(1, 2)] = (time.time() + 60, [{"id": 5, "pts": []}], True)
+        self.assertEqual(s.api_roofs({"cells": ["1,2"]})["ready"], ["1,2"])
+
+
 class Serving(unittest.TestCase):
     def test_page_carries_build_id_on_every_asset(self):
         html = s.H.__new__(s.H).page().decode()
         import re
         ids = set(re.findall(r"\?v=([0-9a-f]{10})", html))
         self.assertEqual(len(ids), 1)
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "sched.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "sched.js", "roofs.js"):
             self.assertIn(f"/{n}?v=", html)
         self.assertIn(f'content="{ids.pop()}"', html)
 
