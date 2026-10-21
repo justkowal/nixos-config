@@ -4,7 +4,10 @@
 
 [source]
 user_agent = "kowal-lab-maps-adapter/0.1 (personal use; contact hopkuba@gmail.com)"
-base_url = "http://komunikacjajurajska.kiedyprzyjedzie.pl"
+# Timetables and stop positions: the operator's own site.
+op_base_url = "https://www.komunikacjajurajska.pl"
+# Live data, stop list for comparison, per-line census.
+kp_base_url = "http://komunikacjajurajska.kiedyprzyjedzie.pl"
 
 [server]
 port = 8080
@@ -14,31 +17,33 @@ cooldown_s = 21600
 error_run = 5
 kill_file = "/data/KILL"
 
-# One shared budget for the whole source. Lanes keep the realtime poll and the
+# Each source has its own spacing, budget and breaker. Lanes keep the realtime poll and the
 # static crawl from starving each other.
-[limits]
+[limits.op]
 spacing_s = 5
 jitter_s = 3
 hourly_budget = 100
-static_hourly = 40
+static_hourly = 60
+
+[limits.kp]
+spacing_s = 5
+jitter_s = 3
+hourly_budget = 100
+static_hourly = 20
 rt_hourly = 60
 
 [static]
-window_days = 7
-rebuild_interval_s = 1800
+home_check_interval_s = 86400
+# A line page (and its reverse page) is re-read this often. Pages have no validators.
+line_refresh_days = 3
+fail_retry_s = 21600
 stops_check_interval_s = 86400
-# Re-read a (stop, future date) timetable only after this many days.
-tt_refresh_days = 4
-# Probes of stops that no known trip serves, to find lines nobody has seen yet.
-probe_per_day = 40
-probe_retry_days = 30
-rejected_retry_s = 86400
+census_refresh_days = 30
+rebuild_interval_s = 1800
 idle_sleep_s = 900
-# Stops whose timetables are always read. Everything else is discovered.
-seed_stops = ["622548", "676874", "2303517:2391682"]
 
 [realtime]
-# Only trips calling at these stops get live data. Place ids from /stops.
+# Only trips calling at these stops get live data. Place ids from the kiedyPrzyjedzie /stops list.
 priority_stops = ["622548", "676874", "2303517:2391682"]
 max_stops_per_call = 8
 idle_interval_s = 300
@@ -46,6 +51,8 @@ boost_interval_s = 120
 boost_duration_s = 900
 trips_per_cycle_idle = 1
 trips_per_cycle_boost = 1
+# Live trips that need a one-off /api/trip call to be matched to the operator timetable, per cycle.
+map_per_cycle = 3
 # Only trips scheduled within this many seconds get a trip_execution call.
 execution_window_s = 2700
 max_age_s = 600

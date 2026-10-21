@@ -1,37 +1,32 @@
-[trip_updates] entities=3 bytes=1030 header_ts=1792565265
+[trip_updates] entities=2 bytes=648 header_ts=1792565265
   PASS version 2.0
   PASS FULL_DATASET
   PASS header timestamp set
   PASS has entities
   PASS unique entity ids
-  PASS tu-38155603-20261021 trip_id in static
-  PASS tu-38155603-20261021 route_id matches static
-  PASS tu-38155603-20261021 start_date set and service active
-  PASS tu-38155603-20261021 stop_sequence strictly increasing
-  PASS tu-38155603-20261021 every stop_id attaches to its stop_sequence in static
-  PASS tu-38155603-20261021 delay present or SKIPPED
-  PASS tu-38155604-20261021 trip_id in static
-  PASS tu-38155604-20261021 route_id matches static
-  PASS tu-38155604-20261021 start_date set and service active
-  PASS tu-38155604-20261021 stop_sequence strictly increasing
-  PASS tu-38155604-20261021 every stop_id attaches to its stop_sequence in static
-  PASS tu-38155604-20261021 delay present or SKIPPED
-  PASS tu-38155605-20261021 trip_id in static
-  PASS tu-38155605-20261021 route_id matches static
-  PASS tu-38155605-20261021 start_date set and service active
-  PASS tu-38155605-20261021 stop_sequence strictly increasing
-  PASS tu-38155605-20261021 every stop_id attaches to its stop_sequence in static
-  PASS tu-38155605-20261021 delay present or SKIPPED
-[vehicle_positions] entities=1 bytes=114 header_ts=1792565265
+  PASS tu-151-B-wd-0830-20261021 trip_id in static
+  PASS tu-151-B-wd-0830-20261021 route_id matches static
+  PASS tu-151-B-wd-0830-20261021 start_date set and service active
+  PASS tu-151-B-wd-0830-20261021 stop_sequence strictly increasing
+  PASS tu-151-B-wd-0830-20261021 every stop_id attaches to its stop_sequence in static
+  PASS tu-151-B-wd-0830-20261021 delay present or SKIPPED
+  PASS tu-151-B-wd-0930-20261021 trip_id in static
+  PASS tu-151-B-wd-0930-20261021 route_id matches static
+  PASS tu-151-B-wd-0930-20261021 start_date set and service active
+  PASS tu-151-B-wd-0930-20261021 stop_sequence strictly increasing
+  PASS tu-151-B-wd-0930-20261021 every stop_id attaches to its stop_sequence in static
+  PASS tu-151-B-wd-0930-20261021 delay present or SKIPPED
+[vehicle_positions] entities=1 bytes=113 header_ts=1792565265
   PASS version 2.0
   PASS FULL_DATASET
   PASS header timestamp set
   PASS has entities
   PASS unique entity ids
-  PASS vp-38155603-20261021 trip_id in static
-  PASS vp-38155603-20261021 route_id matches static
-  PASS vp-38155603-20261021 start_date set and service active
-  PASS vp-38155603-20261021 stop_id attaches to current_stop_sequence
-  PASS vp-38155603-20261021 position inside the service area
-match stats: {"rows_seen": 25, "rows_matched": 5, "rows_unmatched": 20, "unmatched_reasons": {"trip not in static feed": 20}, "executions_ok": 1, "executions_unmatched": 0}
+  PASS vp-151-B-wd-0830-20261021 trip_id in static
+  PASS vp-151-B-wd-0830-20261021 route_id matches static
+  PASS vp-151-B-wd-0830-20261021 start_date set and service active
+  PASS vp-151-B-wd-0830-20261021 stop_id attaches to current_stop_sequence
+  PASS vp-151-B-wd-0830-20261021 position inside the service area
+live trip 38155603 (wd) mapped to operator trip 151-B-wd-0830
+match stats: {"rows_seen": 50, "rows_matched": 2, "rows_unmatched": 36, "unmatched_reasons": {"no operator trip matched (yet)": 36}, "trips_mapped": 2, "trips_unmapped": 0, "executions_ok": 1, "executions_unmatched": 0}
 RESULT: OK

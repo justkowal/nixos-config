@@ -12,7 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import crawl
 import gtfs
-from client import Source
+import recon
+from client import OpSource, Source
 from guard import Blocked, Guard, SourceError
 from rt import Rt
 from store import WAW, Store, today_waw
@@ -28,17 +29,19 @@ def in_quiet(now, start, end):
 class App:
     def __init__(self, cfg, data_dir, clock=time.time):
         self.cfg, self.data_dir, self.clock = cfg, data_dir, clock
-        lim = cfg["limits"]
-        self.guard = Guard(
-            data_dir, lanes={"static": lim["static_hourly"], "rt": lim["rt_hourly"]},
-            spacing_s=lim["spacing_s"], jitter_s=lim["jitter_s"], hourly_budget=lim["hourly_budget"],
-            cooldown_s=cfg["breaker"]["cooldown_s"], error_run=cfg["breaker"]["error_run"],
-            kill_file=cfg["breaker"]["kill_file"])
-        self.src = Source(self.guard, cfg["source"]["base_url"], cfg["source"]["user_agent"])
+        ua, br = cfg["source"]["user_agent"], cfg["breaker"]
+        common = dict(cooldown_s=br["cooldown_s"], error_run=br["error_run"], kill_file=br["kill_file"])
+        lk, lo = cfg["limits"]["kp"], cfg["limits"]["op"]
+        self.g_kp = Guard(data_dir, {"static": lk["static_hourly"], "rt": lk["rt_hourly"]}, name="kp",
+                          spacing_s=lk["spacing_s"], jitter_s=lk["jitter_s"], hourly_budget=lk["hourly_budget"], **common)
+        self.g_op = Guard(data_dir, {"static": lo["static_hourly"]}, name="op", spacing_s=lo["spacing_s"],
+                          jitter_s=lo["jitter_s"], hourly_budget=lo["hourly_budget"], **common)
+        self.kp = Source(self.g_kp, cfg["source"]["kp_base_url"], ua)
+        self.op = OpSource(self.g_op, cfg["source"]["op_base_url"], ua)
         self.store = Store(os.path.join(data_dir, "state.json"))
-        self.crawler = crawl.Crawler(cfg, self.store, self.src, clock)
+        self.crawler = crawl.Crawler(cfg, self.store, self.kp, self.op, clock)
         r = cfg["realtime"]
-        self.rt = Rt(max_age_s=r["max_age_s"], horizon_s=r["match_horizon_s"])
+        self.rt = Rt(self.store.s["map"], max_age_s=r["max_age_s"], horizon_s=r["match_horizon_s"])
         self.zip_path = os.path.join(data_dir, "gtfs.zip")
         self.zip_etag = None
         self.build_stats = {}
@@ -50,7 +53,6 @@ class App:
         self.boost_until = 0.0
         self.stop = threading.Event()
         self.wake = threading.Event()
-        self.lock = threading.Lock()
 
     # static -------------------------------------------------------------
     def load_zip(self):
@@ -61,22 +63,27 @@ class App:
         except (OSError, ValueError, KeyError):
             return
         self.zip_etag = hashlib.sha1(data).hexdigest()
-        self.rt.set_static(idx, self.store.s["stops"])
+        self.rt.set_static(idx, self.store.s["kp_stops"])
 
     def rebuild(self):
         now = self.clock()
-        data, stats = gtfs.build(self.store, now, self.store.coverage())
+        s = self.store.s
+        data, stats = gtfs.build(self.store, now, s["kp_stops"], s["kp_lines"], len(s["site_lines"]))
         self.last_build, self.last_build_date, self.dirty = now, today_waw(now), False
         self.build_stats = stats
+        if s["kp_stops"] and s["lines"]:
+            op_stops, _ = gtfs.stop_table(s["lines"])
+            s["recon"] = recon.compare(op_stops, s["kp_stops"])
         if data is None:
-            log.info("nothing to publish yet: %s", stats)
+            log.info("nothing to publish yet")
             return
         tmp = self.zip_path + ".tmp"
         with open(tmp, "wb") as f:
             f.write(data)
         os.replace(tmp, self.zip_path)
         self.load_zip()
-        log.info("published gtfs: %s", {k: v for k, v in stats.items() if k != "dropped"})
+        self.store.save()
+        log.info("published gtfs: %s", {k: v for k, v in stats.items() if k != "lines"})
 
     def static_loop(self):
         interval = self.cfg["static"]["rebuild_interval_s"]
@@ -98,9 +105,9 @@ class App:
                 wait = 300
                 log.error("static crawl error: %s", e)
             now = self.clock()
-            new_day = self.last_build_date != today_waw(now)
             gap = interval if self.zip_etag else 300  # first publish early so /health leaves "down"
-            if (self.dirty and now - self.last_build > gap) or (new_day and self.store.s["trips"]) \
+            new_day = self.last_build_date != today_waw(now)
+            if (self.dirty and now - self.last_build > gap) or (new_day and self.store.s["lines"]) \
                     or (wait and self.dirty):
                 try:
                     self.rebuild()
@@ -118,15 +125,23 @@ class App:
 
     def poll_once(self, now):
         r = self.cfg["realtime"]
-        resp = self.src.departures(r["priority_stops"][: r["max_stops_per_call"]])
-        cands = self.rt.ingest_departures(resp, now)
+        resp = self.kp.departures(r["priority_stops"][: r["max_stops_per_call"]])
+        cands, need = self.rt.ingest_departures(resp, now)
+        if need:
+            for ktid, kidx, dt in sorted(need)[: r["map_per_cycle"]]:
+                try:
+                    self.rt.map_trip(ktid, self.kp.trip(ktid, kidx), dt, now)
+                except (SourceError, KeyError, TypeError) as e:
+                    log.warning("mapping of live trip %s skipped: %s", ktid, e)
+            self.store.save()
+            cands, _ = self.rt.ingest_departures(resp, now)
         k = r["trips_per_cycle_boost"] if self.mode(now) == "boost" else r["trips_per_cycle_idle"]
         near = [c for c in cands if -300 <= c[0] - now <= r["execution_window_s"]][:k]
-        for _, tid, sd, eid, seq in near:
+        for _, ktid, kidx, eid, op_tid, sd in near:
             try:
-                self.rt.ingest_execution(tid, sd, self.src.trip_execution(eid, seq), self.clock())
+                self.rt.ingest_execution(ktid, op_tid, sd, self.kp.trip_execution(eid, kidx), self.clock())
             except (SourceError, KeyError, TypeError) as e:
-                log.warning("trip_execution for trip %s skipped: %s", tid, e)
+                log.warning("trip_execution for trip %s skipped: %s", ktid, e)
 
     def rt_loop(self):
         r = self.cfg["realtime"]
@@ -134,7 +149,7 @@ class App:
             now = self.clock()
             mode = self.mode(now)
             wait = r["boost_interval_s"] if mode == "boost" else r["idle_interval_s"]
-            if mode == "quiet" or self.rt.idx is None or not r["priority_stops"]:
+            if mode == "quiet" or self.rt.idx is None or not r["priority_stops"] or not self.store.s["kp_stops"]:
                 wait = 60
             else:
                 try:
@@ -158,40 +173,43 @@ class App:
     # health -------------------------------------------------------------
     def health(self):
         now = self.clock()
-        g = self.guard.health()
         s = self.store.s
+        gk, go = self.g_kp.health(), self.g_op.health()
         poll = self.rt.last_poll_ok
-        have_static = self.zip_etag is not None
         status = "ok"
-        if not have_static:
+        if self.zip_etag is None:
             status = "down"
-        elif g["breaker"] == "open" or g["killed"] or self.static_err or self.rt_err:
+        elif gk["breaker"] == "open" or go["breaker"] == "open" or gk["killed"] or self.static_err or self.rt_err:
             status = "degraded"
+        bs = self.build_stats
+        lines = bs.get("lines", [])
+        rc = s.get("recon") or {}
         return {
             "status": status,
-            "source": {"breaker": g["breaker"], "breaker_reason": g["breaker_reason"],
-                       "breaker_until": g["breaker_until"], "killed": g["killed"],
-                       "requests_last_hour": g["requests_last_hour"], "hourly_budget": g["hourly_budget"],
-                       "lanes_last_hour": g["lanes_last_hour"], "lane_budgets": g["lane_budgets"],
-                       "requests_total": g["requests_total"], "last_status": g["last_status"],
-                       "status_counts": g["status_counts"], "last_success_age_s": g["last_ok_age_s"]},
+            "sources": {"operator": go, "kiedyprzyjedzie": gk},
             "static": {
-                "feed_version": self.build_stats.get("feed_version"),
-                "feed_start": self.build_stats.get("feed_start"), "feed_end": self.build_stats.get("feed_end"),
-                "published": {k: self.build_stats.get(k) for k in ("trips", "stops", "routes", "dropped")},
+                "feed_version": bs.get("feed_version"), "feed_start": bs.get("feed_start"), "feed_end": bs.get("feed_end"),
                 "built_age_s": int(now - self.last_build) if self.last_build else None,
-                "coverage": self.store.coverage(),
-                "crawl": {"trips_known": len(s["trips"]), "trips_seen": len(s["seen"]),
-                          "trips_pending": len([t for t in s["seen"] if t not in s["trips"]]),
-                          "trips_rejected": len(s["rejected"]), "cover_stops": len(s["cover"]),
-                          "probes_today": s["probe_day"]["n"], "last_job": self.crawler.stats["last_job"]},
+                "published": {k: bs.get(k) for k in ("trips", "stops", "routes")},
+                "lines_on_site": len(s["site_lines"]), "lines_with_trips": bs.get("lines_with_trips"),
+                "lines_missing_or_partial": [r["line"] for r in lines if r["status"] != "ok" or r["dropped_stops"]
+                                              or r["problems"] or not r["trips"]],
+                "lines": [{"line": r["line"], "trips": r["trips"], "stops": r["stops"], "kiedyprzyjedzie": r["kp_known"],
+                           "status": r["status"], "dropped_stops": r["dropped_stops"], "conditional_trips": r["conditional"],
+                           "problems": len(r["problems"])} for r in lines],
+                "positions": {k: rc.get(k) for k in ("op_stops", "within_30m", "30_to_100m")} | {
+                    "over_100m": len(rc.get("over_100m", [])), "operator_only": len(rc.get("op_only", [])),
+                    "kiedyprzyjedzie_names_without_operator": len(rc.get("kp_names_without_op", []))} if rc else None,
+                "crawl": {"last_job": self.crawler.stats["last_job"],
+                          "lines_fetched": len(s["lines"]), "census_done": len(s["kp_lines"])},
                 "last_error": self.static_err,
             },
             "realtime": {
                 "mode": self.mode(now), "last_poll_age_s": int(now - poll) if poll else None,
                 "priority_stops": self.cfg["realtime"]["priority_stops"],
-                "coverage_note": "only the priority stops are polled, so only trips calling at them get live data",
-                "entries": len(self.rt.entries), "stats": self.rt.stats, "last_error": self.rt_err,
+                "coverage_note": "only trips calling at the priority stops get live data",
+                "entries": len(self.rt.entries), "stats": self.rt.stats,
+                "mapped_trips": sum(1 for v in s["map"].values() if v["op"]), "last_error": self.rt_err,
             },
         }
 

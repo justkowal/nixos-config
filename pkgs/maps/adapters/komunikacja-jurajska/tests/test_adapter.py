@@ -1,6 +1,7 @@
-"""Offline tests on recorded fixtures (2026-10-21). Nothing here touches the live site.
+"""Offline tests on recorded fixtures (2026-10-21). Nothing here touches the live sites.
 
 The only sockets are loopback servers the tests start themselves.
+Operator pages in fixtures/op are slimmed recordings (timetable tables, validity, legend, map markers).
 """
 import base64
 import json
@@ -10,17 +11,22 @@ import tempfile
 import threading
 import tomllib
 import unittest
-import urllib.parse
+from datetime import date
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "adapter"))
 
+import calpl  # noqa: E402
+import client  # noqa: E402
 import crawl  # noqa: E402
 import gtfs  # noqa: E402
 import guard as guard_mod  # noqa: E402
 import main as main_mod  # noqa: E402
-from client import Source  # noqa: E402
+import opsite  # noqa: E402
+import recon  # noqa: E402
+from client import OpSource, Source  # noqa: E402
 from google.transit import gtfs_realtime_pb2 as pb  # noqa: E402
 from guard import Blocked, Guard, SourceError  # noqa: E402
 from rt import Rt  # noqa: E402
@@ -28,10 +34,12 @@ from store import Store  # noqa: E402
 
 FX = os.path.join(HERE, "fixtures")
 CFG = tomllib.load(open(os.path.join(HERE, "..", "config.toml"), "rb"))
-NOW = 1792565108  # 2026-10-21 08:45:08 Europe/Warsaw, when the timetable fixtures were recorded
+NOW = 1792565108  # 2026-10-21 08:45:08 Europe/Warsaw (a Wednesday)
 NOW_DEP = 1792565265  # departures_multi.json
 BLACH = "2303517:2391682"
 UA = CFG["source"]["user_agent"]
+LINES = ["102", "123B", "131", "141", "151"]
+CENSUS_REQUESTS = 4  # one fixture line has no same-name stop on kiedyPrzyjedzie, so no request is made for it
 
 
 def fx(name, raw=False):
@@ -40,7 +48,12 @@ def fx(name, raw=False):
     return b if raw else json.loads(b)
 
 
-class FixtureSource(Source):
+def op_page(name):
+    with open(os.path.join(FX, "op", name), encoding="utf-8") as f:
+        return f.read()
+
+
+class FixtureKp(Source):
     """Real client code, canned transport."""
 
     def __init__(self):
@@ -53,14 +66,11 @@ class FixtureSource(Source):
             return fx("home.html", raw=True)
         if path.startswith("/stops?rev="):
             return fx("stops.json", raw=True)
-        if path.startswith("/api/timetables/"):
-            pid, date = urllib.parse.unquote(path.split("/")[3].split("?")[0]), path.split("date=")[1]
-            if pid == BLACH and date in ("2026-10-21", "2026-10-22"):
-                return fx(f"timetable_{date}.json", raw=True)
-            return b'{"departures": [], "directions": []}'
         if path.startswith("/api/trip/"):
-            _, _, _, tid, idx = path.split("/")
-            return fx(f"trips/{tid}.json", raw=True)
+            try:
+                return fx(f"trips/{path.split('/')[3]}.json", raw=True)
+            except FileNotFoundError:
+                raise SourceError("HTTP 404") from None
         if path.startswith("/api/departures?places="):
             return fx("departures_multi.json", raw=True)
         if path.startswith("/api/trip_execution/"):
@@ -70,22 +80,39 @@ class FixtureSource(Source):
             raise SourceError("HTTP 404")
         raise AssertionError(path)
 
+    def line_known(self, place_id, line, date_):
+        self.paths.append(f"census {line} {place_id} {date_}")
+        return line in ("151", "102")
+
+
+class FixtureOp(OpSource):
+    def __init__(self):
+        super().__init__(None, "https://x", UA)
+        self.paths = []
+
+    def _page(self, path):
+        self.paths.append(path)
+        name = "home.html" if path == "/" else path.lstrip("/")
+        if not os.path.exists(os.path.join(FX, "op", name)):
+            raise SourceError("HTTP 404")
+        return op_page(name)
+
 
 def tmp_cfg(**static):
     cfg = json.loads(json.dumps(CFG))
-    cfg["static"].update(seed_stops=[BLACH], **static)
+    cfg["static"].update(static)
     return cfg
 
 
-def crawled(tmp, **static):
-    cfg = tmp_cfg(**static)
-    src, store = FixtureSource(), Store(os.path.join(tmp, "state.json"))
-    c = crawl.Crawler(cfg, store, src, clock=lambda: NOW)
+def crawled(tmp, now=NOW):
+    cfg = tmp_cfg()
+    kp, op, store = FixtureKp(), FixtureOp(), Store(os.path.join(tmp, "state.json"))
+    c = crawl.Crawler(cfg, store, kp, op, clock=lambda: now)
     n = 0
     while c.step():
         n += 1
-        assert n < 500
-    return cfg, src, store, c
+        assert n < 200
+    return cfg, kp, op, store, c
 
 
 class GuardTests(unittest.TestCase):
@@ -127,18 +154,24 @@ class GuardTests(unittest.TestCase):
         g.acquire("static")
 
     def test_ban_signals_trip_breaker_for_six_hours_and_persist(self):
-        for kw in ({"status": 403}, {"status": 429}, {"status": 200, "redirected": False, "blocked_body": True},
+        for kw in ({"status": 403}, {"status": 429}, {"status": 200, "blocked_body": True},
                    {"status": 302, "redirected": True}):
             g = self.mk()
             g.breaker_until = 0
             g.record(**kw)
             self.assertTrue(g.breaker_open(), kw)
             self.assertEqual(g.breaker_until - self.t[0], 21600)
-            g2 = self.mk()
             with self.assertRaises(Blocked):
-                g2.acquire("rt")
+                self.mk().acquire("rt")
         self.t[0] += 21601
         self.mk().acquire("rt")
+
+    def test_two_sources_have_separate_state(self):
+        a, b = self.mk(name="kp"), self.mk(name="op")
+        a.record(status=403)
+        self.assertTrue(a.breaker_open())
+        self.assertFalse(self.mk(name="op").breaker_open())
+        self.assertTrue(b is not a)
 
     def test_error_run_and_backoff(self):
         g = self.mk()
@@ -152,11 +185,11 @@ class GuardTests(unittest.TestCase):
         self.assertTrue(g.breaker_open())
         self.assertIn("consecutive errors", g.breaker_reason)
 
-    def test_success_resets_errors(self):
+    def test_soft_404_is_not_an_error(self):
         g = self.mk()
-        g.record(status=500)
-        g.record(status=200)
-        self.assertEqual(g.errors, 0)
+        for _ in range(8):
+            g.record(status=404, soft=True)
+        self.assertFalse(g.breaker_open())
 
     def test_kill_switch(self):
         kill = os.path.join(self.d, "KILL")
@@ -177,20 +210,13 @@ class _H(BaseHTTPRequestHandler):
     def do_GET(self):
         _H.seen_ua.append(self.headers.get("User-Agent"))
         p = self.path
-        if p == "/ok":
-            body, code, hdr = b'{"a": 1}', 200, {}
-        elif p == "/forbidden":
-            body, code, hdr = b"nope", 403, {}
-        elif p == "/limited":
-            body, code, hdr = b"slow down", 429, {}
-        elif p == "/moved":
-            body, code, hdr = b"", 302, {"Location": "/blocked"}
-        elif p == "/html":
-            body, code, hdr = b"<html>checking your browser</html>", 200, {}
-        elif p == "/cf":
-            body, code, hdr = b"<html>Just a moment... cloudflare</html>", 503, {}
-        else:
-            body, code, hdr = b"missing", 404, {}
+        table = {"/ok": (b'{"a": 1}', 200, {}), "/forbidden": (b"nope", 403, {}), "/limited": (b"slow", 429, {}),
+                 "/moved": (b"", 302, {"Location": "/blocked"}),
+                 "/html": (b"<html>checking your browser</html>", 200, {}),
+                 "/page": (b"<html>captcha in a contact form, timetable</html>", 200, {}),
+                 "/challenge": (b"<html><title>Just a moment...</title></html>", 200, {}),
+                 "/cf": (b"<html>Just a moment... cloudflare</html>", 503, {})}
+        body, code, hdr = table.get(p, (b"missing", 404, {}))
         self.send_response(code)
         for k, v in hdr.items():
             self.send_header(k, v)
@@ -229,6 +255,14 @@ class FetchTests(unittest.TestCase):
                 guard_mod.fetch(g, "rt", self.base + path, UA)
             self.assertTrue(g.breaker_open(), path)
 
+    def test_html_challenge_page_is_a_ban_but_the_word_captcha_is_not(self):
+        g = self.g()
+        guard_mod.fetch(g, "rt", self.base + "/page", UA, expect="html")
+        self.assertFalse(g.breaker_open())
+        with self.assertRaises(Blocked):
+            guard_mod.fetch(g, "rt", self.base + "/challenge", UA, expect="html")
+        self.assertTrue(g.breaker_open())
+
     def test_plain_404_is_an_error_not_a_ban(self):
         g = self.g()
         with self.assertRaises(SourceError):
@@ -236,207 +270,369 @@ class FetchTests(unittest.TestCase):
         self.assertFalse(g.breaker_open())
         self.assertEqual(g.errors, 1)
 
+    def test_soft_404_returns_status(self):
+        g = self.g()
+        status, _, _ = guard_mod.fetch(g, "rt", self.base + "/gone", UA, soft_404=True)
+        self.assertEqual(status, 404)
+        self.assertEqual(g.errors, 0)
+
 
 class ClientTests(unittest.TestCase):
-    def test_parsers(self):
-        s = FixtureSource()
+    def test_kp_parsers(self):
+        s = FixtureKp()
         self.assertEqual(s.stops_revision(), 9885)
         stops = s.stops(9885)
-        self.assertAlmostEqual(stops[BLACH]["lat"], 50.773215)
         self.assertEqual(stops["622548"]["station"], True)
-        self.assertEqual(len(s.timetable(BLACH, "2026-10-21")), 19)
         self.assertEqual(s.trip(38155603, 17)["line"]["name"], "151")
         self.assertEqual(len(s.departures([BLACH, "622548"])["departures"]), 2)
         self.assertEqual(s.trip_execution("151:739910:4", 17)["vehicle_trip_index"], 9)
         self.assertTrue(s.paths[-1].startswith("/api/trip_execution/MTUxOjczOTkxMDo0/"))
 
+    def test_line_known_uses_the_urlsafe_line_key_and_reads_404_as_unknown(self):
+        real = client.Source(None, "http://x", UA)
+        seen = []
+
+        def fake(guard, lane, url, ua, **kw):
+            seen.append(url)
+            assert kw.get("soft_404")
+            if url.split("/")[-1].startswith("OTk5"):
+                return 404, {}, b"<html>404</html>"
+            return 200, {}, fx("kp_timetable_line_151.json", raw=True)
+
+        with mock.patch.object(client, "fetch", fake):
+            self.assertTrue(real.line_known(BLACH, "151", "2026-10-21"))
+            self.assertFalse(real.line_known(BLACH, "999", "2026-10-21"))
+        self.assertTrue(seen[0].endswith("/api/timetable/2303517:2391682/MTUx?date=2026-10-21"))
+
     def test_shape_errors(self):
-        s = FixtureSource()
+        s = FixtureKp()
         s._get = lambda lane, path, **kw: b'{"nothing": 1}'
-        for f in (lambda: s.stops(1), lambda: s.timetable(BLACH, "2026-10-21"), lambda: s.trip(1, 1),
-                  lambda: s.departures([BLACH])):
+        for f in (lambda: s.stops(1), lambda: s.trip(1, 1), lambda: s.departures([BLACH])):
             with self.assertRaises(SourceError):
                 f()
 
+    def test_op_source_rejects_pages_without_timetable(self):
+        op = FixtureOp()
+        op._page = lambda path: "<html>Brak strony</html>"
+        with self.assertRaises(SourceError):
+            op.lines()
+        with self.assertRaises(SourceError):
+            op.line_page("linia-nr-1-i1.html")
+
+
+class OperatorParserTests(unittest.TestCase):
+    def test_home(self):
+        self.assertEqual([x for x, _ in opsite.parse_home(op_page("home.html"))], ["151", "102", "131", "141", "123B"])
+
+    def test_line_151(self):
+        p = opsite.parse_line(op_page("linia-nr-151-i223.html"))
+        self.assertEqual((p["valid_from"], p["valid_to"]), ("2026-03-01", "2026-12-31"))
+        self.assertEqual(p["reverse_url"], "linia-nr-151-i224.html")
+        self.assertEqual([d["id"] for d in p["directions"]], ["tam", "powrot"])
+        tam = p["directions"][0]
+        self.assertEqual(len(tam["stops"]), 37)
+        self.assertEqual(tam["stops"][0], "Częstochowa Dworzec Autobusowy")
+        days = [c["day"] for c in tam["courses"]]
+        self.assertEqual((days.count("wd"), days.count("sa"), days.count("su")), (13, 9, 9))
+        c1 = tam["courses"][0]
+        self.assertEqual((c1["times"][0], c1["times"][1]), (5 * 60 + 30, 5 * 60 + 31))
+        self.assertEqual(p["markers"][0][3], 1674)
+        self.assertEqual(p["problems"], [])
+
+    def test_symbols_and_not_calling_cells(self):
+        p = opsite.parse_line(op_page("linia-nr-102-i265.html"))
+        self.assertEqual(p["legend"]["q"], "kurs do przystanku Pająk Zalew następnie Jamki łącznik")
+        courses = [c for d in p["directions"] for c in d["courses"]]
+        self.assertTrue(any("q" in c["sym"] for c in courses))
+        self.assertTrue(any("S" in c["sym"] for c in courses))
+        self.assertTrue(any(None in c["times"] for c in courses))  # the "<<" cells
+        self.assertEqual(p["problems"], [])
+
+    def test_short_rows_are_flagged_not_hidden(self):
+        p = opsite.parse_line(op_page("linia-nr-141-i90.html"))
+        self.assertTrue(any("cells vs" in x for x in p["problems"]))
+
+    def test_one_way_line(self):
+        p = opsite.parse_line(op_page("linia-nr-131-i256.html"))
+        self.assertIsNone(p["reverse_url"])
+        rec = opsite.line_record(p, None, ("linia-nr-131-i256.html", None), NOW)
+        self.assertEqual((rec["crosscheck"], list(rec["dirs"])), ("one-way", ["A"]))
+
+    def test_line_record_crosschecks_both_pages_and_takes_ids_from_each(self):
+        main = opsite.parse_line(op_page("linia-nr-151-i223.html"))
+        rev = opsite.parse_line(op_page("linia-nr-151-i224.html"))
+        rec = opsite.line_record(main, rev, ("a", "b"), NOW)
+        self.assertEqual(rec["crosscheck"], "ok")
+        self.assertTrue(all(s["id"] is not None and s["lat"] is not None for d in rec["dirs"].values()
+                            for s in d["stops"]))
+        self.assertNotEqual(rec["dirs"]["A"]["stops"][0]["id"], rec["dirs"]["B"]["stops"][0]["id"])
+
+    def test_norm_matches_across_sources(self):
+        self.assertEqual(opsite.norm("Częstochowa Dworzec Autobusowy"), opsite.norm("Częstochowa, Dworzec Autobusowy"))
+        self.assertEqual(opsite.norm("Łyszkowice"), "lyszkowice")
+
+
+class CalendarTests(unittest.TestCase):
+    def test_easter_and_holidays(self):
+        self.assertEqual(calpl.easter(2026), date(2026, 4, 5))
+        self.assertEqual(calpl.easter(2025), date(2025, 4, 20))
+        h = calpl.holidays(2026)
+        for d in (date(2026, 4, 6), date(2026, 5, 24), date(2026, 6, 4), date(2026, 11, 11), date(2026, 12, 24)):
+            self.assertIn(d, h)
+        self.assertNotIn(date(2024, 12, 24), calpl.holidays(2024))
+
+    def test_day_type(self):
+        self.assertEqual(calpl.day_type(date(2026, 10, 21)), "wd")
+        self.assertEqual(calpl.day_type(date(2026, 10, 24)), "sa")
+        self.assertEqual(calpl.day_type(date(2026, 11, 1)), "su")
+        self.assertEqual(calpl.day_type(date(2026, 11, 11)), "su")  # Wednesday, public holiday
+
 
 class CrawlTests(unittest.TestCase):
-    def test_trip_seconds_anchor_and_midnight(self):
-        raw = {"times": [{"departure_time": t, "index": i} for i, t in enumerate(["23:50", "00:10", "00:30"])]}
-        self.assertEqual(crawl.trip_seconds(raw, 1, 86400 + 600), [85800 + 0, 87000, 88200])
-        self.assertEqual(crawl.trip_seconds(raw, 0, 85800), [85800, 87000, 88200])
-        with self.assertRaises(SourceError):
-            crawl.trip_seconds(raw, 0, 85800 + 60)
-
-    def test_full_crawl_from_fixtures(self):
+    def test_full_crawl_request_counts(self):
         with tempfile.TemporaryDirectory() as d:
-            cfg, src, store, c = crawled(d)
+            _, kp, op, store, c = crawled(d)
             s = store.s
-            self.assertEqual(len(s["trips"]), 19)
-            self.assertEqual(sorted(s["seen"]["38155603"]), ["2026-10-21", "2026-10-22"])
-            self.assertEqual(s["cover"], [BLACH])
-            kinds = [p.split("?")[0].split("/")[2] if p.startswith("/api") else p.split("?")[0] for p in src.paths]
-            self.assertEqual(kinds.count("/"), 1)
-            self.assertEqual(kinds.count("/stops"), 1)
-            self.assertEqual(kinds.count("trip"), 19)
-            # 7 window days for the one cover stop, then probes of stops no known trip serves
-            n_tt = kinds.count("timetables")
-            unserved = len(set(s["stops"]) - store.served_stops() - {BLACH})
-            self.assertEqual(n_tt, 7 + 3 * unserved)
-            self.assertEqual(c.step(), None)  # nothing left, no request
-            self.assertLessEqual(s["probe_day"]["n"], cfg["static"]["probe_per_day"])
+            self.assertEqual(sorted(s["lines"]), sorted(LINES))
+            # 1 start page, 5 first pages, 4 reverse pages (131 is one-way)
+            self.assertEqual(len(op.paths), 10)
+            self.assertEqual(kp.paths[:2], ["/", "/stops?rev=9885"])
+            self.assertEqual(len([p for p in kp.paths if p.startswith("census")]), CENSUS_REQUESTS)
+            self.assertIsNone(c.step())
+            self.assertEqual(s["kp_lines"]["151"]["known"], True)
+            self.assertEqual(s["kp_lines"]["131"]["known"], False)
 
-    def test_probe_cap_per_day(self):
-        with tempfile.TemporaryDirectory() as d:
-            _, src, store, _ = crawled(d, probe_per_day=4)
-            self.assertEqual(store.s["probe_day"]["n"], 4)
-
-    def test_unchanged_upstream_trip_is_refetched(self):
-        with tempfile.TemporaryDirectory() as d:
-            _, src, store, c = crawled(d)
-            rows = fx("timetable_2026-10-21.json")["departures"]
-            rows[0]["departure"] += 600
-            c._ingest(BLACH, "2026-10-21", rows, NOW)
-            self.assertNotIn(str(rows[0]["trip_id"]), store.s["trips"])
-
-    def test_bad_trip_is_rejected_not_fatal(self):
+    def test_each_step_is_at_most_one_request(self):
         with tempfile.TemporaryDirectory() as d:
             cfg = tmp_cfg()
-            src, store = FixtureSource(), Store(os.path.join(d, "state.json"))
-            orig = src.trip
-            src.trip = lambda tid, idx: orig(tid, idx + 0) if str(tid) != "38155599" else (_ for _ in ()).throw(SourceError("HTTP 404"))
-            c = crawl.Crawler(cfg, store, src, clock=lambda: NOW)
+            kp, op, store = FixtureKp(), FixtureOp(), Store(os.path.join(d, "state.json"))
+            c = crawl.Crawler(cfg, store, kp, op, clock=lambda: NOW)
+            while True:
+                before = len(kp.paths) + len(op.paths)
+                if not c.step():
+                    break
+                made = len(kp.paths) + len(op.paths) - before
+                self.assertEqual(made, 2 if c.stats["last_job"] == "kp-stops" else 1)  # that job reads the start page, then /stops
+
+    def test_line_pages_are_refetched_only_when_stale(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg, kp, op, store, c = crawled(d)
+            n = len(op.paths)
+            c.clock = lambda: NOW + 86400
+            self.assertEqual(c.step(), "home")  # daily list check
+            self.assertEqual(c.step(), "kp-stops")  # daily stop list revision check
+            self.assertIsNone(c.step())
+            self.assertEqual(len(op.paths), n + 1)
+            c.clock = lambda: NOW + 86400 * 4
+            self.assertEqual(c.step(), "home")
+            jobs = []
+            while True:
+                j = c.step()
+                if not j:
+                    break
+                jobs.append(j)
+            self.assertIn("line", jobs)
+
+    def test_failed_line_page_is_not_fatal_and_retried_later(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = tmp_cfg()
+            op = FixtureOp()
+            orig = op.line_page
+            op.line_page = lambda url: (_ for _ in ()).throw(SourceError("HTTP 500")) if "102" in url else orig(url)
+            store = Store(os.path.join(d, "state.json"))
+            c = crawl.Crawler(cfg, store, FixtureKp(), op, clock=lambda: NOW)
             while c.step():
                 pass
-            self.assertIn("38155599", store.s["rejected"])
-            self.assertEqual(len(store.s["trips"]), 18)
+            self.assertNotIn("102", store.s["lines"])
+            self.assertEqual(len(store.s["lines"]), 4)
+            self.assertIn("fail", store.s["line_fetch"]["102"])
 
 
 class GtfsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
-        _, _, cls.store, _ = crawled(cls.tmp)
-        cls.data, cls.stats = gtfs.build(cls.store, NOW, cls.store.coverage())
+        _, _, _, cls.store, _ = crawled(cls.tmp)
+        s = cls.store.s
+        cls.data, cls.stats = gtfs.build(cls.store, NOW, s["kp_stops"], s["kp_lines"], len(s["site_lines"]))
         cls.idx = gtfs.Index(cls.data)
 
-    def test_content(self):
-        self.assertEqual(self.stats["trips"], 19)
-        self.assertEqual(self.stats["routes"], 2)
-        self.assertEqual(set(self.idx.routes), {"line-151", "line-105"})
-        self.assertIn("38155603", self.idx.trips)
-        self.assertEqual(self.idx.stop_at("38155603", 17), BLACH)
-        self.assertEqual(self.idx.times["38155603"][17][1], 31980)
-        self.assertTrue(self.idx.active("38155603", "20261021"))
-        self.assertFalse(self.idx.active("38155603", "20261023"))
-        self.assertIn("-cov", self.idx.version)
+    def test_content_and_table(self):
+        st = self.stats
+        self.assertEqual((st["lines_on_site"], st["lines_with_trips"], st["line_coverage_percent"]), (5, 5, 100))
+        self.assertEqual({r["line"] for r in st["lines"]}, set(LINES))
+        self.assertEqual(sum(r["trips"] for r in st["lines"]), st["trips"])
+        self.assertEqual(set(self.idx.routes), {"line-" + x for x in LINES})
+        r151 = next(r for r in st["lines"] if r["line"] == "151")
+        self.assertEqual((r151["trips"], r151["stops"], r151["kp_known"], r151["status"]), (62, 71, True, "ok"))
 
-    def test_deterministic_and_stable_ids(self):
-        again, _ = gtfs.build(self.store, NOW, self.store.coverage())
+    def test_ids_and_sequences(self):
+        t = self.idx.times["151-A-wd-0530"]
+        self.assertEqual(min(t), 0)
+        self.assertEqual(t[0][1], 5 * 3600 + 30 * 60)
+        self.assertEqual(self.idx.trips["151-A-wd-0530"]["trip_headsign"], "Węglowice Szkoła")
+        self.assertTrue(self.idx.trips["151-A-wd-0530"]["service_id"].startswith("wd-20260301-20261231"))
+
+    def test_calendar_and_holidays(self):
+        t = "151-A-wd-0530"
+        self.assertTrue(self.idx.active(t, "20261021"))
+        self.assertFalse(self.idx.active(t, "20261024"))  # Saturday
+        self.assertFalse(self.idx.active(t, "20261111"))  # Wednesday, public holiday
+        su = "151-A-su-0520"
+        self.assertTrue(self.idx.active(su, "20261111"))
+        self.assertTrue(self.idx.active(su, "20261025"))
+        self.assertFalse(self.idx.active(su, "20261021"))
+        self.assertFalse(self.idx.active(t, "20270105"))  # after validity
+
+    def test_school_day_marker_is_kept(self):
+        marked = [t for t in self.idx.trips.values() if t["trip_short_name"]]
+        self.assertTrue(any("S" in t["trip_short_name"].split(",") for t in marked))
+        self.assertTrue(any(t["trip_short_name"] == "q" or "q" in t["trip_short_name"] for t in marked))
+
+    def test_stops_have_operator_positions(self):
+        self.assertTrue(all(float(r["stop_lat"]) and float(r["stop_lon"]) for r in self.idx.stops.values()))
+        self.assertIn("1674", self.idx.stops)
+
+    def test_deterministic(self):
+        s = self.store.s
+        again, _ = gtfs.build(self.store, NOW, s["kp_stops"], s["kp_lines"], 5)
         self.assertEqual(again, self.data)
 
-    def test_only_used_stops_and_known_coordinates(self):
-        self.assertTrue(set(self.idx.stops) <= set(self.store.s["stops"]))
-        self.assertTrue(all(r["stop_lat"] and r["stop_lon"] for r in self.idx.stops.values()))
-
-    def test_trip_with_unknown_stop_is_dropped_and_counted(self):
-        s = Store(os.path.join(self.tmp, "other.json"))
-        s.s = json.loads(json.dumps(self.store.s))
-        s.s["trips"]["38155603"]["stops"][0][0] = "nope"
-        data, stats = gtfs.build(s, NOW, s.coverage())
-        self.assertEqual(stats["dropped"]["unknown_stop"], 1)
-        self.assertNotIn("38155603", gtfs.Index(data).trips)
-
-    def test_past_dates_leave_the_calendar(self):
-        data, stats = gtfs.build(self.store, NOW + 86400 * 2, self.store.coverage())
+    def test_expired_timetable_is_reported_not_published(self):
+        s = self.store.s
+        data, stats = gtfs.build(self.store, NOW + 86400 * 400, s["kp_stops"], s["kp_lines"], 5)
         self.assertIsNone(data)
-        self.assertEqual(stats["dropped"]["no_dates"], 19)
+
+    def test_operator_marker_far_from_every_same_name_stop_uses_the_kp_position(self):
+        store = Store(os.path.join(self.tmp, "moved.json"))
+        store.s = json.loads(json.dumps(self.store.s))
+        st = store.s["lines"]["151"]["dirs"]["A"]["stops"][0]  # Częstochowa Dworzec Autobusowy, has a kp twin
+        st["lat"] += 0.05
+        sid = str(st["id"])
+        data, stats = gtfs.build(store, NOW, store.s["kp_stops"], {}, 5)
+        self.assertEqual(list(stats["position_overrides"]), [sid])
+        row = gtfs.Index(data).stops[sid]
+        self.assertAlmostEqual(float(row["stop_lat"]), 50.806291, places=3)
+        self.assertIn("kiedyPrzyjedzie", row["stop_desc"])
+        self.assertEqual(gtfs.Index(self.data).stops[sid]["stop_desc"], "")
+
+    def test_unresolvable_stop_is_dropped_and_counted(self):
+        store = Store(os.path.join(self.tmp, "other.json"))
+        store.s = json.loads(json.dumps(self.store.s))
+        st = store.s["lines"]["131"]["dirs"]["A"]["stops"][2]
+        st.update(id=None, lat=None, lon=None, name="Nigdzie Nieznane")
+        _, stats = gtfs.build(store, NOW, {}, {}, 5)
+        row = next(r for r in stats["lines"] if r["line"] == "131")
+        self.assertEqual(row["dropped_stops"], 1)
+
+
+class ReconTests(unittest.TestCase):
+    def test_positions_compared_by_name(self):
+        s = crawled(tempfile.mkdtemp())[3].s
+        op_stops, _ = gtfs.stop_table(s["lines"])
+        r = recon.compare(op_stops, s["kp_stops"])
+        self.assertEqual(r["op_stops"], len(op_stops))
+        self.assertEqual(r["within_30m"] + r["30_to_100m"] + len(r["over_100m"]) + len(r["op_only"]), len(op_stops))
+        self.assertGreater(r["within_30m"], 0)
+
+    def test_metres_and_buckets(self):
+        self.assertAlmostEqual(recon.metres((50.0, 19.0), (50.0, 19.001)), 71.5, delta=1)
+        names = recon.by_name({"k1": {"name": "Rynek", "lat": 50.0, "lon": 19.0}})
+        far = {"name": "Rynek", "lat": 50.0, "lon": 19.01}
+        self.assertGreater(recon.nearest_kp(far, names)[0], 100)
+        self.assertIsNone(recon.nearest_kp({"name": "Inny", "lat": 50.0, "lon": 19.0}, names))
 
 
 class RtTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        _, _, self.store, _ = crawled(self.tmp)
-        data, _ = gtfs.build(self.store, NOW, self.store.coverage())
+        _, _, _, self.store, _ = crawled(self.tmp)
+        s = self.store.s
+        data, _ = gtfs.build(self.store, NOW, s["kp_stops"], s["kp_lines"], 5)
         self.idx = gtfs.Index(data)
-        self.rt = Rt()
-        self.rt.set_static(self.idx, self.store.s["stops"])
-        self.src = FixtureSource()
+        self.rt = Rt(s["map"])
+        self.rt.set_static(self.idx, s["kp_stops"])
+        self.kp = FixtureKp()
 
     def feed(self, which, now=NOW_DEP + 5):
         f = pb.FeedMessage()
         f.ParseFromString(self.rt.build(now)[which])
         return f
 
+    def mapped(self):
+        resp = self.kp.departures([BLACH, "622548"])
+        cands, need = self.rt.ingest_departures(resp, NOW_DEP)
+        for ktid, kidx, dt in sorted(need):
+            if os.path.exists(os.path.join(FX, "trips", f"{ktid}.json")):
+                self.rt.map_trip(ktid, self.kp.trip(ktid, kidx), dt, NOW_DEP)
+        return resp
+
     def test_not_ready_before_first_poll(self):
         self.assertIsNone(self.rt.build(NOW))
 
-    def test_departures_matching_and_delay(self):
-        resp = self.src.departures([BLACH, "622548"])
-        cands = self.rt.ingest_departures(resp, NOW_DEP)
-        st = self.rt.stats
-        self.assertEqual((st["rows_seen"], st["rows_matched"]), (25, 5))
-        self.assertEqual(st["unmatched_reasons"], {"trip not in static feed": 20})
+    def test_live_trip_is_mapped_by_content_and_cached(self):
+        resp = self.kp.departures([BLACH])
+        _, need = self.rt.ingest_departures(resp, NOW_DEP)
+        self.assertIn(("38155603", 17, "wd"), need)
+        e = self.rt.map_trip("38155603", self.kp.trip(38155603, 17), "wd", NOW_DEP)
+        self.assertEqual(e["op"], "151-B-wd-0830")
+        self.assertEqual(len(e["seq"]), 36)
+        self.assertIn("38155603|wd", self.store.s["map"])
+        _, need = self.rt.ingest_departures(resp, NOW_DEP)
+        self.assertNotIn(("38155603", 17, "wd"), need)
+
+    def test_delay_attaches_to_operator_ids(self):
+        self.mapped()
+        cands, _ = self.rt.ingest_departures(self.kp.departures([BLACH]), NOW_DEP)
         tu = self.feed(0)
         self.assertEqual(tu.header.incrementality, pb.FeedHeader.FULL_DATASET)
         self.assertEqual(tu.header.timestamp, NOW_DEP)
         ents = {e.trip_update.trip.trip_id: e.trip_update for e in tu.entity}
-        u = ents["38155603"]
-        self.assertEqual(u.trip.start_date, "20261021")
-        self.assertEqual(u.trip.route_id, "line-151")
-        self.assertEqual((u.stop_time_update[0].stop_sequence, u.stop_time_update[0].stop_id), (17, BLACH))
+        u = ents["151-B-wd-0830"]
+        self.assertEqual((u.trip.start_date, u.trip.route_id), ("20261021", "line-151"))
         self.assertEqual(u.stop_time_update[0].departure.delay, 120)
-        self.assertIn("38155604", ents)
-        self.assertNotIn("37634158", ents)  # not is_estimated, so schedule only, no update
-        self.assertEqual([c[1] for c in cands][:1], ["38155603"])
-        self.assertEqual(cands[0][3], "151:739910:4")
+        seq = u.stop_time_update[0].stop_sequence
+        self.assertEqual(self.idx.stop_at("151-B-wd-0830", seq), u.stop_time_update[0].stop_id)
+        self.assertEqual(self.idx.stops[u.stop_time_update[0].stop_id]["stop_name"][:11], "Blachownia,")
+        self.assertEqual(cands[0][1:4], ("38155603", 17, "151:739910:4"))
+        self.assertNotIn("37634158", [e.trip_update.trip.trip_id for e in tu.entity])
+
+    def test_unmapped_rows_are_counted_not_guessed(self):
+        self.rt.ingest_departures(self.kp.departures([BLACH, "622548"]), NOW_DEP)
+        r = self.rt.stats["unmatched_reasons"]
+        self.assertEqual(r["no operator trip matched (yet)"], self.rt.stats["rows_unmatched"])
+        self.assertEqual(len(self.feed(0).entity), 0)
 
     def test_execution_gives_vehicle_and_stop_delays(self):
-        self.rt.ingest_departures(self.src.departures([BLACH]), NOW_DEP)
-        ok = self.rt.ingest_execution("38155603", "20261021", self.src.trip_execution("151:739910:4", 17), NOW_DEP)
+        self.mapped()
+        self.rt.ingest_departures(self.kp.departures([BLACH]), NOW_DEP)
+        ok = self.rt.ingest_execution("38155603", "151-B-wd-0830", "20261021",
+                                      self.kp.trip_execution("151:739910:4", 17), NOW_DEP)
         self.assertTrue(ok)
-        vp = self.feed(1)
-        v = vp.entity[0].vehicle
-        self.assertEqual((v.trip.trip_id, v.trip.start_date, v.trip.route_id), ("38155603", "20261021", "line-151"))
-        self.assertEqual((v.current_stop_sequence, v.current_status), (10, pb.VehiclePosition.IN_TRANSIT_TO))
-        self.assertAlmostEqual(v.position.latitude, 50.785007, places=4)
-        self.assertEqual(v.stop_id, self.idx.stop_at("38155603", 10))
-        tu = [e.trip_update for e in self.feed(0).entity if e.trip_update.trip.trip_id == "38155603"][0]
+        v = self.feed(1).entity[0].vehicle
+        self.assertEqual((v.trip.trip_id, v.trip.start_date, v.trip.route_id), ("151-B-wd-0830", "20261021", "line-151"))
+        self.assertEqual(v.current_status, pb.VehiclePosition.IN_TRANSIT_TO)
+        self.assertEqual(v.stop_id, self.idx.stop_at("151-B-wd-0830", v.current_stop_sequence))
+        tu = [e.trip_update for e in self.feed(0).entity if e.trip_update.trip.trip_id == "151-B-wd-0830"][0]
         seqs = [u.stop_sequence for u in tu.stop_time_update]
         self.assertEqual(seqs, sorted(set(seqs)))
-        self.assertEqual(seqs[-1], 36)
-        self.assertTrue(all(u.stop_id == self.idx.stop_at("38155603", u.stop_sequence) for u in tu.stop_time_update))
-        self.assertTrue(all(u.arrival.delay == 0 for u in tu.stop_time_update if u.stop_sequence >= 10))
+        self.assertTrue(all(u.stop_id == self.idx.stop_at("151-B-wd-0830", u.stop_sequence) for u in tu.stop_time_update))
+        self.assertTrue(all(u.arrival.delay == 0 for u in tu.stop_time_update if u.stop_sequence >= v.current_stop_sequence))
 
-    def test_execution_mismatch_is_rejected(self):
-        self.rt.ingest_departures(self.src.departures([BLACH]), NOW_DEP)
-        raw = self.src.trip_execution("151:739910:4", 17)
-        raw["trip"]["times"][12]["place_id"] = "other"
-        self.assertFalse(self.rt.ingest_execution("38155603", "20261021", raw, NOW_DEP))
-        self.assertEqual(self.rt.stats["executions_unmatched"], 1)
+    def test_execution_for_unmapped_trip_is_refused(self):
+        self.assertFalse(self.rt.ingest_execution("38155603", "151-B-wd-0830", "20261021",
+                                                  self.kp.trip_execution("151:739910:4", 17), NOW_DEP))
 
-    def test_start_date_yesterday_for_after_midnight_trip(self):
-        idx = self.idx
-        tid = "38155611"
-        idx.times[tid][0] = (idx.times[tid][0][0], 25 * 3600)  # 01:00 the next calendar day
-        idx.dates["svc-" + tid] = {"20261021"}
-        now = 1792620000 + 3600  # 2026-10-22 01:00 local
-        self.assertEqual(self.rt.start_date(tid, 0, now), "20261021")
-        self.assertIsNone(self.rt.start_date(tid, 0, now + 86400))
+    def test_ambiguity_gives_no_match(self):
+        raw = self.kp.trip(38155603, 17)
+        raw["line"]["name"] = "no-such-line"
+        self.assertIsNone(self.rt.map_trip("zz", raw, "wd", NOW)["op"])
 
-    def test_skipped_and_entries_expire(self):
-        resp = self.src.departures([BLACH])
-        resp["departures"][0]["rows"][1]["canceled"] = True
-        self.rt.ingest_departures(resp, NOW_DEP)
-        tu = [e.trip_update for e in self.feed(0).entity if e.trip_update.trip.trip_id == "38155603"][0]
-        self.assertEqual(tu.stop_time_update[0].schedule_relationship,
-                         pb.TripUpdate.StopTimeUpdate.SKIPPED)
+    def test_entries_expire(self):
+        self.mapped()
+        self.rt.ingest_departures(self.kp.departures([BLACH]), NOW_DEP)
+        self.assertGreater(len(self.feed(0).entity), 0)
         self.assertEqual(len(self.feed(0, now=NOW_DEP + 10_000).entity), 0)
-
-    def test_wrong_stop_at_sequence_not_matched(self):
-        resp = self.src.departures([BLACH])
-        resp["departures"][0]["rows"][1]["trip_index"] = 16
-        self.rt.ingest_departures(resp, NOW_DEP)
-        self.assertIn("stop does not match static trip at that sequence", self.rt.stats["unmatched_reasons"])
 
 
 class AppTests(unittest.TestCase):
@@ -445,15 +641,15 @@ class AppTests(unittest.TestCase):
         cfg = tmp_cfg()
         cfg["breaker"]["kill_file"] = os.path.join(d, "KILL")
         app = main_mod.App(cfg, d, clock=lambda: NOW_DEP)
-        app.src = FixtureSource()
-        app.crawler = crawl.Crawler(cfg, app.store, app.src, clock=lambda: NOW)
+        app.kp, app.op = FixtureKp(), FixtureOp()
+        app.crawler = crawl.Crawler(cfg, app.store, app.kp, app.op, clock=lambda: NOW)
         return app
 
     def test_quiet_hours(self):
-        self.assertTrue(main_mod.in_quiet(1792618800, "23:30", "04:00"))  # 2026-10-22 00:20 local
+        self.assertTrue(main_mod.in_quiet(1792618800, "23:30", "04:00"))
         self.assertFalse(main_mod.in_quiet(NOW, "23:30", "04:00"))
 
-    def test_health_down_then_ok_and_poll_budget(self):
+    def test_health_down_then_ok_with_per_line_table(self):
         app = self.mk()
         self.assertEqual(app.health()["status"], "down")
         while app.crawler.step():
@@ -463,27 +659,39 @@ class AppTests(unittest.TestCase):
         app.clock = lambda: NOW_DEP
         h = app.health()
         self.assertEqual(h["status"], "ok")
-        self.assertEqual(h["static"]["published"]["trips"], 19)
-        self.assertEqual(h["static"]["coverage"]["stops_total"], 79)
-        app.src.paths.clear()
+        st = h["static"]
+        self.assertEqual((st["lines_on_site"], st["lines_with_trips"]), (5, 5))
+        row = next(r for r in st["lines"] if r["line"] == "151")
+        self.assertEqual((row["trips"], row["stops"], row["kiedyprzyjedzie"]), (62, 71, True))
+        self.assertIn("141", st["lines_missing_or_partial"])  # short rows in the source are reported
+        self.assertGreater(st["positions"]["within_30m"], 0)
+
+    def test_poll_cycle_budget_and_mapping(self):
+        app = self.mk()
+        while app.crawler.step():
+            pass
+        app.clock = lambda: NOW
+        app.rebuild()
+        app.clock = lambda: NOW_DEP
+        app.kp.paths.clear()
         app.poll_once(NOW_DEP)
-        self.assertEqual([p.split("?")[0].split("/")[2] for p in app.src.paths], ["departures", "trip_execution"])
-        app.cfg["realtime"]["execution_window_s"] = 86400
-        app.cfg["realtime"]["trips_per_cycle_idle"] = 2
-        app.src.paths.clear()
+        kinds = [p.split("?")[0].split("/")[2] for p in app.kp.paths]
+        self.assertEqual(kinds[0], "departures")
+        self.assertIn("trip", kinds)  # one-off mapping calls
+        self.assertLessEqual(kinds.count("trip"), CFG["realtime"]["map_per_cycle"])
+        self.assertLessEqual(kinds.count("trip_execution"), 1)
+        app.kp.paths.clear()
         app.poll_once(NOW_DEP)
-        self.assertEqual([p.split("?")[0].split("/")[2] for p in app.src.paths],
-                         ["departures"] + ["trip_execution"] * 2)
+        again = [p.split("?")[0].split("/")[2] for p in app.kp.paths]
+        self.assertLess(again.count("trip"), kinds.count("trip") + 1)
         app.boost()
         self.assertEqual(app.mode(NOW_DEP), "boost")
-        app.src.paths.clear()
-        app.poll_once(NOW_DEP)
-        self.assertEqual(len(app.src.paths), 2)  # one departures call plus a single execution call
 
     def test_http_endpoints(self):
         app = self.mk()
         while app.crawler.step():
             pass
+        app.clock = lambda: NOW
         app.rebuild()
         srv = HTTPServer(("127.0.0.1", 0), main_mod.handler(app))
         threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -501,7 +709,8 @@ class AppTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 urllib.request.urlopen(base + "/gtfs-rt/trip-updates.pb")
             self.assertEqual(cm.exception.code, 503)
-            self.assertIn(b'"breaker": "closed"', urllib.request.urlopen(base + "/health").read())
+            body = urllib.request.urlopen(base + "/health").read()
+            self.assertIn(b'"breaker": "closed"', body)
         finally:
             srv.shutdown()
 

@@ -19,6 +19,7 @@ MIN_SPACING_S = 5.0
 MAX_HOURLY_BUDGET = 100
 MIN_COOLDOWN_S = 6 * 3600
 BAN_STATUSES = {403, 429}
+CHALLENGE_MARKERS = (b"cf-chl", b"just a moment", b"checking your browser", b"attention required", b"ray id")
 BLOCK_MARKERS = (b"captcha", b"cf-chl", b"cloudflare", b"access denied", b"just a moment", b"bot detection")
 
 
@@ -35,7 +36,7 @@ class SourceError(OSError):
 
 
 class Guard:
-    def __init__(self, state_dir, lanes, spacing_s=5, jitter_s=3, hourly_budget=100,
+    def __init__(self, state_dir, lanes, name="kp", spacing_s=5, jitter_s=3, hourly_budget=100,
                  backoff_base_s=30, backoff_max_s=900, cooldown_s=21600, error_run=5,
                  kill_file=None, clock=time.time, sleep=time.sleep, rand=random.uniform):
         self.spacing = max(float(spacing_s), MIN_SPACING_S)
@@ -47,7 +48,8 @@ class Guard:
         self.error_run = error_run
         self.kill_file = kill_file
         self.clock, self.sleep, self.rand = clock, sleep, rand
-        self.path = os.path.join(state_dir, "guard.json")
+        self.path = os.path.join(state_dir, f"guard-{name}.json")
+        self.name = name
         self.lock = threading.Lock()
         self.stamps = []  # [ts, lane]
         self.total_requests = 0
@@ -138,7 +140,7 @@ class Guard:
             self.total_requests += 1
             self._save()
 
-    def record(self, status=None, error=False, redirected=False, blocked_body=False):
+    def record(self, status=None, error=False, redirected=False, blocked_body=False, soft=False):
         with self.lock:
             self.last_status = status
             if status is not None:
@@ -150,7 +152,7 @@ class Guard:
                 self.trip("unexpected redirect")
             elif blocked_body:
                 self.trip("bot challenge, block page or unexpected payload")
-            elif error or (status is not None and status >= 400):
+            elif error or (status is not None and status >= 400 and not soft):
                 self.errors += 1
                 if self.errors >= self.error_run:
                     self.trip(f"{self.errors} consecutive errors")
@@ -186,7 +188,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _opener = urllib.request.build_opener(_NoRedirect)
 
 
-def fetch(guard, lane, url, user_agent, expect="json", must_contain=None, max_bytes=5_000_000, timeout=30):
+def fetch(guard, lane, url, user_agent, expect="json", must_contain=None, max_bytes=5_000_000, timeout=30,
+          soft_404=False):
     """One guarded GET. Returns (status, headers, body). Raises Blocked or SourceError."""
     guard.acquire(lane)
     req = urllib.request.Request(url, headers={"User-Agent": user_agent, "Accept-Encoding": "identity"})
@@ -214,9 +217,15 @@ def fetch(guard, lane, url, user_agent, expect="json", must_contain=None, max_by
             blocked = True
         if must_contain and must_contain not in body:
             blocked = True
+        # the operator's pages mention "captcha" in their contact form, so only challenge-page phrases count here
+        if expect == "html" and any(m in body[:8192].lower() for m in CHALLENGE_MARKERS):
+            blocked = True
     elif status >= 400 and any(m in body[:4096].lower() for m in BLOCK_MARKERS):
         blocked = True
-    guard.record(status=status, redirected=redirected, blocked_body=blocked)
+    soft = soft_404 and status == 404 and not blocked
+    guard.record(status=status, redirected=redirected, blocked_body=blocked, soft=soft)
+    if soft:
+        return status, hdrs, body
     if redirected or blocked or status in BAN_STATUSES:
         raise Blocked(f"ban signal (status {status})", guard.cooldown)
     if status >= 400:

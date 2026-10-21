@@ -1,179 +1,134 @@
 """Static crawler. One call to step() makes at most one request and returns the job name or None.
 
-Discovery: /api/timetables/<stop>?date= lists every trip calling at that stop on that date, so a
-small set of "cover" stops finds all trips. A stop that no known trip serves is probed to find
-lines nobody has seen yet. /api/trip/<id>/<index> is fetched once per trip id and cached.
+Sources: the operator site is the timetable source (start page -> line pages -> reverse pages),
+kiedyPrzyjedzie provides its stop list (for comparing positions and for realtime) and, once per
+line, a yes/no on whether it serves the line (live data possible).
 """
 import logging
 import time
-from datetime import date as Date
 from datetime import timedelta
 
+import opsite
+import recon
 from guard import SourceError
-from store import today_waw, window
+from store import today_waw
 
 log = logging.getLogger("crawl")
 DAY = 86400
 
 
-def hhmm(s):
-    h, m = s.split(":")
-    return int(h) * 3600 + int(m) * 60
-
-
-def trip_seconds(raw, index, observed):
-    """Absolute seconds from service-day midnight per stop. Anchored on the timetable's own value."""
-    out, prev, day = [], -1, 0
-    for t in raw["times"]:
-        s = hhmm(t["departure_time"]) + day * DAY
-        if s < prev:
-            day += 1
-            s += DAY
-        out.append(s)
-        prev = s
-    pos = next((i for i, t in enumerate(raw["times"]) if t["index"] == index), None)
-    if pos is None:
-        raise SourceError("anchor index missing in trip")
-    shift = observed - out[pos]
-    if shift % DAY or out[0] + shift < 0:
-        raise SourceError("trip times disagree with the timetable")
-    return [s + shift for s in out]
+def line_key(line):
+    digits = "".join(c for c in line if c.isdigit())
+    return (int(digits) if digits else 0, line)
 
 
 class Crawler:
-    def __init__(self, cfg, store, source, clock=time.time):
-        self.c, self.st, self.src, self.clock = cfg["static"], store, source, clock
-        self.stats = {"trips_rejected": 0, "last_job": None}
+    def __init__(self, cfg, store, kp, op, clock=time.time):
+        self.c, self.st, self.kp, self.op, self.clock = cfg["static"], store, kp, op, clock
+        self.stats = {"last_job": None}
 
-    # helpers ----------------------------------------------------------
-    def _dates(self, now):
-        return window(now, self.c["window_days"])
-
-    def _probe_dates(self, now):
-        want = {"wd": None, "sa": None, "su": None}
-        for d in self._dates(now):
-            wd = Date.fromisoformat(d).weekday()
-            k = "wd" if wd < 5 else "sa" if wd == 5 else "su"
-            if want[k] is None:
-                want[k] = d
-        return [d for d in want.values() if d]
-
-    def _ingest(self, pid, date, rows, now):
-        s = self.st.s
-        s["tt"][f"{pid}|{date}"] = now
-        for r in rows:
-            tid = str(r["trip_id"])
-            days = set(s["seen"].get(tid, []))
-            days.add(date)
-            s["seen"][tid] = sorted(days)
-            s["obs"].setdefault(tid, [r["index"], r["departure"]])
-            trip = s["trips"].get(tid)
-            if trip:
-                have = {x[2]: x[1] for x in trip["stops"]}
-                if have.get(r["index"]) != r["departure"]:
-                    log.info("trip %s changed upstream, refetching", tid)
-                    del s["trips"][tid]
-                    s["obs"][tid] = [r["index"], r["departure"]]
-                    s["rejected"].pop(tid, None)
-
-    def _prune(self, now):
-        s = self.st.s
-        old = (today_waw(now) - timedelta(days=3)).isoformat()
-        for tid in list(s["seen"]):
-            s["seen"][tid] = [d for d in s["seen"][tid] if d >= old]
-            if not s["seen"][tid]:
-                for k in ("seen", "trips", "obs", "rejected"):
-                    s[k].pop(tid, None)
-        for k in [k for k in s["tt"] if k.split("|")[1] < old]:
-            del s["tt"][k]
-
-    # jobs -------------------------------------------------------------
     def step(self):
         now = self.clock()
         with self.st.lock:
-            job = (self._stops(now) or self._trip(now) or self._timetable(now) or self._probe(now))
-        if job:
-            self._prune(now)
-            self.st.save()
+            job = self._home(now) or self._line(now) or self._kp_stops(now) or self._census(now)
+            if job:
+                self.st.save()
         self.stats["last_job"] = job
         return job
 
-    def _stops(self, now):
+    # operator ----------------------------------------------------------
+    def _home(self, now):
         s = self.st.s
-        if s["stops"] and now - s["stops_checked"] < self.c["stops_check_interval_s"]:
+        if s["site_lines"] and now - s["op_home_checked"] < self.c["home_check_interval_s"]:
             return None
-        rev = self.src.stops_revision()
-        s["stops_checked"] = now
-        if rev != s["stops_rev"] or not s["stops"]:
-            s["stops"] = self.src.stops(rev)
-            s["stops_rev"] = rev
-            s["cover"] = [p for p in s["cover"] if p in s["stops"]]
-        for p in self.c["seed_stops"]:
-            if p in s["stops"] and p not in s["cover"]:
-                s["cover"].append(p)
-        return "stops"
+        found = self.op.lines()
+        s["site_lines"] = {line: url for line, url in found}
+        s["op_home_checked"] = now
+        for gone in set(s["lines"]) - set(s["site_lines"]):
+            log.info("line %s is no longer listed, dropping it", gone)
+            del s["lines"][gone]
+        return "home"
 
-    def _trip(self, now):
+    def _line(self, now):
         s = self.st.s
-        retry = self.c["rejected_retry_s"]
-        pending = sorted(t for t in s["seen"] if t not in s["trips"] and now - s["rejected"].get(t, 0) > retry)
-        if not pending:
-            return None
-        tid = pending[0]
-        idx, obs = s["obs"][tid]
-        try:
-            raw = self.src.trip(tid, idx)
-            secs = trip_seconds(raw, idx, obs)
-        except SourceError as e:
-            s["rejected"][tid] = now
-            self.stats["trips_rejected"] += 1
-            log.warning("trip %s rejected: %s", tid, e)
-            return "trip-rejected"
-        s["trips"][tid] = {"line": str(raw["line"].get("name", "")), "headsign": raw["direction"],
-                           "stops": [[t["place_id"], secs[i], t["index"]] for i, t in enumerate(raw["times"])]}
-        return "trip"
-
-    def _timetable(self, now):
-        s = self.st.s
-        dates = self._dates(now)
-        stale = self.c["tt_refresh_days"] * DAY
-        for pid in s["cover"]:
-            for d in dates:
-                ts = s["tt"].get(f"{pid}|{d}")
-                if ts is None or (d > dates[0] and now - ts > stale):
-                    self._ingest(pid, d, self.src.timetable(pid, d), now)
-                    return "timetable"
+        stale = self.c["line_refresh_days"] * DAY
+        retry = self.c["fail_retry_s"]
+        pend = s.setdefault("pending", {})
+        for line in sorted(s["site_lines"], key=line_key):
+            f = s["line_fetch"].setdefault(line, {})
+            if line in pend:  # main page read, reverse page still to do
+                url = pend[line]["reverse_url"]
+                try:
+                    rev = self.op.line_page(url)
+                except SourceError as e:
+                    log.warning("reverse page of line %s failed: %s", line, e)
+                    rev = None
+                    f["fail"] = now
+                s["lines"][line] = opsite.line_record(pend.pop(line), rev, (s["site_lines"][line], url), now)
+                f["done"] = now
+                return "line-rev"
+            have = line in s["lines"]
+            if have and now - f.get("done", 0) < stale:
+                continue
+            if now - f.get("fail", 0) < retry and not (have and now - f.get("done", 0) >= stale * 2):
+                continue
+            try:
+                main = self.op.line_page(s["site_lines"][line])
+            except SourceError as e:
+                f["fail"] = now
+                log.warning("line %s page failed: %s", line, e)
+                return "line-failed"
+            if main["reverse_url"]:
+                pend[line] = main
+            else:
+                s["lines"][line] = opsite.line_record(main, None, (s["site_lines"][line], None), now)
+                f["done"] = now
+            return "line"
         return None
 
-    def _probe(self, now):
+    # kiedyPrzyjedzie ----------------------------------------------------
+    def _kp_stops(self, now):
         s = self.st.s
-        today = self._dates(now)[0]
-        pd = s["probe_day"]
-        if pd["date"] != today:
-            pd.update(date=today, n=0)
-        if pd["n"] >= self.c["probe_per_day"]:
+        if s["kp_stops"] and now - s["kp_checked"] < self.c["stops_check_interval_s"]:
             return None
-        served = self.st.served_stops()
-        skip = served | set(s["cover"])
-        retry = self.c["probe_retry_days"] * DAY
-        cand = [p for p, v in s["stops"].items()
-                if p not in skip and now - s["probe"].get(p, {}).get("ts", 0) > retry]
-        if not cand:
+        if not s["lines"] and not s["kp_stops"]:
+            return None  # nothing to compare against yet
+        rev = self.kp.stops_revision()
+        s["kp_checked"] = now
+        if rev != s["kp_rev"] or not s["kp_stops"]:
+            s["kp_stops"] = self.kp.stops(rev)
+            s["kp_rev"] = rev
+        return "kp-stops"
+
+    def _census(self, now):
+        s = self.st.s
+        if not s["kp_stops"]:
             return None
-        cand.sort(key=lambda p: (not s["stops"][p]["station"], s["stops"][p]["name"], p))
-        pid = cand[0]
-        for d in self._probe_dates(now):
-            key = f"{pid}|{d}"
-            if key in s["tt"]:
+        names = recon.by_name(s["kp_stops"])
+        stale = self.c["census_refresh_days"] * DAY
+        today = today_waw(now)
+        for line in sorted(s["lines"], key=line_key):
+            c = s["kp_lines"].get(line)
+            if c and now - c["ts"] < stale:
                 continue
-            rows = self.src.timetable(pid, d)
-            pd["n"] += 1
-            self._ingest(pid, d, rows, now)
-            if rows:
-                s["cover"].append(pid)
-                s["probe"][pid] = {"ts": now, "empty": False}
-            elif all(f"{pid}|{x}" in s["tt"] for x in self._probe_dates(now)):
-                s["probe"][pid] = {"ts": now, "empty": True}
-            return "probe"
-        s["probe"][pid] = {"ts": now, "empty": True}
-        return "probe"
+            rec = s["lines"][line]
+            side = rec["dirs"].get("A") or next(iter(rec["dirs"].values()), None)
+            place = None
+            for st in (side["stops"] if side else []):
+                hits = names.get(opsite.norm(st["name"]))
+                if hits:
+                    near = recon.nearest_kp(st, names) if st["lat"] is not None else None
+                    place = near[1] if near else hits[0][0]
+                    break
+            if place is None:
+                s["kp_lines"][line] = {"known": False, "ts": now, "why": "no stop of the line has a same-name stop there"}
+                continue
+            days = {c["day"] for d in rec["dirs"].values() for c in d["courses"]}
+            wanted = {0, 1, 2, 3, 4} if "wd" in days else {5} if "sa" in days else {6}
+            d = today
+            while d.weekday() not in wanted:
+                d += timedelta(days=1)
+            known = self.kp.line_known(place, line, d.isoformat())
+            s["kp_lines"][line] = {"known": known, "ts": now, "place": place, "date": d.isoformat()}
+            return "census"
+        return None

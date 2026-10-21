@@ -1,8 +1,8 @@
-"""GTFS-RT from the site's departure boards and trip_execution calls, matched against the published static feed.
+"""GTFS-RT from the kiedyPrzyjedzie boards, attached to the OPERATOR-based static feed.
 
-TripUpdates: stop-level delays, keyed on (trip_id, start_date, stop_sequence + stop_id).
-VehiclePositions: only for trips polled through trip_execution.
-Anything that does not match the static feed exactly is counted and dropped.
+The two sources use different ids, so a live trip is attached by content: same line, same day type,
+and the same (stop name, minute) pairs. The match is made once per (live trip id, day type) and cached.
+No match means no realtime for that trip; nothing is guessed.
 """
 import logging
 import threading
@@ -10,10 +10,13 @@ from datetime import datetime, timedelta
 
 from google.transit import gtfs_realtime_pb2 as pb
 
+from calpl import day_type
+from opsite import norm
 from store import WAW
 
 log = logging.getLogger("rt")
 DAY = 86400
+MAP_RETRY_S = 86400
 
 
 def local_midnight(yyyymmdd):
@@ -32,119 +35,171 @@ def wrap(d):
 
 
 class Rt:
-    def __init__(self, max_age_s=600, horizon_s=14 * 3600):
+    def __init__(self, mapping, max_age_s=600, horizon_s=14 * 3600, min_match=0.8):
         self.idx = None
-        self.designators = {}
-        self.max_age, self.horizon = max_age_s, horizon_s
-        self.entries = {}  # (trip_id, start_date) -> {"stops": {seq: {...}}, "vehicle": {...}, "ts": int}
+        self.kp_stops = {}
+        self.map = mapping
+        self.max_age, self.horizon, self.min_match = max_age_s, horizon_s, min_match
+        self.entries = {}  # (op trip id, start_date) -> {"stops": {seq: {...}}, "vehicle": {...}, "ts": int}
         self.lock = threading.Lock()
         self.last_poll_ok = None
         self.stats = {"rows_seen": 0, "rows_matched": 0, "rows_unmatched": 0, "unmatched_reasons": {},
-                      "executions_ok": 0, "executions_unmatched": 0}
+                      "trips_mapped": 0, "trips_unmapped": 0, "executions_ok": 0, "executions_unmatched": 0}
 
-    def set_static(self, idx, stops):
-        self.idx = idx
-        self.designators = {v["designator"]: pid for pid, v in stops.items()}
+    def set_static(self, idx, kp_stops):
+        self.idx, self.kp_stops = idx, kp_stops
+        self.designators = {v["designator"]: pid for pid, v in kp_stops.items()}
 
     def _miss(self, why):
         self.stats["rows_unmatched"] += 1
         r = self.stats["unmatched_reasons"]
         r[why] = r.get(why, 0) + 1
 
-    def start_date(self, tid, seq, now):
-        """Pick today or yesterday (service day) by how close the scheduled time at that stop is to now."""
-        stop = self.idx.times.get(tid, {}).get(seq)
-        if not stop:
+    # mapping -------------------------------------------------------------
+    def _entry(self, kp_tid, dt, now):
+        e = self.map.get(f"{kp_tid}|{dt}")
+        if e is None:
             return None
+        if e["op"] is None and now - e["ts"] > MAP_RETRY_S:
+            return None
+        if e["op"] is not None and e["op"] not in self.idx.trips:
+            return None
+        return e
+
+    def map_trip(self, kp_tid, raw, dt, now):
+        """Match a kiedyPrzyjedzie trip (the /api/trip payload) to one operator trip of the given day type."""
+        line = str(raw["line"].get("name", ""))
+        kp = {}
+        for t in raw["times"]:
+            kp[(norm(t["stop_name"]), (hhmm(t["departure_time"]) // 60) % 1440)] = t["index"]
+        scored = []
+        for tid in self.idx.by_line.get(line, []):
+            if not self.idx.trips[tid]["service_id"].startswith(dt + "-"):
+                continue
+            sig = self.idx.sig[tid]
+            common = [k for k in kp if k in sig]
+            scored.append((len(common) / max(1, min(len(kp), len(sig))), tid, common))
+        scored.sort(reverse=True)
+        best = scored[0] if scored else None
+        ok = best and best[0] >= self.min_match and (len(scored) < 2 or scored[1][0] < best[0])
+        entry = {"op": best[1] if ok else None, "ts": now,
+                 "seq": {str(kp[k]): self.idx.sig[best[1]][k] for k in best[2]} if ok else {}}
+        self.stats["trips_mapped" if ok else "trips_unmapped"] += 1
+        self.map[f"{kp_tid}|{dt}"] = entry
+        return entry
+
+    # ingestion -------------------------------------------------------------
+    def _date_for(self, kp_tid, kp_index, now, need):
+        """Best (start_date, op trip id, seq map entry) among today and yesterday, or None."""
         local = datetime.fromtimestamp(now, WAW).date()
         best = None
         for back in (0, 1):
-            d = (local - timedelta(days=back)).strftime("%Y%m%d")
-            if not self.idx.active(tid, d):
+            d = local - timedelta(days=back)
+            dt, ds = day_type(d), d.strftime("%Y%m%d")
+            e = self._entry(kp_tid, dt, now)
+            if e is None:
+                need.add((kp_tid, kp_index, dt))
                 continue
-            gap = abs(local_midnight(d) + stop[1] - now)
+            if e["op"] is None or not self.idx.active(e["op"], ds):
+                continue
+            seq = e["seq"].get(str(kp_index))
+            stop = self.idx.times.get(e["op"], {}).get(seq)
+            if seq is None or not stop:
+                continue
+            gap = abs(local_midnight(ds) + stop[1] - now)
             if gap <= self.horizon and (best is None or gap < best[0]):
-                best = (gap, d)
-        return best[1] if best else None
+                best = (gap, ds, e, seq)
+        return best
 
     def ingest_departures(self, resp, now):
-        """Returns trip_execution candidates: (scheduled_epoch, trip_id, start_date, exec_id, seq)."""
-        cands = []
+        """Returns (execution candidates, mappings still needed).
+
+        candidate = (scheduled epoch, kp trip id, kp index, execution id, op trip id, start_date)
+        need = {(kp trip id, kp index, day type)}
+        """
+        cands, need = [], set()
         with self.lock:
             for blk in resp["departures"]:
                 pid = self.designators.get(blk["designator"])
                 for r in blk["rows"]:
                     self.stats["rows_seen"] += 1
-                    tid, seq = str(r["trip_id"]), r["trip_index"]
+                    ktid, kidx = str(r["trip_id"]), r["trip_index"]
                     if pid is None:
                         self._miss("unknown stop designator")
-                    elif tid not in self.idx.trips:
-                        self._miss("trip not in static feed")
-                    elif self.idx.stop_at(tid, seq) != pid:
-                        self._miss("stop does not match static trip at that sequence")
+                        continue
+                    if not r.get("is_estimated") and not r.get("canceled"):
+                        continue  # schedule only, nothing to say
+                    b = self._date_for(ktid, kidx, now, need)
+                    if b is None:
+                        self._miss("no operator trip matched (yet)")
+                        continue
+                    _, sd, e, seq = b
+                    stop_name = self.idx.stops[self.idx.stop_at(e["op"], seq)]["stop_name"]
+                    if norm(stop_name) != norm(self.kp_stops[pid]["name"]):
+                        self._miss("stop name differs at the matched sequence")
+                        continue
+                    self.stats["rows_matched"] += 1
+                    en = self.entries.setdefault((e["op"], sd), {"stops": {}, "vehicle": None, "ts": now})
+                    sid = self.idx.stop_at(e["op"], seq)
+                    if r.get("canceled"):
+                        en["stops"][seq] = {"stop_id": sid, "skipped": True, "ts": now}
                     else:
-                        sd = self.start_date(tid, seq, now)
-                        if sd is None:
-                            self._miss("no active service date near now")
-                            continue
-                        self.stats["rows_matched"] += 1
-                        e = self.entries.setdefault((tid, sd), {"stops": {}, "vehicle": None, "ts": now})
-                        if r.get("canceled"):
-                            e["stops"][seq] = {"stop_id": pid, "skipped": True, "ts": now}
-                        elif r.get("is_estimated"):
-                            e["stops"][seq] = {"stop_id": pid, "delay": int(r["time_diff"]) * 60, "ts": now}
-                            e["ts"] = now
-                            if r.get("trip_execution_id"):
-                                sched = local_midnight(sd) + self.idx.times[tid][seq][1]
-                                cands.append((sched, tid, sd, r["trip_execution_id"], seq))
+                        en["stops"][seq] = {"stop_id": sid, "delay": int(r["time_diff"]) * 60, "ts": now}
+                        en["ts"] = now
+                        if r.get("trip_execution_id"):
+                            sched = local_midnight(sd) + self.idx.times[e["op"]][seq][1]
+                            cands.append((sched, ktid, kidx, r["trip_execution_id"], e["op"], sd))
             self.last_poll_ok = now
         cands.sort()
-        return cands
+        return cands, need
 
-    def ingest_execution(self, tid, sd, raw, now):
+    def ingest_execution(self, ktid, op_tid, sd, raw, now):
         with self.lock:
             idx = self.idx
+            dt = day_type(datetime.strptime(sd, "%Y%m%d").date())
+            e = self._entry(ktid, dt, now)
+            if e is None or e["op"] != op_tid:
+                self.stats["executions_unmatched"] += 1
+                return False
+            seqmap = e["seq"]
+            en = self.entries.setdefault((op_tid, sd), {"stops": {}, "vehicle": None, "ts": now})
             t = raw["trip"]["times"]
             nxt = raw.get("next_departure_index")
+            ok = True
             ests = raw.get("estimates") or []
-            e = self.entries.setdefault((tid, sd), {"stops": {}, "vehicle": None, "ts": now})
-            ok = bool(ests) and isinstance(nxt, int) and nxt >= 0
-            if ok:
+            if ests and isinstance(nxt, int) and nxt >= 0:
                 for i, est in enumerate(ests):
                     if nxt + i >= len(t):
-                        ok = False
                         break
-                    row = t[nxt + i]
-                    seq, pid = row["index"], row["place_id"]
-                    if idx.stop_at(tid, seq) != pid:
-                        ok = False
-                        break
+                    seq = seqmap.get(str(t[nxt + i]["index"]))
                     arr = est.get("arrival_abs") or est.get("time_abs")
-                    if not arr:
+                    if seq is None or not arr:
                         continue
-                    sched = idx.times[tid][seq][1]
+                    sched = idx.times[op_tid][seq][1]
                     dep = est.get("time_abs") or arr
-                    e["stops"][seq] = {"stop_id": pid, "delay": wrap(hhmm(arr) - sched),
-                                       "dep_delay": wrap(hhmm(dep) - sched), "ts": now}
+                    en["stops"][seq] = {"stop_id": idx.stop_at(op_tid, seq), "delay": wrap(hhmm(arr) - sched),
+                                        "dep_delay": wrap(hhmm(dep) - sched), "ts": now}
             for c in raw.get("canceled") or []:
-                if isinstance(c, int) and idx.stop_at(tid, c):
-                    e["stops"][c] = {"stop_id": idx.stop_at(tid, c), "skipped": True, "ts": now}
+                seq = seqmap.get(str(c)) if isinstance(c, int) else None
+                if seq is not None:
+                    en["stops"][seq] = {"stop_id": idx.stop_at(op_tid, seq), "skipped": True, "ts": now}
             v = raw.get("vehicle")
             if isinstance(v, dict) and isinstance(v.get("lat"), (int, float)) and isinstance(v.get("lon"), (int, float)):
                 at = bool(raw.get("at_stop"))
-                seq = raw.get("vehicle_trip_index") if at else nxt
-                if isinstance(seq, int) and idx.stop_at(tid, seq):
-                    e["vehicle"] = {"lat": v["lat"], "lon": v["lon"], "seq": seq, "stopped": at, "ts": now}
+                kidx = raw.get("vehicle_trip_index") if at else nxt
+                seq = seqmap.get(str(kidx))
+                if seq is not None:
+                    en["vehicle"] = {"lat": v["lat"], "lon": v["lon"], "seq": seq, "stopped": at, "ts": now}
                 else:
                     ok = False
-            e["ts"] = now
+            en["ts"] = now
             self.stats["executions_ok" if ok else "executions_unmatched"] += 1
             return ok
 
+    # output -----------------------------------------------------------------
     def _live(self, now):
-        keep = {k: v for k, v in self.entries.items() if now - v["ts"] <= self.max_age}
-        self.entries = keep
-        return keep
+        self.entries = {k: v for k, v in self.entries.items() if now - v["ts"] <= self.max_age}
+        return self.entries
 
     def build(self, now):
         """Returns (trip_updates_bytes, vehicle_positions_bytes) or None before the first successful poll."""
@@ -152,13 +207,12 @@ class Rt:
             if self.last_poll_ok is None or self.idx is None:
                 return None
             live = self._live(now)
-            ts = int(self.last_poll_ok)
             out = []
             for kind in ("tu", "vp"):
                 f = pb.FeedMessage()
                 f.header.gtfs_realtime_version = "2.0"
                 f.header.incrementality = pb.FeedHeader.FULL_DATASET
-                f.header.timestamp = ts
+                f.header.timestamp = int(self.last_poll_ok)
                 for (tid, sd), e in sorted(live.items()):
                     trip_row = self.idx.trips[tid]
                     if kind == "tu" and e["stops"]:

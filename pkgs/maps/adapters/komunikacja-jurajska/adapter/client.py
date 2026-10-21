@@ -8,6 +8,7 @@ import json
 import re
 import urllib.parse
 
+import opsite
 from guard import SourceError, fetch
 
 
@@ -47,13 +48,16 @@ class Source:
             raise SourceError("empty stop list")
         return out
 
-    def timetable(self, place_id, date):
+    def line_known(self, place_id, line, date):
+        """True if kiedyPrzyjedzie serves this line (any trip that day at that stop), False on its 404 for an unknown line."""
         q = urllib.parse.quote(place_id, safe=":")
-        d = _obj(self._get("static", f"/api/timetables/{q}?date={date}"), "departures")
-        for x in d["departures"]:
-            if not all(k in x for k in ("trip_id", "index", "departure")):
-                raise SourceError("unexpected timetable row")
-        return d["departures"]
+        key = base64.urlsafe_b64encode(line.encode()).decode().rstrip("=")
+        status, _, body = fetch(self.g, "static", f"{self.base}/api/timetable/{q}/{key}?date={date}", self.ua,
+                                soft_404=True)
+        if status == 404:
+            return False
+        d = _obj(body, "departures")
+        return any(str(x.get("line")) == line for x in d["departures"])
 
     def trip(self, trip_id, index):
         d = _obj(self._get("static", f"/api/trip/{int(trip_id)}/{int(index)}"), "times", "line", "direction")
@@ -73,3 +77,26 @@ class Source:
     def trip_execution(self, execution_id, index):
         eid = base64.b64encode(execution_id.encode()).decode()
         return _obj(self._get("rt", f"/api/trip_execution/{eid}/{int(index)}"), "trip", "vehicle_trip_index")
+
+
+class OpSource:
+    """www.komunikacjajurajska.pl, the operator's own site. Plain HTML pages, read-only."""
+
+    def __init__(self, guard, base_url, user_agent):
+        self.g, self.base, self.ua = guard, base_url.rstrip("/"), user_agent
+
+    def _page(self, path):
+        return fetch(self.g, "static", self.base + "/" + path.lstrip("/"), self.ua, expect="html",
+                     max_bytes=2_000_000)[2].decode("utf-8", "replace")
+
+    def lines(self):
+        found = opsite.parse_home(self._page("/"))
+        if not found:
+            raise SourceError("no timetable links on the operator start page")
+        return found
+
+    def line_page(self, url):
+        parsed = opsite.parse_line(self._page(url))
+        if not parsed["directions"] or not parsed["valid_to"]:
+            raise SourceError("no timetable or validity period on " + url)
+        return parsed

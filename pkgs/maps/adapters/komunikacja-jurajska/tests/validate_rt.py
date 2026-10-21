@@ -1,6 +1,7 @@
 """Structural GTFS-RT check on feeds built from recorded fixtures, cross-checked against the static zip.
 
 Usage: validate_rt.py <static.zip> > reports/gtfs-rt-structural-check.txt
+The zip must come from build_sample_feed.py (or a full crawl that includes line 151).
 The MobilityData GTFS-RT validator has no offline release, so this covers the matching rules instead.
 """
 import json
@@ -14,11 +15,18 @@ from google.transit import gtfs_realtime_pb2 as pb  # noqa: E402
 
 with open(sys.argv[1], "rb") as f:
     idx = t.gtfs.Index(f.read())
-rt = t.Rt()
-rt.set_static(idx, {r[0]: {"designator": r[1]} for r in t.fx("stops.json")["stops"]})
-src = t.FixtureSource()
-rt.ingest_departures(src.departures([t.BLACH, "622548"]), t.NOW_DEP)
-rt.ingest_execution("38155603", "20261021", src.trip_execution("151:739910:4", 17), t.NOW_DEP)
+kp_stops = {r[0]: {"designator": r[1], "name": r[2]} for r in t.fx("stops.json")["stops"]}
+rt = t.Rt({})
+rt.set_static(idx, kp_stops)
+src = t.FixtureKp()
+resp = src.departures([t.BLACH, "622548"])
+_, need = rt.ingest_departures(resp, t.NOW_DEP)
+for ktid, kidx, dt in sorted(need):
+    if os.path.exists(os.path.join(t.FX, "trips", f"{ktid}.json")):
+        rt.map_trip(ktid, src.trip(ktid, kidx), dt, t.NOW_DEP)
+rt.ingest_departures(resp, t.NOW_DEP)
+mapped = rt.map["38155603|wd"]["op"]
+rt.ingest_execution("38155603", mapped, "20261021", src.trip_execution("151:739910:4", 17), t.NOW_DEP)
 out = rt.build(t.NOW_DEP + 5)
 problems = []
 for name, raw in (("trip_updates", out[0]), ("vehicle_positions", out[1])):
@@ -57,6 +65,7 @@ for name, raw in (("trip_updates", out[0]), ("vehicle_positions", out[1])):
         print(("  PASS " if ok else "  FAIL ") + k)
         if not ok:
             problems.append((name, k))
+print("live trip 38155603 (wd) mapped to operator trip", mapped)
 print("match stats:", json.dumps(rt.stats))
 print("RESULT:", "OK" if not problems else f"{len(problems)} failures")
 sys.exit(1 if problems else 0)

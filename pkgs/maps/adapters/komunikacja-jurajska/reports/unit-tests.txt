@@ -1,9 +1,17 @@
-.....trip 38155599 rejected: HTTP 404
-.....circuit breaker OPEN for 21600s: HTTP 403
-........circuit breaker OPEN for 21600s: HTTP 403
+..mapping of live trip 35786773 skipped: HTTP 404
+mapping of live trip 35786774 skipped: HTTP 404
+mapping of live trip 36503318 skipped: HTTP 404
+mapping of live trip 35786773 skipped: HTTP 404
+mapping of live trip 35786774 skipped: HTTP 404
+mapping of live trip 36503318 skipped: HTTP 404
+.........line 102 page failed: HTTP 500
+...circuit breaker OPEN for 21600s: HTTP 403
+.circuit breaker OPEN for 21600s: bot challenge, block page or unexpected payload
+.............circuit breaker OPEN for 21600s: HTTP 403
 .circuit breaker OPEN for 21600s: 5 consecutive errors
-.............
+......circuit breaker OPEN for 21600s: HTTP 403
+..................
 ----------------------------------------------------------------------
-Ran 32 tests in 2.970s
+Ran 53 tests in 5.356s
 
 OK
