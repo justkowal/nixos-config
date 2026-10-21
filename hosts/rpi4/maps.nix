@@ -20,8 +20,8 @@
     host all all 0.0.0.0/0 md5
   '';
 
-  # measured on the desktop: with the KMK feeds and 6 realtime updaters a 1000 MB heap needs about 1.17 GiB and starts in 40 s (800 MB works but takes 2 minutes)
-  otpJvm = "-Xmx1000m -XX:+UseSerialGC -Xss512k -XX:MaxMetaspaceSize=128m -XX:TieredStopAtLevel=1";
+  # measured on the Pi with the KMK feeds: 1300 MB heap uses 1.45 GB, loads in about 107 s, car query 14 s cold and 3 s warm (1000 MB took 250 s and timed out)
+  otpJvm = "-Xmx1300m -XX:+UseSerialGC -Xss512k -XX:MaxMetaspaceSize=128m -XX:TieredStopAtLevel=1";
 
   # public halves of the two keys that live on the desktop; each can do exactly one thing on this Pi
   pushKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICrFdQ1fwh/LchoaYQCDAGVOs1NzX6XxApMWx+bxzfgG maps_push@nixos-desktop";
@@ -166,7 +166,7 @@ in {
           "--network=mcp"
           "--read-only"
           "--tmpfs=/tmp:rw,size=64m,mode=1777"
-          "--memory=1500m"
+          "--memory=1900m"
           "--cpus=2"
           "--pids-limit=128"
           "--cap-drop=ALL"
@@ -195,7 +195,7 @@ in {
       DATA = data;
       OTP_IMAGE = "opentripplanner/opentripplanner@sha256:8d54e5c589186707ee365417f2202dc878c451fa3001b8edff07019531100933";
       JAVA_OPTS = otpJvm;
-      OTP_MEMORY = "1500m";
+      OTP_MEMORY = "1900m";
     };
     serviceConfig = {
       Type = "oneshot";

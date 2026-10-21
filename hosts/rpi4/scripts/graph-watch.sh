@@ -60,7 +60,7 @@ podman rm -f otp-staging >/dev/null 2>&1 || true
 echo '{}' > "$G/staging-router-config.json"
 chmod 644 "$G/staging-router-config.json"
 podman run -d --name otp-staging --network mcp-internal --user 65534:65534 --read-only --tmpfs /tmp:rw,size=64m,mode=1777 \
-  --memory="${OTP_MEMORY:-1500m}" --cap-drop=ALL --security-opt=no-new-privileges -e "JAVA_OPTS=$JAVA_OPTS" \
+  --memory="${OTP_MEMORY:-1900m}" --cap-drop=ALL --security-opt=no-new-privileges -e "JAVA_OPTS=$JAVA_OPTS" \
   -v "$dir:/var/opentripplanner:ro" -v "$G/staging-router-config.json:/var/opentripplanner/router-config.json:ro" \
   "$OTP_IMAGE" --load --serve >/dev/null || reject "staging container did not start"
 sip=$(ip_of otp-staging)
