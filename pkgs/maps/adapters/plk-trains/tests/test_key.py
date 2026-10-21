@@ -29,3 +29,18 @@ class KeyFile(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DelayFromTimes(unittest.TestCase):
+    def test_minutes_field_wins(self):
+        from plk_trains.rt import _delay_s
+        self.assertEqual(_delay_s({"arrivalDelayMinutes": 3, "plannedArrival": "2026-10-21T04:00:00", "actualArrival": "2026-10-21T04:09:00"}, "arrival"), 180)
+
+    def test_computed_from_times(self):
+        from plk_trains.rt import _delay_s
+        self.assertEqual(_delay_s({"plannedDeparture": "2026-10-21T04:11:00", "actualDeparture": "2026-10-21T04:14:30"}, "departure"), 210)
+        self.assertEqual(_delay_s({"plannedDeparture": "2026-10-21T04:11:00", "actualDeparture": "2026-10-21T04:10:00"}, "departure"), -60)
+
+    def test_missing_gives_none(self):
+        from plk_trains.rt import _delay_s
+        self.assertIsNone(_delay_s({"plannedArrival": "2026-10-21T04:11:00"}, "arrival"))

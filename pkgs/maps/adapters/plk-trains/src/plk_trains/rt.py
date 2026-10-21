@@ -1,7 +1,23 @@
 """PLK /operations and /disruptions to GTFS-RT, matched against the static index by trip_id + start_date."""
+from datetime import datetime
+
 from google.transit import gtfs_realtime_pb2 as pb
 
 from .gtfs import trip_id
+
+
+def _delay_s(rec, which):
+    """seconds late: the API's rounded minutes when present, else actual minus planned (real records often carry only the times)."""
+    mins = rec.get(which + "DelayMinutes")
+    if mins is not None:
+        return mins * 60
+    plan, act = rec.get("planned" + which.capitalize()), rec.get("actual" + which.capitalize())
+    if plan and act:
+        try:
+            return int((datetime.fromisoformat(act) - datetime.fromisoformat(plan)).total_seconds())
+        except ValueError:
+            return None
+    return None
 
 
 def _header(feed, ts):
@@ -68,14 +84,14 @@ def build_trip_updates(trains, index, snapshot_ts):
                 stu.schedule_relationship = pb.TripUpdate.StopTimeUpdate.SKIPPED
                 st["skipped_stops"] += 1
                 continue
-            ad, dd = s.get("arrivalDelayMinutes"), s.get("departureDelayMinutes")
+            ad, dd = _delay_s(s, "arrival"), _delay_s(s, "departure")
             if ad is None and dd is None:
                 tu.stop_time_update.pop()
                 continue
             if ad is not None:
-                stu.arrival.delay = ad * 60
+                stu.arrival.delay = ad
             if dd is not None:
-                stu.departure.delay = dd * 60
+                stu.departure.delay = dd
             stu.schedule_relationship = pb.TripUpdate.StopTimeUpdate.SCHEDULED
             st["stop_updates"] += 1
         if not tu.stop_time_update:
