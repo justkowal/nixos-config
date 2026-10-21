@@ -269,7 +269,7 @@ def t_stops_nearby(a):
     need_feeds()
     p = resolve(a["place"])
     r = min(float(a.get("radius_m", 400)), 1500)
-    d = gql(f'{{ nearest(latitude:{p["lat"]}, longitude:{p["lon"]}, maxDistance:{int(r)}, filterByPlaceTypes:[STOP], first:15) {{ edges {{ node {{ distance place {{ ... on Stop {{ gtfsId name code lat lon }} }} }} }} }} }}')
+    d = gql(f'{{ nearest(lat:{p["lat"]}, lon:{p["lon"]}, maxDistance:{int(r)}, filterByPlaceTypes:[STOP], first:15) {{ edges {{ node {{ distance place {{ ... on Stop {{ gtfsId name code lat lon }} }} }} }} }} }}')
     return cap({"place": p, "stops": [{"id": e["node"]["place"]["gtfsId"], "name": e["node"]["place"]["name"], "code": e["node"]["place"].get("code"),
                                        "distance_m": round(e["node"]["distance"])} for e in d["nearest"]["edges"] if e["node"]["place"]]})
 
