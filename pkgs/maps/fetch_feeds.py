@@ -15,6 +15,18 @@ import yaml  # noqa: E402
 
 from routing_mcp import read_zip, safe_open  # noqa: E402
 
+
+
+def resolve_ckan(ref):
+    """ckan:<base>#<dataset>: the portal rotates the file name every few hours, so take the newest zip resource of the dataset."""
+    base, dataset = ref[5:].split("#", 1)
+    meta = json.loads(safe_open(f"{base}/api/3/action/package_show?id={dataset}", max_bytes=5_000_000))
+    zips = [r for r in meta["result"]["resources"] if (r.get("format") or "").upper() == "ZIP" and r["url"].startswith(base + "/")]
+    if not zips:
+        sys.exit(f"{ref}: no zip resource on the portal")
+    return max(zips, key=lambda r: r.get("last_modified") or "")["url"]
+
+
 d = sys.argv[1]
 feeds = (yaml.safe_load(open(os.path.join(d, "feeds.yaml"))) or {}).get("feeds") or []
 out = []
@@ -31,6 +43,9 @@ for f in feeds:
     elif f.get("internal_adapter"):
         sys.exit(f"{fid}: an internal adapter feed needs static: adapter:<name>")
     else:
+        if ref.startswith("ckan:"):
+            ref = resolve_ckan(ref)
+            print(f"feed {fid}: newest resource {ref.rsplit('/', 1)[-1]}")
         open(dest, "wb").write(safe_open(ref, extra_ports=tuple(f.get("allow_ports") or [])))
     data = open(dest, "rb").read()
     read_zip(data)  # size, ratio and path checks before anything else touches it
