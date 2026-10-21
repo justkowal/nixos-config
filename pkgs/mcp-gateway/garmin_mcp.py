@@ -290,6 +290,10 @@ def enabled_reads(tools):
     return [n for n, t in tools.items() if t["cls"] == "read" and n not in off and (n in on or "read" in classes)]
 
 
+# the account answers 400 to every call of these (no matching device or capability), so the smoke test reports them apart
+KNOWN_UNSUPPORTED = {"get_ecg_list": "400 for every argument, probably no ECG device"}
+
+
 def smoke(tools):
     today = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Warsaw")).date().isoformat()  # the container runs in UTC
     rows = []
@@ -303,6 +307,11 @@ def smoke(tools):
             else:
                 args = None
                 break
+        if n in KNOWN_UNSUPPORTED:
+            rows.append((n, "skip", KNOWN_UNSUPPORTED[n]))
+            continue
+        if args is not None and "days" in props:  # Garmin rejects the library default of 7 days with a 400
+            args["days"] = 3
         if args is not None:  # optional range ends make some endpoints refuse their defaults
             if "end" in props:
                 args["end"] = today
