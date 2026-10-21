@@ -130,7 +130,7 @@ class Serving(unittest.TestCase):
         import re
         ids = set(re.findall(r"\?v=([0-9a-f]{10})", html))
         self.assertEqual(len(ids), 1)
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js"):
             self.assertIn(f"/{n}?v=", html)
         self.assertIn(f'content="{ids.pop()}"', html)
 

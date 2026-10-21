@@ -39,6 +39,7 @@ function encode(pts) {
 global.window = { App: { api() {}, h() {}, icon() {}, $() {}, store: { get: (k, d) => d, set() {} }, decode, providerOf: () => null } };
 global.document = {};
 global.requestAnimationFrame = () => {};
+eval(fs.readFileSync(path.join(__dirname, "../static/fleet.js"), "utf8"));
 eval(fs.readFileSync(path.join(__dirname, "../static/vehicles.js"), "utf8"));
 const Veh = window.Vehicles;
 
@@ -147,13 +148,15 @@ test("stale vehicles stop and models differ by mode", () => {
   now += 300;  // no reports for 300 s
   for (let i = 0; i < 600; i++) { now += 0.05; Veh._step(v, 0.05, performance.now() / 1000); }
   assert.ok(v.vel < 0.1, "stale vehicle came to rest");
-  const mk = (mode, ag) => Veh._model({ mode, ag, color: "#123456" });
-  assert.equal(mk("BUS", "x").cars.length, 1);
-  assert.equal(mk("TRAM", "x").cars.length, 5, "three cars and two bellows");
-  assert.deepEqual(mk("RAIL", "PKP Intercity").cars.map((c) => c.mesh), ["railMid", "railMid", "loco"]);
-  assert.equal(mk("RAIL", "Koleje Śląskie").cars.length, 3);
+  const mk = (mode, ag, id = "a") => Veh._model({ mode, ag, id, color: "#123456" });
+  assert.equal(mk("BUS", "x").cars.length >= 1, true);
+  assert.equal(mk("TRAM", "x").cars.length, 5, "default tram: three bodies and two bellows");
+  assert.deepEqual(mk("RAIL", "PKP Intercity").cars.map((c) => c.mesh).slice(-1), ["loco"]);
+  assert.ok([3, 4].includes(mk("RAIL", "Koleje Śląskie").cars.length));
   const offs = mk("TRAM", "x").cars.map((c) => c.c);
   assert.deepEqual(offs, [...offs].sort((a, b) => a - b), "cars are ordered rear to front");
+  const meshes = new Set(); for (let i = 0; i < 300; i++) for (const m of [mk("BUS", "MPK w Krakowie", "b" + i), mk("TRAM", "MPK w Krakowie", "t" + i)]) m.cars.forEach((c) => meshes.add(c.mesh));
+  assert.ok(meshes.has("bus18F") && meshes.has("busMid") && meshes.has("bus12") && meshes.has("tram105"), "a Krakow fleet shows several model families: " + [...meshes]);
 });
 
 test("simulating 700 vehicles for a frame costs well under a millisecond", () => {

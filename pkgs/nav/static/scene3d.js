@@ -86,20 +86,65 @@
     for (let b = 0; b < bogies; b++) { const x = (b === 0 ? -1 : 1) * (hl - 3.0); m.box(x - 1.2, x + 1.2, -hw + 0.2, hw - 0.2, 0.2, 0.9, PART.DARK); }
     return m.build();
   }
+  // five road vehicle types for ambient traffic. Painted surfaces use part 1 (body) so the per-instance tint colours them: any colour is possible.
+  const ROAD = {
+    hatch: { L: 4.0, W: 1.75, H: 1.5, cab: [-1.15, 0.85, 0.5], hood: 0.7 },
+    sedan: { L: 4.75, W: 1.85, H: 1.45, cab: [-1.5, 0.95, 0.55], hood: 0.9 },
+    suv: { L: 4.7, W: 1.95, H: 1.75, cab: [-1.95, 1.2, 0.35], hood: 0.9 },
+  };
+  function roadVehicleMesh(type) {
+    const m = new MeshBuilder();
+    if (type === "van") {
+      const L = 5.4, W = 2.0, H = 2.25, hl = L / 2, hw = W / 2;
+      m.prism([[-hl, 0.35], [hl, 0.35], [hl, 0.9], [hl - 0.35, 1.05], [hl - 1.3, 1.1], [hl - 1.8, H], [-hl + 0.05, H], [-hl, H - 0.1]].filter((p, i, a) => true), -hw, hw, PART.BODY);
+      m.box(hl - 1.75, hl - 1.15, -hw - 0.02, hw + 0.02, 1.2, H - 0.25, PART.GLASS);   // windscreen band (sides)
+      m.box(hl - 1.78, hl - 1.3, -hw + 0.1, hw - 0.1, 1.15, H - 0.2, PART.GLASS);
+      m.box(hl - 0.03, hl + 0.06, hw - 0.5, hw - 0.2, 0.7, 0.9, PART.HEAD); m.box(hl - 0.03, hl + 0.06, -hw + 0.2, -hw + 0.5, 0.7, 0.9, PART.HEAD);
+      m.box(-hl - 0.06, -hl + 0.03, hw - 0.4, hw - 0.15, 0.8, 1.15, PART.TAIL); m.box(-hl - 0.06, -hl + 0.03, -hw + 0.15, -hw + 0.4, 0.8, 1.15, PART.TAIL);
+      for (const x of [hl - 1.0, -hl + 1.1]) { m.wheel(x, 0.38, 0.38, hw - 0.28, hw + 0.01); m.wheel(x, 0.38, 0.38, -hw - 0.01, -hw + 0.28); }
+      return m.build();
+    }
+    if (type === "truck") {  // rigid lorry: cab in body colour, load box in the neutral roof colour
+      const L = 9.0, W = 2.5, hl = L / 2, hw = W / 2;
+      m.prism([[hl - 2.3, 0.55], [hl, 0.55], [hl, 1.1], [hl - 0.4, 1.3], [hl - 0.55, 3.0], [hl - 2.3, 3.2]], -hw + 0.05, hw - 0.05, PART.BODY);
+      m.box(-hl, hl - 2.4, -hw, hw, 0.8, 3.7, PART.ROOF);
+      m.box(-hl + 0.1, hl - 2.4, -hw + 0.3, hw - 0.3, 0.45, 0.8, PART.DARK);
+      m.box(hl - 0.62, hl - 0.38, -hw + 0.25, hw - 0.25, 1.55, 2.7, PART.GLASS);
+      m.box(hl - 1.6, hl - 0.6, hw - 0.07, hw + 0.01, 1.55, 2.6, PART.GLASS); m.box(hl - 1.6, hl - 0.6, -hw - 0.01, -hw + 0.07, 1.55, 2.6, PART.GLASS);
+      m.box(hl - 0.03, hl + 0.06, hw - 0.7, hw - 0.3, 0.9, 1.15, PART.HEAD); m.box(hl - 0.03, hl + 0.06, -hw + 0.3, -hw + 0.7, 0.9, 1.15, PART.HEAD);
+      m.box(-hl - 0.06, -hl + 0.03, hw - 0.6, hw - 0.2, 0.9, 1.2, PART.TAIL); m.box(-hl - 0.06, -hl + 0.03, -hw + 0.2, -hw + 0.6, 0.9, 1.2, PART.TAIL);
+      for (const x of [hl - 1.2, -hl + 1.6, -hl + 2.9]) { m.wheel(x, 0.5, 0.5, hw - 0.4, hw + 0.02); m.wheel(x, 0.5, 0.5, -hw - 0.02, -hw + 0.4); }
+      return m.build();
+    }
+    const d = ROAD[type] || ROAD.sedan, L = d.L, W = d.W, H = d.H, hl = L / 2, hw = W / 2;
+    m.prism([[-hl, 0.32], [hl, 0.32], [hl, 0.62], [hl - 0.25, 0.86], [-hl + 0.25, 0.86], [-hl, 0.7]], -hw, hw, PART.BODY);            // lower body
+    const [cb, cf, rise] = d.cab;  // cabin: back, front (x of the base), and how far the windscreen and rear window slope
+    m.prism([[cb, 0.86], [cf, 0.86], [cf - rise, H], [cb + rise * 0.7, H]], -hw + 0.1, hw - 0.1, PART.BODY);                           // roof and pillars
+    m.prism([[cb + 0.12, 0.88], [cf - 0.12, 0.88], [cf - rise - 0.02, H - 0.08], [cb + rise * 0.7 + 0.05, H - 0.08]], -hw + 0.04, hw - 0.04, PART.GLASS);  // windows, slightly proud of the roof
+    m.box(cb + rise * 0.7 + 0.08, cf - rise - 0.08, -hw + 0.18, hw - 0.18, H - 0.1, H + 0.02, PART.BODY);                               // roof panel hides the glass top
+    m.box(hl - 0.03, hl + 0.06, hw - 0.55, hw - 0.2, 0.55, 0.75, PART.HEAD); m.box(hl - 0.03, hl + 0.06, -hw + 0.2, -hw + 0.55, 0.55, 0.75, PART.HEAD);
+    m.box(-hl - 0.06, -hl + 0.03, hw - 0.5, hw - 0.15, 0.6, 0.8, PART.TAIL); m.box(-hl - 0.06, -hl + 0.03, -hw + 0.15, -hw + 0.5, 0.6, 0.8, PART.TAIL);
+    m.box(hl - 0.04, hl + 0.08, -hw + 0.3, hw - 0.3, 0.32, 0.5, PART.DARK); m.box(-hl - 0.08, -hl + 0.04, -hw + 0.3, hw - 0.3, 0.32, 0.5, PART.DARK);
+    for (const x of [hl - 0.95, -hl + 0.95]) { m.wheel(x, 0.32, 0.32, hw - 0.25, hw + 0.01); m.wheel(x, 0.32, 0.32, -hw - 0.01, -hw + 0.25); }
+    return m.build();
+  }
+  const ROAD_TYPES = ["hatch", "sedan", "suv", "van", "truck"];
   const bellowsMesh = (len, wid, h) => new MeshBuilder().box(-len / 2, len / 2, -wid / 2, wid / 2, 0.95, h - 0.5, PART.DARK).build();
 
   // ---- instance batches: a fixed stride of 20 bytes, filled by JS every frame (dynamic) or once (static)
-  //   f32: dx, dy (metres from the frame origin), fx, fy (unit forward vector east, north); u8: livery, alpha 0..255, flags, spare
-  const STRIDE = 20;
+  //   f32: dx, dy (metres from the frame origin), fx, fy (unit forward vector east, north); u8: livery, alpha 0..255, flags, spare; u8: tint r, g, b, amount
+  //   the tint moves the body part toward an arbitrary colour (amount 255 replaces it), so colours are not limited to the palette
+  const STRIDE = 24;
   class InstanceBatch {
     constructor(capacity) { this.capacity = capacity; this.count = 0; this.buf = new ArrayBuffer(capacity * STRIDE); this.f32 = new Float32Array(this.buf); this.u8 = new Uint8Array(this.buf); }
     clear() { this.count = 0; }
-    push(dx, dy, fx, fy, livery, alpha = 255, flags = 0) {
+    push(dx, dy, fx, fy, livery, alpha = 255, flags = 0, tr = 0, tg = 0, tb = 0, ta = 0) {
       if (this.count >= this.capacity) return false;
-      const i = this.count++, o = i * 5;
+      const i = this.count++, o = i * 6;
       this.f32[o] = dx; this.f32[o + 1] = dy; this.f32[o + 2] = fx; this.f32[o + 3] = fy;
       const b = i * STRIDE + 16;
       this.u8[b] = livery; this.u8[b + 1] = alpha; this.u8[b + 2] = flags; this.u8[b + 3] = 0;
+      this.u8[b + 4] = tr; this.u8[b + 5] = tg; this.u8[b + 6] = tb; this.u8[b + 7] = ta;
       return true;
     }
     view() { return new Uint8Array(this.buf, 0, this.count * STRIDE); }
@@ -151,7 +196,7 @@ precision highp float;
 uniform mat4 u_matrix; uniform vec3 u_sun; uniform vec3 u_sunColor; uniform vec3 u_ambient; uniform float u_night; uniform vec3 u_bg;
 uniform vec3 u_liv[128];
 in vec3 a_pos; in vec3 a_nrm; in float a_part;
-in vec2 i_pos; in vec2 i_dir; in vec4 i_meta;
+in vec2 i_pos; in vec2 i_dir; in vec4 i_meta; in vec4 i_tint;
 out vec3 v_col;
 void main() {
   vec2 f = i_dir, l = vec2(-f.y, f.x);
@@ -160,6 +205,7 @@ void main() {
   vec3 n = normalize(vec3(f * a_nrm.x + l * a_nrm.y, a_nrm.z));
   int liv = int(i_meta.x + 0.5), part = int(a_part + 0.5);
   vec3 base = part < 4 ? u_liv[liv * 4 + part] : part == 4 ? vec3(0.012, 0.02, 0.035) : part == 5 ? vec3(0.015, 0.017, 0.02) : part == 6 ? vec3(0.9, 0.85, 0.6) : vec3(0.7, 0.02, 0.02);
+  if (part == 1) base = mix(base, pow(i_tint.rgb, vec3(2.2)), i_tint.a);
   float diff = max(dot(n, u_sun), 0.0), hemi = 0.55 + 0.45 * n.z;
   vec3 lit = base * (u_ambient * hemi + u_sunColor * diff);
   vec3 glow = part == 6 ? vec3(1.0, 0.92, 0.7) * 2.2 : part == 7 ? vec3(1.0, 0.1, 0.05) * 1.6 : part == 4 ? vec3(1.0, 0.8, 0.45) * 0.22 : vec3(0.0);
@@ -258,7 +304,7 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
         for (const [n, size, off] of [["a_pos", 3, 0], ["a_nrm", 3, 12], ["a_part", 1, 24]]) { const l = attr(S.progMesh, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 28, off); }
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.index, gl.STATIC_DRAW);
         gl.bindBuffer(gl.ARRAY_BUFFER, inst); gl.bufferData(gl.ARRAY_BUFFER, b.batch.capacity * STRIDE, gl.DYNAMIC_DRAW);
-        for (const [n, size, type, norm, off] of [["i_pos", 2, gl.FLOAT, false, 0], ["i_dir", 2, gl.FLOAT, false, 8], ["i_meta", 4, gl.UNSIGNED_BYTE, false, 16]]) {
+        for (const [n, size, type, norm, off] of [["i_pos", 2, gl.FLOAT, false, 0], ["i_dir", 2, gl.FLOAT, false, 8], ["i_meta", 4, gl.UNSIGNED_BYTE, false, 16], ["i_tint", 4, gl.UNSIGNED_BYTE, true, 20]]) {
           const l = attr(S.progMesh, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, type, norm, STRIDE, off); gl.vertexAttribDivisor(l, 1);
         }
         gl.bindVertexArray(null);
@@ -339,5 +385,5 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
     return S;
   }
 
-  window.Scene3D = { PART, MeshBuilder, carMesh, bellowsMesh, InstanceBatch, DotBatch, Palette, STRIDE, DOT_STRIDE, mul, localToMercator, createLayer };
+  window.Scene3D = { PART, MeshBuilder, carMesh, bellowsMesh, roadVehicleMesh, ROAD_TYPES, InstanceBatch, DotBatch, Palette, STRIDE, DOT_STRIDE, mul, localToMercator, createLayer };
 })();

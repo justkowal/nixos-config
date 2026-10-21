@@ -196,14 +196,8 @@
     return (stale ? 0.45 : 1) * (1 - 0.9 * v.fade);
   }
 
-  // ---- models: which mesh per car, offset along the vehicle (centre = 0). Articulated cars sit on the track at their own distance.
-  const MODELS = {
-    BUS: { cars: [{ mesh: "bus", c: 0, bend: false }] },
-    TRAM: { cars: [{ mesh: "tramEnd", c: -9.5, flip: true }, { mesh: "bellowsTram", c: -4.75 }, { mesh: "tramMid", c: 0 }, { mesh: "bellowsTram", c: 4.75 }, { mesh: "tramEnd", c: 9.5 }] },
-    EMU: { cars: [{ mesh: "railEnd", c: -21, flip: true }, { mesh: "railMid", c: 0 }, { mesh: "railEnd", c: 21 }] },
-    IC: { cars: [{ mesh: "railMid", c: -24.8 }, { mesh: "railMid", c: 0 }, { mesh: "loco", c: 24.4 }] },
-  };
-  const modelFor = (v) => (v.mode === "TRAM" ? MODELS.TRAM : v.mode === "RAIL" ? (/Intercity/i.test(v.ag || "") ? MODELS.IC : MODELS.EMU) : MODELS.BUS);
+  // ---- models: a fleet variant per vehicle (see fleet.js), cars laid out end to end; articulated cars sit on the track at their own distance
+  const modelFor = (v) => window.Fleet.variantFor(v.ag, v.mode, v.id || "x");
   function livery(v) {
     const p = A.providerOf(v.ag), L = p?.livery && (p.livery[v.mode] || p.livery.default);
     return { body: L?.body || v.color, stripe: L?.stripe || "#ffffff", roof: L?.roof || "#d4d8de", skirt: L?.skirt || "#2a2f36" };
@@ -229,14 +223,14 @@
         if (labels && v.line) scene.addLabel(v.line, dx, dy);
       }
       if (meshes && sh) {
-        if (!v.model) { v.model = modelFor(v); v.liv = scene.palette.id(livery(v)); }
-        const al = Math.round(255 * alpha), cars = v.model.cars, bend = cars.length > 1;
+        if (!v.model) { v.model = modelFor(v); const L = livery(v); v.liv = scene.palette.id(L); v.tint = window.Fleet.jitter(L.body, v.id); }
+        const al = Math.round(255 * alpha), cars = v.model.cars, bend = cars.length > 1, tn = v.tint;
         for (let i = 0; i < cars.length; i++) {
           const cd = cars[i];
           let cx = dx, cy = dy, fx = v.hx, fy = v.hy;
           if (bend) { poseAt(sh, v.s + cd.c); cx = (pose[0] - ox) / k; cy = (pose[1] - oy) / k; fx = pose[2]; fy = pose[3]; }
           if (cd.flip) { fx = -fx; fy = -fy; }
-          scene.batches.get(cd.mesh).batch.push(cx, cy, fx, fy, v.liv, al, 0);
+          scene.batches.get(cd.mesh).batch.push(cx, cy, fx, fy, v.liv, al, 0, tn[0], tn[1], tn[2], 255);
         }
       }
     }
@@ -403,14 +397,24 @@
   function setupScene() {
     const S3 = window.Scene3D, car = S3.carMesh;
     scene = S3.createLayer({ id: "scene3d" });
-    scene.registerMesh("bus", car({ L: 12, W: 2.5, H: 3.1, nose: "both", bus: true }));
-    scene.registerMesh("tramEnd", car({ L: 8.6, W: 2.4, H: 3.5, nose: "front", wheels: 0 }));
-    scene.registerMesh("tramMid", car({ L: 8.6, W: 2.4, H: 3.5, nose: "none", pantograph: true, wheels: 0 }));
-    scene.registerMesh("bellowsTram", S3.bellowsMesh(1.2, 2.0, 3.5));
-    scene.registerMesh("railEnd", car({ L: 20, W: 2.9, H: 4.1, nose: "front", wheels: 0, bogies: 2 }));
-    scene.registerMesh("railMid", car({ L: 20, W: 2.9, H: 4.1, nose: "none", wheels: 0, bogies: 2 }));
-    scene.registerMesh("loco", car({ L: 18, W: 3, H: 4.3, nose: "both", loco: true, wheels: 0, bogies: 2 }));
-    for (const [name, cap] of [["bus", 1024], ["tramEnd", 512], ["tramMid", 256], ["bellowsTram", 512], ["railEnd", 256], ["railMid", 256], ["loco", 128]]) scene.addBatch(name, name, cap);
+    const meshes = {
+      bus12: car({ L: 12, W: 2.5, H: 3.1, nose: "both", bus: true }),
+      busMid: car({ L: 10.5, W: 2.45, H: 3.0, nose: "both", bus: true }),
+      bus18F: car({ L: 8.8, W: 2.5, H: 3.1, nose: "front", bus: true }),
+      bus18R: car({ L: 8.2, W: 2.5, H: 3.1, nose: "front", bus: true }),
+      bellowsBus: S3.bellowsMesh(1.4, 2.2, 3.0),
+      coach12: car({ L: 12.3, W: 2.55, H: 3.5, nose: "both", bus: true }),
+      tram105: car({ L: 13.4, W: 2.4, H: 3.3, nose: "front", wheels: 0, pantograph: true }),
+      tramEnd: car({ L: 8.6, W: 2.4, H: 3.5, nose: "front", wheels: 0 }),
+      tramMid: car({ L: 8.6, W: 2.4, H: 3.5, nose: "none", pantograph: true, wheels: 0 }),
+      bellowsTram: S3.bellowsMesh(1.2, 2.0, 3.5),
+      railEnd: car({ L: 20, W: 2.9, H: 4.1, nose: "front", wheels: 0, bogies: 2 }),
+      railMid: car({ L: 20, W: 2.9, H: 4.1, nose: "none", wheels: 0, bogies: 2 }),
+      icCoach: car({ L: 24.5, W: 2.82, H: 4.0, nose: "none", wheels: 0, bogies: 2 }),
+      loco: car({ L: 18, W: 3, H: 4.3, nose: "both", loco: true, wheels: 0, bogies: 2 }),
+    };
+    const caps = { bus12: 1024, busMid: 512, bus18F: 512, bus18R: 512, bellowsBus: 512, coach12: 128, tram105: 256, tramEnd: 512, tramMid: 512, bellowsTram: 1024, railEnd: 256, railMid: 512, icCoach: 256, loco: 128 };
+    for (const [name, mesh] of Object.entries(meshes)) { scene.registerMesh(name, mesh); scene.addBatch(name, name, caps[name]); }
     scene.meshZoom = Z_MESH;
   }
   function init(m) {
