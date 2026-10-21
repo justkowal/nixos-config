@@ -347,4 +347,7 @@ if __name__ == "__main__":
     if len(TOKEN) < 32:
         sys.exit("MCP_TOKEN missing or shorter than 32 chars, refusing to start")
     audit(event="start", children=[c.name for c in children], passthrough=PASSTHRU)
+    if PASSTHRU:  # inner servers start their child now, so background work such as the garmin smoke test begins at boot
+        for c in children:
+            threading.Thread(target=lambda c=c: c.list_tools(), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), H).serve_forever()
