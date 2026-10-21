@@ -85,6 +85,7 @@
   D.sunText = () => { const t = D.sunTimes(); return `Sunrise ${hm(t.sunrise)}, sunset ${hm(t.sunset)} (${Math.floor(t.dayLength / 60)} h ${String(t.dayLength % 60).padStart(2, "0")} min of daylight)`; };
   D.hm = hm;
   D.clockText = () => { const m = Math.floor(D.mode === "live" ? localMinutes(new Date()) : D.minutes % 1440); return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
+  D.clockHour = () => (D.mode === "live" ? localMinutes(new Date()) : D.minutes % 1440) / 60;
   D.localMinutes = () => localMinutes(D.time());
   D.enable = (on) => { D.enabled = on; D._lightAt = 0; if (!on) D.clear(); };
   D.setLive = () => { D.mode = "live"; };

@@ -21,6 +21,7 @@
   const V = new Map();        // vehicle id -> state
   const SHAPES = new Map();   // trip id -> shape info | "pending" | { fail }
   let map = null, scene = null, on = store.get("veh", true), threeD = store.get("3d", true), hi = new Set();
+  let ambient = false, traffic = null;
   let ctx = false, force = false, followId = null, followBar = null, cam = null, lastTick = 0, nowSec = 0;
   const pose = new Float64Array(4);  // scratch: mx, my, ux, uy
 
@@ -216,7 +217,7 @@
       const a = step(v, dt, nowSec), sh = v.shape || v.ray;
       if (sh) { const i = cursor(sh, v, "seg0", v.s), t = (v.s - sh.cum[i]) / (sh.cum[i + 1] - sh.cum[i] || 1); v.mx = sh.MX[i] + (sh.MX[i + 1] - sh.MX[i]) * t; v.my = sh.MY[i] + (sh.MY[i + 1] - sh.MY[i]) * t; }
       if (v.mx < x0 || v.mx > x1 || v.my < y0 || v.my > y1) continue;
-      const mine = hi.has(v.trip) || v.id === followId, alpha = a * (routeOn && !mine ? 0.35 : 1), dx = (v.mx - ox) / k, dy = (v.my - oy) / k;
+      const mine = hi.has(v.trip) || v.id === followId, alpha = a * (routeOn && !mine ? 0.35 : 1), dx = (v.mx - ox) / k, dy = (oy - v.my) / k;
       if (dotAlpha > 0.02) {
         if (mine) scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], 90, dotSize * 2.1, -1);
         scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], Math.round(255 * alpha * dotAlpha), dotSize, -1);
@@ -228,11 +229,16 @@
         for (let i = 0; i < cars.length; i++) {
           const cd = cars[i];
           let cx = dx, cy = dy, fx = v.hx, fy = v.hy;
-          if (bend) { poseAt(sh, v.s + cd.c); cx = (pose[0] - ox) / k; cy = (pose[1] - oy) / k; fx = pose[2]; fy = pose[3]; }
+          if (bend) { poseAt(sh, v.s + cd.c); cx = (pose[0] - ox) / k; cy = (oy - pose[1]) / k; fx = pose[2]; fy = pose[3]; }
           if (cd.flip) { fx = -fx; fy = -fy; }
           scene.batches.get(cd.mesh).batch.push(cx, cy, fx, fy, v.liv, al, 0, tn[0], tn[1], tn[2], 255);
         }
       }
+    }
+    if (traffic && ambient && meshes) {
+      traffic.setHour(window.Daylight ? window.Daylight.clockHour() : new Date().getHours());
+      traffic.step(dt);
+      traffic.write(ox, oy, k, x0, x1, y0, y1, (type, dx, dy, fx, fy, a, tn) => scene.batches.get("car_" + type).batch.push(dx, dy, fx, fy, 0, Math.round(255 * a), 0, tn[0], tn[1], tn[2], 255));
     }
     scene.setFrame({ ox, oy, k, zoom: z, dpr: window.devicePixelRatio || 1 });
     window.Daylight?.apply(scene, map);
@@ -413,9 +419,30 @@
       icCoach: car({ L: 24.5, W: 2.82, H: 4.0, nose: "none", wheels: 0, bogies: 2 }),
       loco: car({ L: 18, W: 3, H: 4.3, nose: "both", loco: true, wheels: 0, bogies: 2 }),
     };
-    const caps = { bus12: 1024, busMid: 512, bus18F: 512, bus18R: 512, bellowsBus: 512, coach12: 128, tram105: 256, tramEnd: 512, tramMid: 512, bellowsTram: 1024, railEnd: 256, railMid: 512, icCoach: 256, loco: 128 };
+    for (const t of S3.ROAD_TYPES) meshes["car_" + t] = S3.roadVehicleMesh(t);
+    const caps = { car_hatch: 512, car_sedan: 512, car_suv: 512, car_van: 256, car_truck: 192, bus12: 1024, busMid: 512, bus18F: 512, bus18R: 512, bellowsBus: 512, coach12: 128, tram105: 256, tramEnd: 512, tramMid: 512, bellowsTram: 1024, railEnd: 256, railMid: 512, icCoach: 256, loco: 128 };
     for (const [name, mesh] of Object.entries(meshes)) { scene.registerMesh(name, mesh); scene.addBatch(name, name, caps[name]); }
     scene.meshZoom = Z_MESH;
+  }
+  // road lanes for ambient traffic come from the tiles already on screen
+  let laneKey = "";
+  function loadLanes() {
+    if (!ambient || !map || !map.getSource("openmaptiles") || map.getZoom() < Z_MESH) return;
+    const c = map.getCenter(), key = c.lng.toFixed(3) + "," + c.lat.toFixed(3) + "," + Math.round(map.getZoom());
+    if (key === laneKey) return;
+    laneKey = key;
+    let feats = [];
+    try { feats = map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation" }); } catch (e) { return; }
+    const b = map.getBounds(), m = 0.3 * (b.getEast() - b.getWest());
+    const inside = feats.filter((f) => { const g = f.geometry, p = g.type === "LineString" ? g.coordinates[0] : g.coordinates?.[0]?.[0]; return p && p[0] > b.getWest() - m && p[0] < b.getEast() + m && p[1] > b.getSouth() - m && p[1] < b.getNorth() + m; });
+    const anchor = { lon: +c.lng.toFixed(2), lat: +c.lat.toFixed(2) };
+    traffic.setLanes(window.Traffic.lanesFromFeatures(inside, anchor), anchor);
+  }
+  function setAmbient(on) {
+    ambient = !!on;
+    if (ambient && !traffic) traffic = new window.Traffic.Traffic();
+    laneKey = "";
+    if (ambient) loadLanes();
   }
   function init(m) {
     map = m;
@@ -428,8 +455,9 @@
     map.on("mousemove", (e) => { const n = performance.now(); if (n - move.t < 90 || !shown()) return; move.t = n; map.getCanvas().style.cursor = pick(e.point) ? "pointer" : ""; });
     map.on("dragstart", (e) => { if (followId && e.originalEvent) stopFollow(); });
     map.on("zoomstart", (e) => { if (followId && cam && e.originalEvent) cam.free = true; });
-    let deb = 0;
-    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(refresh, 400); });
+    let deb = 0, deb2 = 0;
+    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); }, 400); });
+    map.on("sourcedata", (e) => { if (ambient && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); } });
     setInterval(refresh, 5000);
     map.touchPitch?.disable();
     if (threeD) set3d(true);
@@ -439,6 +467,7 @@
 
   window.Vehicles = {
     init, follow, followTrip, stopFollow, set3d, is3d: () => threeD, scene: () => scene,
+    setAmbient, ambient: () => ambient, traffic: () => traffic,
     setContext: (c) => { ctx = !!c; syncVisibility(); if (shown()) refresh(); }, setForce: (f) => { force = !!f; syncVisibility(); if (shown()) refresh(); },
     highlight: (ids) => { hi = new Set(ids || []); },
     stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on: shown(), threeD, zoom: map ? +map.getZoom().toFixed(1) : null, render: scene?.stats }),

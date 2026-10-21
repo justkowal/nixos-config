@@ -42,7 +42,7 @@
     saved = { three: V.is3d(), pitch: map.getPitch(), zoom: map.getZoom(), bearing: map.getBearing() };
     document.body.classList.add("dio-on");
     $("#diorama").hidden = false;
-    D.syncTheme(); D.enable(true); V.setForce(true);
+    D.syncTheme(); D.enable(true); V.setForce(true); V.setAmbient(true);
     if (!V.is3d()) V.set3d(true);
     map.easeTo({ pitch: Math.max(map.getPitch(), 60), zoom: Math.max(map.getZoom(), 16), duration: 1000 });
     syncClock();
@@ -58,7 +58,7 @@
     setOrbit(false); clearInterval(clockTimer); clearTimeout(idleTimer);
     document.body.classList.remove("dio-on");
     $("#diorama").hidden = true;
-    D.enable(false); D.setDay(null); D.setLive(); V.setForce(false);
+    D.enable(false); D.setDay(null); D.setLive(); V.setForce(false); V.setAmbient(false);
     if (!saved?.three && V.is3d()) V.set3d(false);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     history.replaceState(null, "", location.pathname);
