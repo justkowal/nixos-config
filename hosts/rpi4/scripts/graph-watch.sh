@@ -10,6 +10,7 @@ log() { echo "graph-watch: $*"; }
 if [ -f "$CUR/manifest.json" ] && ! cmp -s "$CUR/manifest.json" "$G/info/manifest.json" 2>/dev/null; then
   mkdir -p "$G/info"; cp "$CUR/manifest.json" "$G/info/manifest.json"
 fi
+if [ -f "$CUR/signals.json" ] && ! cmp -s "$CUR/signals.json" "$G/info/signals.json" 2>/dev/null; then cp "$CUR/signals.json" "$G/info/signals.json"; fi
 dir=$(find "$UP" -mindepth 2 -maxdepth 2 -name READY -printf '%h\n' | sort | tail -1)
 [ -n "$dir" ] || { log "nothing to do"; exit 0; }
 name=$(basename "$dir")
@@ -89,7 +90,11 @@ if [ -z "$pip" ] || ! ready "$pip" || ! smoke "$pip" "$CUR/manifest.json"; then
   printf '{"rejected":"%s","reason":"production smoke failed after swap","at":"%s"}\n' "$name" "$(date -u +%FT%TZ)" > "$G/last-rejection.json"
   exit 1
 fi
-publish_info() { mkdir -p "$G/info"; cp "$CUR/manifest.json" "$G/info/manifest.json.tmp" && mv "$G/info/manifest.json.tmp" "$G/info/manifest.json"; }
+publish_info() {
+  mkdir -p "$G/info"; cp "$CUR/manifest.json" "$G/info/manifest.json.tmp" && mv "$G/info/manifest.json.tmp" "$G/info/manifest.json"
+  # optional extra for the navigation app; a graph without it simply has no traffic light animation
+  if [ -f "$CUR/signals.json" ] && jq -e 'type=="array" and length<60000' "$CUR/signals.json" >/dev/null 2>&1; then cp "$CUR/signals.json" "$G/info/signals.json.tmp" && mv "$G/info/signals.json.tmp" "$G/info/signals.json"; fi
+}
 publish_info
 printf '{"swapped":"%s","at":"%s"}\n' "$name" "$(date -u +%FT%TZ)" > "$G/last-swap.json"
 # anything older that was left in the upload directory is superseded

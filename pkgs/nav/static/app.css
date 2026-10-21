@@ -76,7 +76,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; touch-action:
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .glass { background: var(--surface); } }
 
 /* ---- map controls */
-.mapctl { position: fixed; right: var(--gap); top: calc(var(--safe-t) + var(--gap) + 40px); border-radius: var(--r-ctl); z-index: 4; }
+.mapctl { display: grid; gap: 2px; position: fixed; right: var(--gap); top: calc(var(--safe-t) + var(--gap) + 40px); border-radius: var(--r-ctl); z-index: 4; }
 .icon-btn { display: grid; place-items: center; width: var(--hit); height: var(--hit); border-radius: var(--r-ctl); color: var(--ink); }
 .icon-btn:active { background: var(--surface-3); }
 .icon-btn.small { width: 36px; height: 36px; color: var(--ink-3); }
@@ -288,3 +288,11 @@ button { background: none; border: 0; padding: 0; cursor: pointer; touch-action:
 #map.nomap { display: grid; place-items: center; padding: 24px; background: var(--surface-2); color: var(--ink-2); text-align: center; }
 #map.nomap p { max-width: 36ch; margin: 0 0 0 var(--side); }
 @media (max-width: 759px) { #map.nomap p { margin: 0; } }
+
+.icon-btn[aria-pressed="false"] { color: var(--ink-3); }
+.icon-btn[aria-pressed="true"] { color: var(--accent); }
+.icon-btn.txt { font-weight: 700; font-size: 0.8125rem; letter-spacing: 0.02em; }
+.veh-pop { display: grid; gap: 2px; min-width: 140px; padding: 4px 6px; }
+.veh-pop b { font-size: 1rem; }
+.pop-sub { font-size: 0.8125rem; color: var(--ink-2); }
+.pop-sub:empty { display: none; }

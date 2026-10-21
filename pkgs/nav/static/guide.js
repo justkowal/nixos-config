@@ -123,7 +123,7 @@
     const map = A.getMap();
     A.showMe({ lat: pos.lat, lon: pos.lon });
     if (!map || !G.follow) return;
-    map.easeTo({ center: [pos.lon, pos.lat], zoom: G.it.legs[legAt(G.cur || 0).li].line ? 15.5 : 17, bearing: G.heading ?? map.getBearing(), pitch: 0,
+    map.easeTo({ center: [pos.lon, pos.lat], zoom: G.it.legs[legAt(G.cur || 0).li].line ? 15.5 : 17, bearing: G.heading ?? map.getBearing(), pitch: window.Vehicles?.is3d?.() ? 55 : 0,
                  padding: { top: 190, bottom: 130, left: 0, right: 0 }, duration: 900, essential: true });
   }
 
@@ -284,7 +284,7 @@
     speechSynthesis?.cancel?.();
     $("#guide").hidden = true; $("#sheet").hidden = false; $("#tabs").hidden = false; $("#mapctl").hidden = false;
     const map = A.getMap();
-    map?.easeTo({ bearing: 0, pitch: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 500 });
+    map?.easeTo({ bearing: 0, pitch: window.Vehicles?.is3d?.() ? 58 : 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 500 });
     A.replan(G.it);
   }
 

@@ -119,6 +119,12 @@ G="$W/graph/$STAMP"; mkdir -p "$G"
 cp "$W/osm/scope-pruned.osm.pbf" "$G/"
 cp "$W/feeds"/*-gtfs.zip "$G/" 2>/dev/null || true
 py "$HERE/otp_config.py" "$W/feeds/feeds.json" "$W/feeds/feeds.yaml" "$G"
+# traffic signal nodes for the navigation app's vehicle animation, a few hundred kB
+nix shell nixpkgs#osmium-tool nixpkgs#jq -c bash -c "osmium tags-filter -O -o '$G/sig.pbf' '$W/osm/scope-pruned.osm.pbf' n/highway=traffic_signals n/crossing=traffic_signals \
+  && osmium export -O -f geojsonseq --geometry-types=point -o '$G/sig.geojsonseq' '$G/sig.pbf' \
+  && tr -d '\\036' < '$G/sig.geojsonseq' | jq -sc '[.[]|[(.geometry.coordinates[0]*100000|round/100000),(.geometry.coordinates[1]*100000|round/100000)]]' > '$G/signals.json'" \
+  && log "signals: $(jq length "$G/signals.json") nodes" || log "signals: extraction failed, the app animates without traffic lights"
+rm -f "$G/sig.pbf" "$G/sig.geojsonseq"
 log "build: OTP $OTP_IMAGE"
 docker image inspect "$OTP_IMAGE" >/dev/null 2>&1 || docker pull -q "$OTP_IMAGE" >/dev/null
 t0=$(date +%s)
@@ -150,7 +156,7 @@ PYEOF
 # ---- 5. push: upload directory only, the READY marker last so the Pi never sees a half-copied graph
 if [ $PUSH = 1 ]; then
   log "push: maps-push@$PI_HOST:$STAMP"
-  rs -a -e "$(sshopt "$PUSH_KEY")" "$G/graph.obj" "$G/build-config.json" "$G/router-config.json" "$G/manifest.json" "maps-push@$PI_HOST:./$STAMP/"
+  rs -a -e "$(sshopt "$PUSH_KEY")" "$G/graph.obj" "$G/build-config.json" "$G/router-config.json" "$G/manifest.json" $([ -f "$G/signals.json" ] && echo "$G/signals.json") "maps-push@$PI_HOST:./$STAMP/"
   : > "$G/READY"
   rs -a -e "$(sshopt "$PUSH_KEY")" "$G/READY" "maps-push@$PI_HOST:./$STAMP/READY"
   log "pushed; the Pi verifies, stage-tests and swaps it in on its own"

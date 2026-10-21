@@ -6,6 +6,7 @@ import datetime
 import hashlib
 import hmac
 import json
+import math
 import mimetypes
 import os
 import re
@@ -295,7 +296,158 @@ def api_info(_q):
             "attribution": m.get("attribution", "© OpenStreetMap contributors")}
 
 
-ROUTES = {"/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan": api_plan, "/api/nearby": api_nearby,
+# ---------------------------------------------------------------- live vehicles and trip shapes
+SIG_FILE = os.environ.get("NAV_SIGNALS", os.path.join(os.path.dirname(MANIFEST), "signals.json"))
+_veh = {"t": 0.0, "list": []}
+_veh_lock = threading.Lock()
+_shapes = {}
+_sig = {"mtime": 0, "checked": 0, "grid": {}, "pts": []}
+CELL = 0.0006
+
+
+def decode_poly(s):
+    i = lat = lon = 0
+    out = []
+    while i < len(s):
+        for axis in (0, 1):
+            shift = result = 0
+            while True:
+                b = ord(s[i]) - 63
+                i += 1
+                result |= (b & 31) << shift
+                shift += 5
+                if b < 32:
+                    break
+            d = ~(result >> 1) if result & 1 else result >> 1
+            if axis == 0:
+                lat += d
+            else:
+                lon += d
+        out.append((lon / 1e5, lat / 1e5))
+    return out
+
+
+def signals():
+    """traffic signal nodes from the desktop build (signals.json, [[lon, lat], ...]); empty when the build had none."""
+    now = time.time()
+    if now - _sig["checked"] > 60:
+        _sig["checked"] = now
+        try:
+            m = os.stat(SIG_FILE).st_mtime
+            if m != _sig["mtime"]:
+                with open(SIG_FILE) as f:
+                    pts = [(float(a), float(b)) for a, b in json.load(f)[:60000]]
+                grid = {}
+                for n, (lo, la) in enumerate(pts):
+                    grid.setdefault((int(lo / CELL), int(la / CELL)), []).append(n)
+                _sig.update(mtime=m, grid=grid, pts=pts)
+        except (OSError, ValueError, TypeError):
+            pass
+    return _sig
+
+
+VEH_Q = """{ routes { shortName mode agency { name } patterns { vehiclePositions { vehicleId lat lon heading speed lastUpdated
+  stopRelationship { status stop { name } } trip { gtfsId tripHeadsign } } } } }"""
+
+
+def vehicles_snapshot():
+    with _veh_lock:
+        if time.time() - _veh["t"] < 4:
+            return _veh["list"]
+        seen, out = set(), []
+        for r in gql(VEH_Q)["routes"]:
+            for p in r["patterns"]:
+                for v in p["vehiclePositions"] or []:
+                    if v["vehicleId"] in seen or v.get("lat") is None:
+                        continue
+                    seen.add(v["vehicleId"])
+                    rel = v.get("stopRelationship") or {}
+                    out.append({"id": v["vehicleId"], "lat": v["lat"], "lon": v["lon"], "hd": v.get("heading"), "sp": v.get("speed"), "ts": v.get("lastUpdated"),
+                                "trip": (v.get("trip") or {}).get("gtfsId"), "to": (v.get("trip") or {}).get("tripHeadsign"), "line": r["shortName"], "mode": r["mode"],
+                                "ag": (r.get("agency") or {}).get("name"), "st": rel.get("status"), "sn": ((rel.get("stop") or {}).get("name"))})
+        _veh.update(t=time.time(), list=out)
+        return out
+
+
+def api_vehicles(q):
+    raw = (q.get("bbox") or [""])[0]
+    box = [float(x) for x in raw.split(",")] if raw else []
+    if len(box) != 4 or not (-180 <= box[0] < box[2] <= 180 and -90 <= box[1] < box[3] <= 90):
+        raise Bad("bbox must be minLon,minLat,maxLon,maxLat")
+    inside = [v for v in vehicles_snapshot() if box[0] <= v["lon"] <= box[2] and box[1] <= v["lat"] <= box[3]]
+    if (q.get("lod") or [""])[0] == "heat":  # far zoom: positions only, any extent
+        return {"now": time.time(), "heat": [[round(v["lon"], 4), round(v["lat"], 4)] for v in inside[:6000]]}
+    if (box[2] - box[0]) > 1.5 or (box[3] - box[1]) > 1.0:
+        return {"now": time.time(), "vehicles": [], "note": "zoom in to see vehicles"}
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    inside.sort(key=lambda v: (v["lon"] - cx) ** 2 + (v["lat"] - cy) ** 2)
+    return {"now": time.time(), "vehicles": inside[:700]}
+
+
+def seg_proj(px, py, ax, ay, bx, by):
+    dx, dy = bx - ax, by - ay
+    l2 = dx * dx + dy * dy
+    t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / l2))
+    return t, math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def shape_info(trip_id):
+    d = gql("query($id:String!){ trip(id:$id){ tripGeometry { points } stops { name lat lon } } }", {"id": trip_id})["trip"]
+    if not d or not d.get("tripGeometry"):
+        raise Bad("unknown trip", 404)
+    pts = decode_poly(d["tripGeometry"]["points"])
+    k = math.cos(math.radians(pts[0][1]))
+    xy = [(lo * k * 111320.0, la * 110540.0) for lo, la in pts]
+    cum = [0.0]
+    for i in range(1, len(xy)):
+        cum.append(cum[-1] + math.hypot(xy[i][0] - xy[i - 1][0], xy[i][1] - xy[i - 1][1]))
+    stops = []
+    for st in d["stops"] or []:
+        px, py = st["lon"] * k * 111320.0, st["lat"] * 110540.0
+        best = (1e18, 0.0)
+        for i in range(len(xy) - 1):
+            t, dd = seg_proj(px, py, *xy[i], *xy[i + 1])
+            if dd < best[0]:
+                best = (dd, cum[i] + t * (cum[i + 1] - cum[i]))
+        if best[0] < 80:
+            stops.append({"n": st["name"], "a": round(best[1])})
+    sg = signals()
+    hit = {}
+    for i in range(len(xy) - 1):
+        (ax, ay), (bx, by) = xy[i], xy[i + 1]
+        lo0, lo1 = sorted((pts[i][0], pts[i + 1][0]))
+        la0, la1 = sorted((pts[i][1], pts[i + 1][1]))
+        for cx in range(int(lo0 / CELL) - 1, int(lo1 / CELL) + 2):
+            for cy in range(int(la0 / CELL) - 1, int(la1 / CELL) + 2):
+                for n in sg["grid"].get((cx, cy), ()):
+                    sx, sy = sg["pts"][n][0] * k * 111320.0, sg["pts"][n][1] * 110540.0
+                    t, dd = seg_proj(sx, sy, ax, ay, bx, by)
+                    if dd <= 14 and (n not in hit or dd < hit[n][0]):
+                        hit[n] = (dd, cum[i] + t * (cum[i + 1] - cum[i]))
+    lights = sorted({round(a) for _, a in hit.values() if 15 < a < cum[-1] - 15})
+    merged = []
+    for a in lights:  # one junction can hold several signal nodes
+        if not merged or a - merged[-1] > 25:
+            merged.append(a)
+    return {"points": d["tripGeometry"]["points"], "length": round(cum[-1]), "stops": stops, "sig": merged}
+
+
+def api_shape(q):
+    tid = (q.get("trip") or [""])[0]
+    if not ID.fullmatch(tid):
+        raise Bad("bad trip id")
+    hit = _shapes.get(tid)
+    if hit and time.time() - hit[0] < 6 * 3600:
+        return hit[1]
+    info = shape_info(tid)
+    if len(_shapes) > 800:
+        for k in sorted(_shapes, key=lambda x: _shapes[x][0])[:200]:
+            _shapes.pop(k, None)
+    _shapes[tid] = (time.time(), info)
+    return info
+
+
+ROUTES = {"/api/vehicles": api_vehicles, "/api/shape": api_shape, "/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan": api_plan, "/api/nearby": api_nearby,
           "/api/departures": api_departures, "/api/trip": api_trip, "/api/info": api_info}
 
 
@@ -439,8 +591,10 @@ class H(BaseHTTPRequestHandler):
                 return self.j(404, {"error": "not found"})
             if not self.authed():
                 return self.j(401, {"error": "sign in"})
-            who = self.who()
-            if throttled(_hits, who, PER_MINUTE, 60):
+            # cached, read-only map data (vehicles, trip shapes) gets its own larger bucket
+            bulk = u.path in ("/api/vehicles", "/api/shape")
+            who = self.who() + ("|bulk" if bulk else "")
+            if throttled(_hits, who, 900 if bulk else PER_MINUTE, 60):
                 return self.j(429, {"error": "slow down"})
             note(_hits, who)
             try:

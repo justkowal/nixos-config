@@ -98,7 +98,7 @@ let markers = [], userMarker = null, popup = null;
 function initMap() {
   const home = store.get("view", { c: [19.94, 50.06], z: 11 });
   try {
-    map = new maplibregl.Map({ container: "map", style: styleUrl(), center: home.c, zoom: home.z, attributionControl: false, dragRotate: false, pitchWithRotate: false, maxPitch: 0 });
+    map = new maplibregl.Map({ container: "map", style: styleUrl(), center: home.c, zoom: home.z, attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, maxPitch: 70 });
   } catch {
     map = null;  // no WebGL: planning, times and departures keep working
     $("#map").classList.add("nomap");
@@ -115,6 +115,7 @@ function initMap() {
   const cancel = () => { clearTimeout(timer); timer = null; };
   map.on("touchstart", (e) => { if (e.originalEvent.touches.length === 1) timer = setTimeout(() => placeMenu(e.lngLat), 550); });
   ["touchmove", "touchend", "touchcancel", "dragstart", "zoomstart"].forEach((t) => map.on(t, cancel));
+  window.Vehicles?.init(map);
 }
 function addRouteLayers() {
   if (map.getSource("route")) return;
@@ -152,6 +153,7 @@ function pin(cls, lngLat, c) {
 }
 function drawRoute(it, opts = {}) {
   clearMarkers();
+  window.Vehicles?.highlight(it.legs.map((l) => l.trip_id).filter(Boolean));
   if (!map) return;
   const feats = [], bounds = new maplibregl.LngLatBounds();
   it.legs.forEach((l, i) => {
@@ -170,6 +172,7 @@ function drawRoute(it, opts = {}) {
 }
 function clearRoute() {
   clearMarkers();
+  window.Vehicles?.highlight([]);
   routeData = { type: "FeatureCollection", features: [] };
   map?.getSource("route")?.setData(routeData);
 }

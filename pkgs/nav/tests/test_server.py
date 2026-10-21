@@ -81,5 +81,48 @@ class Watching(unittest.TestCase):
             s.api_watch_add("e", {"legs": [{"trip_id": "bad id"}]})
 
 
+class Shapes(unittest.TestCase):
+    def test_polyline_decode_reference(self):
+        pts = s.decode_poly("_p~iF~ps|U_ulLnnqC_mqNvxq`@")
+        self.assertEqual([(round(x, 3), round(y, 3)) for x, y in pts], [(-120.2, 38.5), (-120.95, 40.7), (-126.453, 43.252)])
+
+    def test_signals_and_stops_land_on_the_right_distance(self):
+        # a straight east-west street at lat 50, 1 km long; a light 500 m along, one 300 m to the side, one on it twice
+        lon0, lat = 19.0, 50.0
+        k = 111320.0 * __import__("math").cos(__import__("math").radians(lat))
+        lon1 = lon0 + 1000 / k
+        def poly(points):
+            out, plat, plon = "", 0, 0
+            for lo, la in points:
+                for cur, prev in ((round(la * 1e5), plat), (round(lo * 1e5), plon)):
+                    d = cur - prev
+                    v = ~(d << 1) if d < 0 else d << 1
+                    while v >= 32:
+                        out += chr((32 | (v & 31)) + 63)
+                        v >>= 5
+                    out += chr(v + 63)
+                plat, plon = round(la * 1e5), round(lo * 1e5)
+            return out
+        sigfile = os.path.join(tempfile.mkdtemp(), "signals.json")
+        json.dump([[lon0 + 500 / k, lat + 0.00005], [lon0 + 500 / k, lat + 0.003], [lon0 + 700 / k, lat], [lon0 + 703 / k, lat]], open(sigfile, "w"))
+        s.SIG_FILE = sigfile
+        s._sig.update(mtime=0, checked=0)
+        s.gql = lambda q, v=None: {"trip": {"tripGeometry": {"points": poly([(lon0, lat), (lon1, lat)])},
+                                            "stops": [{"name": "mid", "lat": lat, "lon": lon0 + 250 / k}, {"name": "far", "lat": lat + 0.01, "lon": lon0}]}}
+        info = s.shape_info("t")
+        self.assertAlmostEqual(info["length"], 1000, delta=3)
+        self.assertEqual([x["n"] for x in info["stops"]], ["mid"])
+        self.assertAlmostEqual(info["stops"][0]["a"], 250, delta=3)
+        self.assertEqual(len(info["sig"]), 2)  # side street light ignored, the two near 700 m merge
+        self.assertAlmostEqual(info["sig"][0], 500, delta=4)
+
+    def test_vehicle_bbox_validation(self):
+        with self.assertRaises(s.Bad):
+            s.api_vehicles({"bbox": ["1,2,3"]})
+        s._veh.update(t=time.time(), list=[{"id": "a", "lon": 19.0, "lat": 50.0}, {"id": "b", "lon": 30.0, "lat": 50.0}])
+        self.assertEqual(s.api_vehicles({"bbox": ["10,40,20,50"]})["vehicles"], [])  # too wide for detail
+        self.assertEqual(s.api_vehicles({"bbox": ["10,40,20,50"], "lod": ["heat"]})["heat"], [[19.0, 50.0]])
+
+
 if __name__ == "__main__":
     unittest.main()
