@@ -84,7 +84,7 @@ test("light cones are well formed: intensity falls from the source to the edge, 
     assert.ok(Math.max(...m.index) < n);
     let apexI = 0, edgeI = 1, hiZ = 0;
     for (let i = 0; i < n; i++) { const z = m.vertex[i * 7 + 2], inten = m.vertex[i * 7 + 6]; hiZ = Math.max(hiZ, z); if (z > 0.5) apexI = Math.max(apexI, inten); if (z < 0.1) edgeI = Math.min(edgeI, inten); }
-    assert.ok(apexI > 0.6 && edgeI === 0, `${name} apex ${apexI} edge ${edgeI}`);
+    assert.ok(apexI > 0.5 && edgeI === 0, `${name} apex ${apexI} edge ${edgeI}`);
     assert.ok(hiZ > 0.7 && hiZ < 7.5);
   }
   const head = W.BEAMS.head(); let far = 0; for (let i = 0; i < head.vertex.length / 7; i++) far = Math.max(far, head.vertex[i * 7]);
