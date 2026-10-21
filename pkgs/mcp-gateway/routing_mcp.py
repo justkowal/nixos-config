@@ -245,17 +245,42 @@ def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=Fals
         when = f'dateTime:{{latestArrival:"{parse_dt(arrive_by).isoformat()}"}}'
     elif depart_at:
         when = f'dateTime:{{earliestDeparture:"{parse_dt(depart_at).isoformat()}"}}'
-    modes = f"modes:{{direct:[{direct}]}}" if direct else ""
+    # a plain street route must say directOnly, otherwise OTP also runs a full transit search (12 s instead of 0.2 s)
+    modes = f"modes:{{directOnly:true,direct:[{direct}]}}" if direct else ""
     if direct:
         n = 1  # a street search yields exactly one itinerary; asking for more makes OTP return none
-    q = f"{{ planConnection(origin:{coord_input(a)} destination:{coord_input(b)} {when} {modes} first:{max(1, min(int(n), 3))}) {{ edges {{ node {{ start end duration numberOfTransfers {LEG} }} }} }} }}"
-    edges = gql(q)["planConnection"]["edges"]
+
+    def run(dt_clause):
+        q = f"{{ planConnection(origin:{coord_input(a)} destination:{coord_input(b)} {dt_clause} {modes} first:{max(1, min(int(n), 3))}) {{ edges {{ node {{ start end duration numberOfTransfers {LEG} }} }} }} }}"
+        return gql(q)["planConnection"]["edges"]
+
+    edges, note = run(when), None
+    if not edges and arrive_by:
+        # nothing gets there in time inside the search window: show what comes closest, with how late it is
+        edges = run(f'dateTime:{{earliestDeparture:"{(parse_dt(arrive_by) - datetime.timedelta(hours=3)).isoformat()}"}}')
+        if edges:
+            note = "no option arrives by the requested time; these are the closest ones, each with misses_deadline_by_min"
     if not edges:
-        raise RuntimeError("no route found: the destination may lie outside the covered area (Silesia, Lesser Poland and a 10 km border), or be unreachable by this mode")
-    its = [{"start": e["node"]["start"][11:16], "end": e["node"]["end"][11:16], "duration_min": round(e["node"]["duration"] / 60),
-            "transfers": e["node"]["numberOfTransfers"], "distance_m": round(sum(l["distance"] for l in e["node"]["legs"])),
-            "legs": [leg_out(l) for l in e["node"]["legs"]]} for e in edges]
-    return {"from": a, "to": b, "itineraries": its, "app_link": app_link(a, b, direct, depart_at, arrive_by), "attribution": ATTRIBUTION}
+        why = "no route found for this time"
+        if direct == "CAR":
+            why += ", and car routes need a start on a drivable street (a pedestrian area or park has no road to start from): try coordinates on a street"
+        else:
+            why += ": the destination may lie outside the covered area (Silesia, Lesser Poland and a 10 km border), the service may not run then, or it is unreachable by this mode"
+        raise RuntimeError(why)
+    its = []
+    for e in edges:
+        it = {"start": e["node"]["start"][11:16], "end": e["node"]["end"][11:16], "duration_min": round(e["node"]["duration"] / 60),
+              "transfers": e["node"]["numberOfTransfers"], "distance_m": round(sum(l["distance"] for l in e["node"]["legs"])),
+              "legs": [leg_out(l) for l in e["node"]["legs"]]}
+        if arrive_by:
+            late = round((datetime.datetime.fromisoformat(e["node"]["end"]) - parse_dt(arrive_by)).total_seconds() / 60)
+            if late > 0:
+                it["misses_deadline_by_min"] = late
+        its.append(it)
+    out = {"from": a, "to": b, "itineraries": its, "app_link": app_link(a, b, direct, depart_at, arrive_by), "attribution": ATTRIBUTION}
+    if note:
+        out["note"] = note
+    return out
 
 
 def cap(out):

@@ -480,14 +480,14 @@ function renderResults(r) {
     clearRoute();
     return status("No route found. Try another time, mode or transit type.", true);
   }
-  status(r.by === "arrive" ? "Arriving by your chosen time" : "");
+  status(r.note || (r.by === "arrive" ? "Arriving by your chosen time" : ""));
   S.results.forEach((it, i) => {
     const first = it.legs.find((l) => l.line);
     const day = dayTag(it.start);
     ul.append(h("li", {}, h("button", { class: "result", onclick: () => openDetail(i), "aria-label": `${hm(it.start)} to ${hm(it.end)}, ${dur(it.duration_s)}, ${summary(it)}` },
       h("div", { class: "times" }, h("time", {}, hm(it.start)), icon("chev"), h("time", {}, hm(it.end)), h("span", { class: "dur" }, dur(it.duration_s))),
       ribbon(it),
-      h("div", { class: "sub" }, summary(it), day ? ` · ${day}` : "", first ? rtTag(first.delay_s, first.realtime) : null))));
+      h("div", { class: "sub" }, summary(it), day ? ` · ${day}` : "", it.late_min ? h("span", { class: "rt late" }, `${it.late_min} min after your time`) : null, first ? rtTag(first.delay_s, first.realtime) : null))));
   });
   drawRoute(S.results[0]);
 }

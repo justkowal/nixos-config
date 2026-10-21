@@ -21,7 +21,8 @@
   '';
 
   # measured on the Pi with the KMK feeds: 1300 MB heap uses 1.45 GB, loads in about 107 s, car query 14 s cold and 3 s warm (1000 MB took 250 s and timed out)
-  otpJvm = "-Xmx1300m -XX:+UseSerialGC -Xss512k -XX:MaxMetaspaceSize=128m -XX:TieredStopAtLevel=1";
+  # C2 stays on: the routing search is CPU bound on the Pi and C1 only code made a transit query take 10 s
+  otpJvm = "-Xmx1300m -XX:+UseSerialGC -Xss512k -XX:MaxMetaspaceSize=128m";
 
   # public halves of the two keys that live on the desktop; each can do exactly one thing on this Pi
   pushKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICrFdQ1fwh/LchoaYQCDAGVOs1NzX6XxApMWx+bxzfgG maps_push@nixos-desktop";
@@ -167,7 +168,7 @@ in {
           "--read-only"
           "--tmpfs=/tmp:rw,size=64m,mode=1777"
           "--memory=1900m"
-          "--cpus=2"
+          "--cpus=3"
           "--pids-limit=128"
           "--cap-drop=ALL"
           "--security-opt=no-new-privileges"

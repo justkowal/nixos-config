@@ -233,12 +233,27 @@ def api_plan(q):
     else:
         modes, n = f"modes:{{directOnly:true,direct:[{DIRECT[mode]}]}}", 1  # a street search yields exactly one itinerary
     loc = lambda a, b: f"{{location:{{coordinate:{{latitude:{a},longitude:{b}}}}}}}"
-    query = f"{{ planConnection(origin:{loc(la, lo)} destination:{loc(ta, to)} {dt} {modes} first:{n}) {{ edges {{ node {{ start end duration numberOfTransfers walkDistance {LEG} }} }} }} }}"
-    edges = gql(query)["planConnection"]["edges"]
-    return {"itineraries": [{"start": e["node"]["start"], "end": e["node"]["end"], "duration_s": round(e["node"]["duration"]),
-                             "transfers": e["node"]["numberOfTransfers"], "walk_m": round(e["node"].get("walkDistance") or 0),
-                             "legs": [leg_out(l) for l in e["node"]["legs"]]} for e in edges],
-            "when": when, "by": "arrive" if arrive else "depart"}
+    def run(dt_clause):
+        query = f"{{ planConnection(origin:{loc(la, lo)} destination:{loc(ta, to)} {dt_clause} {modes} first:{n}) {{ edges {{ node {{ start end duration numberOfTransfers walkDistance {LEG} }} }} }} }}"
+        return gql(query)["planConnection"]["edges"]
+
+    edges, note = run(dt), None
+    if not edges and arrive and mode == "transit":
+        # nothing gets there in time within the search window: offer the closest ones and say how late they are
+        before = (datetime.datetime.fromisoformat(when) - datetime.timedelta(hours=3)).isoformat()
+        edges = run(f'dateTime:{{earliestDeparture:"{before}"}}')
+        note = "Nothing arrives by then. These are the closest options."
+    target = datetime.datetime.fromisoformat(when)
+    out = []
+    for e in edges:
+        it = {"start": e["node"]["start"], "end": e["node"]["end"], "duration_s": round(e["node"]["duration"]),
+              "transfers": e["node"]["numberOfTransfers"], "walk_m": round(e["node"].get("walkDistance") or 0),
+              "legs": [leg_out(l) for l in e["node"]["legs"]]}
+        late = round((datetime.datetime.fromisoformat(e["node"]["end"]) - target).total_seconds() / 60)
+        if arrive and late > 0:
+            it["late_min"] = late
+        out.append(it)
+    return {"itineraries": out, "when": when, "by": "arrive" if arrive else "depart", "note": note}
 
 
 def dep_rows(items):
