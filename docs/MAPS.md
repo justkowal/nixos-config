@@ -129,3 +129,9 @@ Then register it by hand in `state/feeds.yaml` (the tools can never set `interna
 ```
 
 For `plk-trains` use `static: adapter:plk-trains` and the URLs `.../gtfs-rt/trip-updates.pb` and `.../gtfs-rt/alerts.pb`. It needs the API key: `ssh nixos-rpi4.lab 'sudo sh -c "umask 077; cat > /var/lib/mcp-gateway/secrets/plk_api_key"' < /path/to/keyfile`; the module sets the file to `root:10001` mode 0640 so the container user can read it, and the container only starts once the file exists. Check `/health` of the adapter for `unresolved` station names and `match_ratio` at the first live run (see its README). Both adapters have a kill switch (`/data/KILL`).
+
+### KMK realtime: what was measured (2026-10-21, 04:30 local)
+
+- OTP applies the bus TripUpdates: 93 live trips, all found in the graph (the ids match), 69 updated (74%). The other 24 are rejected by OTP for `NEGATIVE_DWELL_TIME` (the source has arrival after departure at some stop). Mobilis: 100% applied.
+- ZTP's files are intermittently served empty (HTTP 200, 0 bytes) around the early morning refresh, and the empty `ServiceAlerts` files have no header: OTP logs "missing required fields: header" and keeps the previous data. This is noise in the OTP log, not a fault here.
+- **Night lines past midnight are shifted by 24 h.** For trips scheduled after 24:00 on their service day (lines 6xx, 9xx), ZTP's TripUpdates carry no start date and use the calendar-date prefix of the trip id, so OTP applies the update to the wrong service day and reports a delay of minus 86 400 s. 33 of the 68 updated trips at 04:30 were like this; daytime trips had all delays under an hour. The tools (`stop_departures`, `trip_detail`) show the scheduled time, `realtime: false` and a note for any delay beyond 2 hours instead of the shifted time. A proper fix would be an adapter that adds `start_date` to ZTP's updates.

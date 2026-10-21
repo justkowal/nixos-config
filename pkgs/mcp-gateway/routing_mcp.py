@@ -161,6 +161,13 @@ def need_feeds():
         raise RuntimeError(NO_FEEDS)
 
 
+def sane_rt(scheduled, actual, delay, realtime):
+    """a delay beyond 2 hours means the update was applied to the wrong service day (seen on ZTP night lines): show the schedule instead."""
+    if realtime and abs(delay or 0) > 7200:
+        return {"time": hhmm(scheduled), "delay_s": None, "realtime": False, "note": "realtime ignored: implausible delay"}
+    return {"time": hhmm(actual), "delay_s": delay, "realtime": realtime}
+
+
 def hhmm(sec):
     return f"{int(sec) // 3600 % 24:02d}:{int(sec) % 3600 // 60:02d}"
 
@@ -281,8 +288,8 @@ def t_stop_departures(a):
     s = d["stop"]
     if not s:
         raise RuntimeError("unknown stop_id, use stops_nearby to find ids")
-    return cap({"stop": s["name"], "departures": [{"line": x["trip"]["route"]["shortName"], "to": x["headsign"], "time": hhmm(x["realtimeDeparture"]),
-                                                   "scheduled": hhmm(x["scheduledDeparture"]), "delay_s": x["departureDelay"], "realtime": x["realtime"]}
+    return cap({"stop": s["name"], "departures": [{"line": x["trip"]["route"]["shortName"], "to": x["headsign"], "scheduled": hhmm(x["scheduledDeparture"]),
+                                                   **sane_rt(x["scheduledDeparture"], x["realtimeDeparture"], x["departureDelay"], x["realtime"])}
                                                   for x in s["stoptimesWithoutPatterns"]]})
 
 
@@ -316,8 +323,8 @@ def t_trip_detail(a):
     if not t:
         raise RuntimeError("unknown trip_id")
     return cap({"line": t["route"]["shortName"], "to": t["tripHeadsign"], "service_date": day,
-                "stops": [{"stop": s["stop"]["name"], "time": hhmm(s["realtimeDeparture"]), "scheduled": hhmm(s["scheduledDeparture"]), "delay_s": s["departureDelay"],
-                           "realtime": s["realtime"], "state": s["realtimeState"]} for s in t["stoptimesForDate"]]})
+                "stops": [{"stop": s["stop"]["name"], "scheduled": hhmm(s["scheduledDeparture"]), "state": s["realtimeState"],
+                           **sane_rt(s["scheduledDeparture"], s["realtimeDeparture"], s["departureDelay"], s["realtime"])} for s in t["stoptimesForDate"]]})
 
 
 def t_info(_a):
