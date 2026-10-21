@@ -177,3 +177,18 @@ test("simulating 700 vehicles for a frame costs well under a millisecond", () =>
   console.log(`# simulation: ${msPerFrame.toFixed(3)} ms per frame for ${N} vehicles`);
   assert.ok(msPerFrame < 1.5, `${msPerFrame.toFixed(2)} ms per frame`);
 });
+
+test("riding: the passenger's GPS pulls the vehicle under the dot, and a far-away fix is ignored", () => {
+  const rep = fresh("r1");
+  const v = Veh._V.get("r1");
+  Object.assign(v, { s: 1000, sRep: 1000, vel: 10, vRep: 10, tRep: performance.now() / 1000 - 12 });
+  global.window.App.api = () => Promise.resolve({ vehicles: [], now: 0 });
+  v.mx = (lonAt(1000) + 180) / 360; v.my = 0.5 - Math.log(Math.tan(Math.PI / 4 + (LAT * Math.PI) / 360)) / (2 * Math.PI);
+  assert.equal(Veh.rideSync("t:1", { lat: LAT, lon: lonAt(1000 + 5000), acc: 10, speed: 9 }), false, "5 km away is not this vehicle");
+  assert.equal(Veh.rideSync("t:1", { lat: LAT, lon: lonAt(1200), acc: 80, speed: 9 }), false, "a poor fix is not trusted");
+  assert.equal(Veh.rideSync("t:1", { lat: LAT, lon: lonAt(1200), acc: 10, speed: 9 }), true);
+  assert.ok(Math.abs(v.sRep - 1200) < 3, `reported position moved to the GPS fix, ${v.sRep}`);
+  let last = v.s;
+  for (let i = 0; i < 400; i++) { now += 0.05; Veh._step(v, 0.05, performance.now() / 1000); assert.ok(v.s >= last - 1e-9); last = v.s; }
+  assert.ok(v.s > 1200 && v.s < 1200 + 9 * 21, "the drawn vehicle caught up to the passenger without going backwards");
+});

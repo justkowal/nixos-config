@@ -1,4 +1,4 @@
-"""Poll the two GZM realtime feeds, translate ids, serve the results. Static id tables refresh daily with a conditional request."""
+"""Poll the two GZM realtime feeds, translate ids, serve the results. Static id tables refresh hourly with a conditional request."""
 import logging
 import os
 import threading

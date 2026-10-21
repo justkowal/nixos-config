@@ -460,6 +460,22 @@
     for (const [name, mesh] of Object.entries(meshes)) { scene.registerMesh(name, mesh); scene.addBatch(name, name, caps[name]); }
     scene.meshZoom = Z_MESH;
   }
+  // riding: the passenger's own GPS is fresher and closer than the vehicle feed (which lags by 10 to 30 s), so while aboard it is fed in as a zero-age report
+  let rideAsked = 0;
+  function rideSync(trip, fix) {
+    if (!trip || !fix || fix.acc > 60) return false;
+    const v = [...V.values()].find((x) => x.trip === trip && !x.sched);
+    if (!v) {
+      const t = T();
+      if (t - rideAsked > 10) { rideAsked = t; api("vehicles", { trip }).then((r) => ingest(r.vehicles, r.now)).catch(() => {}); }
+      return false;
+    }
+    const kx = 111320 * Math.cos((fix.lat * Math.PI) / 180), dm = Math.hypot((fix.lon - lonOf(v.mx)) * kx, (fix.lat - latOf(v.my)) * 110540);
+    if (dm > 700) return false;  // somewhere else: not this vehicle, or not aboard yet
+    const now = Date.now() / 1000;
+    ingest([{ id: v.id, lat: fix.lat, lon: fix.lon, hd: fix.heading, sp: fix.speed != null && fix.speed >= 0 ? fix.speed : null, ts: now, line: v.line, mode: v.mode, ag: v.ag, to: v.to, trip: v.trip, st: v.st, sn: v.sn }], now);
+    return true;
+  }
   // roof shapes from OSM (roof:shape): streamed in 0.01 degree cells, built into one mesh per colour around a fixed anchor
   const roofs = { cells: new Map(), ways: new Map(), anchor: null, meshes: new Map(), busy: false, key: "" };
   const capH = (w) => { const base = w.h || (w.lv ? w.lv * 3.1 : 6); return base + (base > 28 ? 0.5 : 1.6); };  // the flat cap layer is what the roof stands on
@@ -560,7 +576,7 @@
 
   window.Vehicles = {
     init, follow, followTrip, stopFollow, set3d, is3d: () => threeD, scene: () => scene,
-    loadRoofs, roofs: () => roofs, setAmbient, ambient: () => ambient, traffic: () => traffic,
+    rideSync, loadRoofs, roofs: () => roofs, setAmbient, ambient: () => ambient, traffic: () => traffic,
     setContext: (c) => { ctx = !!c; syncVisibility(); if (shown()) refresh(); }, setForce: (f) => { force = !!f; syncVisibility(); if (shown()) refresh(); },
     highlight: (ids) => { hi = new Set(ids || []); },
     stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on: shown(), threeD, zoom: map ? +map.getZoom().toFixed(1) : null, render: scene?.stats }),

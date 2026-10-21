@@ -146,6 +146,7 @@
     G.off = s.d > limitFor(leg) ? G.off + 1 : 0;
     if (G.off >= 3) { G.off = 0; return reroute(f); }
     const ins = instruction(s.along, { x, y, speed: f.speed }, now);
+    if (leg.line && leg.trip_id && ins.key.startsWith("t")) window.Vehicles?.rideSync?.(leg.trip_id, f);  // aboard: the vehicle is where the passenger is
     const finalLeg = seg.li === G.it.legs.length - 1;
     if (finalLeg && !leg.line && seg.c1 - s.along < 25) return arrive();
     render(ins, now);

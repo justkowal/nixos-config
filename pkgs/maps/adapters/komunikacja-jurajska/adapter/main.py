@@ -131,6 +131,9 @@ class App:
             for ktid, kidx, dt in sorted(need)[: r["map_per_cycle"]]:
                 try:
                     self.rt.map_trip(ktid, self.kp.trip(ktid, kidx), dt, now)
+                except Blocked as b:  # mapping draws on the small static lane; running dry must not stop the live poll itself
+                    log.warning("mapping paused: %s", b)
+                    break
                 except (SourceError, KeyError, TypeError) as e:
                     log.warning("mapping of live trip %s skipped: %s", ktid, e)
             self.store.save()

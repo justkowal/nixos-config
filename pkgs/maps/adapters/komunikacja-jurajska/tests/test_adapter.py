@@ -687,6 +687,20 @@ class AppTests(unittest.TestCase):
         app.boost()
         self.assertEqual(app.mode(NOW_DEP), "boost")
 
+    def test_exhausted_mapping_lane_does_not_stop_the_live_poll(self):
+        app = self.mk()
+        while app.crawler.step():
+            pass
+        app.clock = lambda: NOW
+        app.rebuild()
+        app.clock = lambda: NOW_DEP
+        def dry(*a, **k):
+            raise main_mod.Blocked("hourly budget exhausted for lane static", 600)
+        app.kp.trip = dry
+        app.kp.paths.clear()
+        app.poll_once(NOW_DEP)  # used to raise Blocked and pause realtime for the whole cycle
+        self.assertEqual(app.kp.paths[0].split("?")[0].split("/")[2], "departures")
+
     def test_http_endpoints(self):
         app = self.mk()
         while app.crawler.step():
