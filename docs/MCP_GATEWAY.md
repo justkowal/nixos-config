@@ -131,3 +131,9 @@ age -d -i ~/.local/share/notes-backup/age.key snap-YYYY-MM-DD.tar.zst.age | zstd
 
 Restore a single note, in order of effort: `.trash/` in the vault (deleted via MCP), `.history/` (overwritten or patched via MCP), Syncthing versions in `.stversions/` (90 days), then the backup.
 If the Pi's SD card dies: the laptop still has the full vault and all snapshots are on GitHub. Reflash, switch, re-pair Syncthing (minutes), restore if needed. The Pi runs from an SD card only: a USB SSD for the vault is recommended.
+
+## Maps and transit
+
+The gateway also fronts the `osm` and `routing` servers (local Nominatim and OpenTripPlanner, feed registry, desktop-built graphs). Everything about them is in `MAPS.md`: architecture, measured numbers, the restricted desktop keys, the build and swap flow, and the runbook. Their audit lines carry only tool, class and status. The feed admin tools (`feed_add`, `feed_remove`, `feed_set_enabled`, `graph_rebuild_request`) are hidden until enabled by name in `tools.json`, and use their own `confirmed` flag.
+
+The Garmin smoke test now starts at container boot (inner servers start their child eagerly) and repeats daily.
