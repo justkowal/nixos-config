@@ -77,3 +77,33 @@ Limits: 60 osm calls and 30 routing calls per minute, 50 results, 30 000 charact
 - `feed_validate` does basic checks on the Pi. The full MobilityData validator runs on the desktop during the build.
 - Realtime feeds are not yet loaded: `stop_departures`, `vehicle_positions` and `service_alerts` return data only when a loaded feed has them.
 - Komunikacja Jurajska is blocked: its host's `robots.txt` forbids automated access.
+
+## KMK (Phase 2, 2026-10-21)
+
+Source: ZTP Krakow, `https://gtfs.ztp.krakow.pl/`. The index lists three groups with these real file names:
+
+| Feed id | Static | Realtime | Notes |
+| --- | --- | --- | --- |
+| `kmk-bus` | `GTFS_KRK_A.zip` (MPK buses, 19.6 MB, 65 791 trips, 2 992 stops) | `TripUpdates_A.pb`, `VehiclePositions_A.pb`, `ServiceAlerts_A.pb` | service to 2027-01-31 |
+| `kmk-mobilis` | `GTFS_KRK_M.zip` (Mobilis buses, 2.7 MB, 20 118 trips) | `*_M.pb` | service to 2027-01-31 |
+| `kmk-tram` | `GTFS_KRK_T.zip` (trams, 4.1 MB, 11 571 trips) | none shipped | see below |
+
+- Licence: **unclear**. No licence text or terms page was found; `gtfs.ztp.krakow.pl/robots.txt` is a 404. The feeds are published openly by ZTP. `feeds.yaml` says "unclear" and credits "ZTP Krakow, MPK Krakow" / "Mobilis".
+- Polling: the registry floors `poll_seconds` at 30, six realtime updaters in total (trip updates, vehicle positions, alerts for bus and Mobilis).
+- Trip id matching, decoded with `gtfs-realtime-bindings`: bus TripUpdates 37 of 37 and VehiclePositions 16 of 16 match the static `trip_id`s; Mobilis 1 of 1 each. Headers are FULL_DATASET and 22 to 55 s old at sampling time.
+- **Tram realtime is not shipped.** The tram TripUpdate id (`block_45_trip_1_service_1`) is not in the static tram file (0 of 1), its `route_id` is empty, tram VehiclePositions are empty, and the ZTP index page itself says there is no GTFS-RT for the tram group. The tram feed is loaded static only.
+- The bus feed is empty around 04:00 to 04:30 local time (0 entities, no header timestamp): that is a service gap, not an outage.
+- Validator (MobilityData 8.0.1): 0 errors on all three. Warnings are cosmetic: route long names containing the short name, stops far from their shape, services defined only through exception dates, unused shapes, the tram extended route type 900, one expired calendar entry.
+- Hand check: line 192 and 125 departures at Dworzec Glowny Wschod from OTP (04:31, 04:36, 04:57, 05:00, 05:06) equal the static schedule for 2026-10-21.
+
+Sizing: with the KMK feeds the graph is 242 MB (was 188 MB). Stripping shapes and limiting the service window did not shrink it. On the Pi the heap needs 1300 MB: 1000 MB loaded in 250 s and timed out the stage test, 1300 MB loads in about 107 s, uses 1.45 GB, and a cold 80 km car query takes 14 s (3 s warm). About 930 MB of the Pi's RAM stays free. OTP now also sits on the `mcp` network so the realtime updaters can reach ZTP; it publishes no port. The stage-test container has no outbound network and an empty router config.
+
+Build: 76 s on the desktop, 6.4 GiB peak at a 12 GB heap.
+
+## Adapters (Phase 3, built, not enabled)
+
+All three live in `pkgs/maps/adapters/` and are not integrated: the feeds registry has no entry for them and nothing runs them.
+
+- `mpk-czestochowa`: official static GTFS from the operator's public share (new folder every few days, about two weeks of validity), plus realtime from the operator's own live service (websocket, no polling). Runs are matched to trips and checked before use. Delays after the last observed stop are estimated by plain propagation. 16 tests pass, GTFS validator 0 errors, the official GTFS-RT validator has no offline release so a structural check was used instead. Licence of the feed is unstated. Request volume stays under about 15 per day per source.
+- `plk-trains`: the official PLK open data API. Built and tested on fixtures derived from the OpenAPI spec only, because it needs the API key (never read). 32 tests pass, 0 validator errors. Stop coordinates come from the local Nominatim and are flagged. Budgets: Basic tier gives about 2-minute freshness at 64% of the daily limit, Standard allows 30 s polling. Open items are in its README (key file readability, station names, the carrier code of the Lesser Poland operator, first live run checks).
+- `komunikacja-jurajska`: **not built**. `komunikacjajurajska.kiedyprzyjedzie.pl/robots.txt` says `Disallow: /` for everyone and the operator publishes no GTFS. Options: ask the operator or the vendor for permission or a feed, file a public information request, or drop it.
