@@ -155,6 +155,8 @@ in {
   # approved by the owner on 2026-10-21; plk-trains only starts once its api key file exists
   lab.maps.adapters.mpk-czestochowa.enable = true;
   lab.maps.adapters.plk-trains.enable = true;
+  # realtime id translator for the Metropolia GZM feed (public CC BY feed)
+  lab.maps.adapters.gzm-rt.enable = true;
   lab.focus.enable = true;
 
   # ── Hardware: Raspberry Pi 4 (4GB) ────────────────────────────────────

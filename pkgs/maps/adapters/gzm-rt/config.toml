@@ -1,0 +1,16 @@
+# Translates the ZTM GZM realtime feeds to the trip ids of the mkuran.pl GZM static feed. No static data is produced here.
+[source]
+trip_updates = "https://gtfsrt.transportgzm.pl:5443/gtfsrt/gzm/tripUpdates"
+vehicle_positions = "https://gtfsrt.transportgzm.pl:5443/gtfsrt/gzm/vehiclePositions"
+# only the id tables are read from it (calendar_dates.txt and the trip_id column), conditional request, once a day
+static_ids = "https://mkuran.pl/gtfs/gzm.zip"
+user_agent = "kowal-lab-maps-adapter/0.1 (personal use; contact hopkuba@gmail.com)"
+timeout_s = 30
+
+[limits]
+poll_s = 30
+static_refresh_h = 24
+breaker_hours = 6
+error_run_limit = 5
+backoff_base_s = 30
+backoff_max_s = 1800

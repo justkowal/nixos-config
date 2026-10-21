@@ -22,6 +22,13 @@
       zip = "out/gtfs.zip";
       secret = "plk_api_key";
     };
+    # realtime only: rewrites the GZM trip ids to the ones of the static feed the desktop builds from
+    gzm-rt = {
+      dir = ../../pkgs/maps/adapters/gzm-rt;
+      target = "final";
+      zip = null;
+      secret = null;
+    };
   };
 
   enabled = lib.filterAttrs (n: _: cfg.${n}.enable) adapters;
@@ -77,7 +84,7 @@ in {
     // {
       # the desktop pulls each adapter's static zip through the export folder, never from the container
       maps-export-sync.serviceConfig.ExecStartPost = [
-        (pkgs.writeShellScript "maps-export-adapters" (lib.concatStringsSep "\n" (lib.mapAttrsToList (n: a: ''
+        (pkgs.writeShellScript "maps-export-adapters" (lib.concatStringsSep "\n" (lib.mapAttrsToList (n: a: lib.optionalString (a.zip != null) ''
             [ -f ${data}/adapters/${n}/${a.zip} ] && ${pkgs.rsync}/bin/rsync -a --chown=maps-pull:maps-pull ${data}/adapters/${n}/${a.zip} ${data}/export/adapters/${n}.zip
           '')
           enabled)

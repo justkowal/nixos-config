@@ -14,6 +14,7 @@ os.environ.setdefault("FEED_CONTACT", os.environ.get("MAPS_CONTACT", "unset"))
 import yaml  # noqa: E402
 
 from routing_mcp import read_zip, safe_open  # noqa: E402
+from trim_gtfs import trim  # noqa: E402
 
 
 
@@ -47,6 +48,11 @@ for f in feeds:
             ref = resolve_ckan(ref)
             print(f"feed {fid}: newest resource {ref.rsplit('/', 1)[-1]}")
         open(dest, "wb").write(safe_open(ref, extra_ports=tuple(f.get("allow_ports") or [])))
+    if f.get("trim_days"):
+        # whole-metropolis feeds expand every service day; the Pi cannot hold a month of them
+        read_zip(open(dest, "rb").read())
+        print(f"feed {fid}: trimmed to {f['trim_days']} days:", trim(dest, dest + ".trim", int(f["trim_days"])))
+        os.replace(dest + ".trim", dest)
     data = open(dest, "rb").read()
     read_zip(data)  # size, ratio and path checks before anything else touches it
     out.append({"id": fid, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data), "license": f.get("license"),
