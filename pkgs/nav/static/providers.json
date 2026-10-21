@@ -1,0 +1,15 @@
+{
+  "note": "Approximate brand colours, picked for 4.5:1 against white text. Edit freely: the first entry whose match is found in the agency name wins.",
+  "providers": [
+    {"match": "Intercity", "name": "PKP Intercity", "color": "#12327a"},
+    {"match": "Koleje Śląskie", "name": "Koleje Śląskie", "color": "#0e7a3b"},
+    {"match": "Koleje Małopolskie", "name": "Koleje Małopolskie", "color": "#b45309"},
+    {"match": "Polregio", "name": "Polregio", "color": "#1d4ed8"},
+    {"match": "ZTP", "name": "Kraków trams", "color": "#b3261e"},
+    {"match": "Mobilis", "name": "Mobilis", "color": "#c2410c"},
+    {"match": "w Krakowie", "name": "MPK Kraków", "color": "#1f5fa8"},
+    {"match": "w Częstochowie", "name": "MPK Częstochowa", "color": "#0b7285"},
+    {"match": "Jurajska", "name": "Komunikacja Jurajska", "color": "#4d7c0f"},
+    {"match": "KZK GOP", "name": "KZK GOP", "color": "#0369a1"}
+  ]
+}

@@ -25,3 +25,4 @@ __pycache__/
 
 # Rust build output
 pkgs/labd/target/
+pkgs/nav/static/vendor/

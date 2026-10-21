@@ -22,6 +22,12 @@
       zip = "out/gtfs.zip";
       secret = "plk_api_key";
     };
+    komunikacja-jurajska = {
+      dir = ../../pkgs/maps/adapters/komunikacja-jurajska;
+      target = "final";
+      zip = "gtfs.zip";
+      secret = null;
+    };
     # realtime only: rewrites the GZM trip ids to the ones of the static feed the desktop builds from
     gzm-rt = {
       dir = ../../pkgs/maps/adapters/gzm-rt;

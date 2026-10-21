@@ -134,6 +134,7 @@ in {
     ./notes-backup.nix
     ./storage.nix
     ./maps.nix
+    ./nav.nix
     ./maps-adapters.nix
     ./apps.nix
     ../../modules/monitoring.nix
@@ -157,6 +158,8 @@ in {
   lab.maps.adapters.plk-trains.enable = true;
   # realtime id translator for the Metropolia GZM feed (public CC BY feed)
   lab.maps.adapters.gzm-rt.enable = true;
+  # approved by the owner on 2026-10-21 for personal use at ordinary-user load (budgets are enforced in the adapter)
+  lab.maps.adapters.komunikacja-jurajska.enable = true;
   lab.focus.enable = true;
 
   # ── Hardware: Raspberry Pi 4 (4GB) ────────────────────────────────────
