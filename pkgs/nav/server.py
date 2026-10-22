@@ -151,6 +151,8 @@ def hhmm(sec):
 
 def sane_rt(scheduled, actual, delay, realtime):
     """a delay beyond 2 hours means the update hit the wrong service day (ZTP night lines): show the schedule."""
+    if delay is None and actual is not None and scheduled is not None:
+        delay = actual - scheduled
     if realtime and abs(delay or 0) > 7200:
         return {"time": hhmm(scheduled), "delay_s": None, "realtime": False}
     return {"time": hhmm(actual), "delay_s": delay if realtime else None, "realtime": bool(realtime)}
@@ -379,11 +381,46 @@ def api_trip(q):
     day = (q.get("date") or [datetime.datetime.now(TZ).strftime("%Y-%m-%d")])[0]
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
         raise Bad("date must be YYYY-MM-DD")
-    d = gql("query($id:String!,$d:String!){ trip(id:$id){ tripHeadsign route{ shortName color } stoptimesForDate(serviceDate:$d){ stop{ name } scheduledDeparture realtimeDeparture departureDelay realtime } } }", {"id": tid, "d": day})["trip"]
+    d = gql("""query($id:String!,$d:String!){
+        trip(id:$id){
+            tripHeadsign
+            tripGeometry { points }
+            route { shortName longName color mode agency { name } }
+            stoptimesForDate(serviceDate:$d){
+                stop { name lat lon }
+                scheduledArrival
+                realtimeArrival
+                arrivalDelay
+                scheduledDeparture
+                realtimeDeparture
+                departureDelay
+                realtime
+            }
+        }
+    }""", {"id": tid, "d": day})["trip"]
     if not d:
         raise Bad("unknown trip", 404)
-    return {"line": d["route"]["shortName"], "color": d["route"].get("color"), "to": d["tripHeadsign"], "stops": [
-        {"stop": s["stop"]["name"], "scheduled": hhmm(s["scheduledDeparture"]), **sane_rt(s["scheduledDeparture"], s["realtimeDeparture"], s["departureDelay"], s["realtime"])} for s in d["stoptimesForDate"]]}
+    stops = []
+    for s in d.get("stoptimesForDate") or []:
+        sched_d = s.get("scheduledDeparture") if s.get("scheduledDeparture") is not None else s.get("scheduledArrival")
+        act_d = s.get("realtimeDeparture") if s.get("realtimeDeparture") is not None else s.get("realtimeArrival")
+        del_s = s.get("departureDelay") if s.get("departureDelay") is not None else s.get("arrivalDelay")
+        stops.append({
+            "stop": s["stop"]["name"],
+            "lat": s["stop"].get("lat"),
+            "lon": s["stop"].get("lon"),
+            "scheduled": hhmm(sched_d),
+            **sane_rt(sched_d, act_d, del_s, s.get("realtime", False))
+        })
+    return {
+        "line": d["route"]["shortName"],
+        "color": d["route"].get("color"),
+        "mode": d["route"].get("mode"),
+        "agency": (d["route"].get("agency") or {}).get("name"),
+        "to": d["tripHeadsign"],
+        "geometry": (d.get("tripGeometry") or {}).get("points"),
+        "stops": stops
+    }
 
 
 def api_info(_q):
@@ -567,7 +604,7 @@ def api_sched(q):
     box = [float(x) for x in raw.split(",")] if raw else []
     if len(box) != 4 or not (-180 <= box[0] < box[2] <= 180 and -90 <= box[1] < box[3] <= 90):
         raise Bad("bbox must be minLon,minLat,maxLon,maxLat")
-    if box[2] - box[0] > 0.2 or box[3] - box[1] > 0.14:
+    if box[2] - box[0] > 1.5 or box[3] - box[1] > 1.0:
         return {"now": time.time(), "trips": [], "note": "zoom in"}
     at = int(num((q.get("at") or [str(int(time.time()))])[0], time.time() - 365 * 86400, time.time() + 365 * 86400, "at"))
     everything = (q.get("all") or [""])[0] == "1"  # a time other than now: the live feed says nothing about it
@@ -577,8 +614,12 @@ def api_sched(q):
     if hit and time.time() - hit[0] < 20:
         return hit[1]
     cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
-    st = gql("query($a:Float!,$b:Float!,$c:Float!,$d:Float!){ stopsByBbox(minLat:$a, minLon:$b, maxLat:$c, maxLon:$d){ gtfsId lat lon } }", {"a": box[1], "b": box[0], "c": box[3], "d": box[2]})["stopsByBbox"]
+    st = gql("query($a:Float!,$b:Float!,$c:Float!,$d:Float!){ stopsByBbox(minLat:$a, minLon:$b, maxLat:$c, maxLon:$d){ gtfsId lat lon vehicleMode } }", {"a": box[1], "b": box[0], "c": box[3], "d": box[2]})["stopsByBbox"]
     st.sort(key=lambda x: (x["lon"] - cx) ** 2 + (x["lat"] - cy) ** 2)
+    if gap:
+        rail_stops = [x for x in st if "plk" in x["gtfsId"].lower() or "rail" in str(x.get("vehicleMode") or "").lower()]
+        other_stops = [x for x in st if x not in rail_stops]
+        st = rail_stops + other_stops
     ids = [x["gtfsId"] for x in st[:SCHED_STOPS] if ID.fullmatch(x["gtfsId"])]
     out = {"now": time.time(), "at": at, "trips": []}
     if not ids:
