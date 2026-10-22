@@ -600,6 +600,13 @@ async function loadInfo() {
       h("li", {}, map ? "Map: WebGL on" : "Map: WebGL off, no map, no 3D"),
       h("li", {}, (() => { const s = window.Vehicles?.stats?.(); return s ? `Vehicles: ${s.total} live, ${s.withShape} on their route, zoom ${s.zoom}, 3D ${s.threeD ? "on" : "off"}, layer ${s.on ? "on" : "off"}` : "Vehicles: not loaded"; })()),
       h("li", {}, "3D buildings and vehicle models show from zoom 15 (street level)")])),
+    h("section", {}, h("h3", {}, "Camera & shortcuts"), h("ul", {}, [
+      h("li", {}, "Pan: W A S D or Arrow keys"),
+      h("li", {}, "Tilt (pitch): R / F or Shift + Up / Down (up to 85°)"),
+      h("li", {}, "Rotate (bearing): Q / E or Shift + Left / Right"),
+      h("li", {}, "Zoom: + / - or mouse wheel"),
+      h("li", {}, "Tilt & rotate: Right-click drag, Ctrl + drag, or two-finger drag"),
+      h("li", {}, "Diorama: O to orbit, Space to play/pause, ? for shortcuts")])),
     h("section", {}, h("h3", {}, "Sources"), h("div", {}, "Map data © OpenStreetMap contributors (ODbL). Tiles by OpenFreeMap. Timetables and live data from the operators and PKP Polskie Linie Kolejowe S.A. Operator colours are approximate.")),
   );
 }

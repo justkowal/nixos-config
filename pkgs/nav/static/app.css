@@ -485,3 +485,95 @@ body.theme-dark .dt-chip.late { color: #f87171; }
 }
 .dt-stop.current .dt-name { font-weight: 700; color: var(--ink); }
 .dt-nostops { font-size: 0.82rem; color: var(--ink-2); font-style: italic; }
+
+/* keyboard shortcuts & help modal */
+kbd {
+  display: inline-block;
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-bottom: 2px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.dio-modal {
+  position: fixed;
+  z-index: 12;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(540px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+.dio-modal[hidden] { display: none !important; }
+.dio-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dio-modal-head h3 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--ink);
+}
+.dio-help-grid {
+  display: grid;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.dio-help-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.875rem;
+}
+.dio-help-row .dio-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.dio-help-row .dio-desc {
+  color: var(--ink-2);
+  text-align: right;
+}
+.dio-help-mouse {
+  margin-top: 10px;
+  font-size: 0.875rem;
+}
+.dio-help-mouse h4 {
+  margin: 0 0 6px 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.dio-help-mouse ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dio-help-mouse li b {
+  color: var(--ink);
+}

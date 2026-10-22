@@ -183,9 +183,38 @@
     <button id="dio-weather" class="chip">Weather: Auto</button>
     <button id="dio-terrain" class="chip" aria-pressed="true">Terrain 2x</button>
     <button id="dio-orbit" class="chip" aria-pressed="false">Orbit</button>
+    <button id="dio-help" class="chip" aria-label="Camera shortcuts" title="Keyboard shortcuts (?)">Shortcuts</button>
     <button id="dio-exit" class="primary">Exit</button>
   </div>
 </section>
+
+<div id="dio-help-modal" class="glass dio-modal" hidden role="dialog" aria-modal="true" aria-label="Camera controls and keyboard shortcuts">
+  <div class="dio-modal-head">
+    <h3>Camera Controls &amp; Shortcuts</h3>
+    <button id="dio-help-close" class="icon-btn small" aria-label="Close help"><svg class="ic"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="dio-modal-body">
+    <div class="dio-help-grid">
+      <div class="dio-help-row"><span class="dio-keys"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or <kbd>↑</kbd> <kbd>←</kbd> <kbd>↓</kbd> <kbd>→</kbd></span><span class="dio-desc">Pan camera</span></div>
+      <div class="dio-help-row"><span class="dio-keys"><kbd>R</kbd> / <kbd>F</kbd> or <kbd>Shift</kbd> + <kbd>↑</kbd> / <kbd>↓</kbd></span><span class="dio-desc">Tilt pitch up / down (up to 85°)</span></div>
+      <div class="dio-help-row"><span class="dio-keys"><kbd>Q</kbd> / <kbd>E</kbd> or <kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd></span><span class="dio-desc">Rotate view left / right</span></div>
+      <div class="dio-help-row"><span class="dio-keys"><kbd>+</kbd> / <kbd>-</kbd></span><span class="dio-desc">Zoom in / out</span></div>
+      <div class="dio-help-row"><span class="dio-keys"><kbd>O</kbd></span><span class="dio-desc">Toggle 360° orbit</span></div>
+      <div class="dio-help-row"><span class="dio-keys"><kbd>Space</kbd></span><span class="dio-desc">Play / pause schedule replay</span></div>
+      <div class="dio-help-row"><span class="dio-keys"><kbd>?</kbd> or <kbd>H</kbd></span><span class="dio-desc">Toggle this shortcuts help</span></div>
+      <div class="dio-help-row"><span class="dio-keys"><kbd>Esc</kbd></span><span class="dio-desc">Exit diorama mode</span></div>
+    </div>
+    <div class="dio-help-mouse">
+      <h4>Mouse &amp; Touch Controls</h4>
+      <ul>
+        <li><b>Right-click drag</b> or <b>Ctrl + drag</b>: Tilt pitch and rotate bearing freely</li>
+        <li><b>Two-finger drag up/down</b>: Full tilt control up to 85°</li>
+        <li><b>Two-finger twist</b>: Rotate camera angle</li>
+        <li><b>Left click on vehicle</b>: Follow vehicle &amp; view stop ribbon</li>
+      </ul>
+    </div>
+  </div>
+</div>
 
 <main id="login" class="login" hidden>
   <form id="login-form" autocomplete="on">

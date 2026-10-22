@@ -107,6 +107,7 @@
     $("#diorama").hidden = true;
     const dioTrack = $("#dio-track");
     if (dioTrack) dioTrack.hidden = true;
+    toggleHelp(false);
     D.enable(false); D.setDay(null); D.setLive(); V.setForce(false); V.setAmbient(false); V.setTerrain(0);
     if (!saved?.three && V.is3d()) V.set3d(false);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -115,8 +116,20 @@
     saved = null;
   }
 
+  function toggleHelp(show) {
+    const modal = $("#dio-help-modal");
+    if (!modal) return;
+    const isHidden = modal.hidden;
+    const next = show !== undefined ? show : isHidden;
+    modal.hidden = !next;
+    $("#dio-help")?.setAttribute("aria-expanded", String(next));
+    poke();
+  }
+
   $("#btn-dio").addEventListener("click", enter);
   $("#dio-exit").addEventListener("click", exit);
+  $("#dio-help")?.addEventListener("click", () => toggleHelp());
+  $("#dio-help-close")?.addEventListener("click", () => toggleHelp(false));
   $("#dio-live").addEventListener("click", () => {
     window.Daylight.setDay(null);
     window.Daylight.setLive();
@@ -190,7 +203,54 @@
     poke();
   });
   for (const ev of ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"]) document.addEventListener(ev, poke, { passive: true });
-  document.addEventListener("keydown", (e) => { if (on && e.key === "Escape" && !document.fullscreenElement) exit(); });
+  document.addEventListener("keydown", (e) => {
+    if (!on) return;
+    if (document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")) return;
+    const modal = $("#dio-help-modal");
+    if (e.key === "Escape") {
+      if (modal && !modal.hidden) {
+        toggleHelp(false);
+        e.preventDefault();
+        return;
+      }
+      if (!document.fullscreenElement) exit();
+      return;
+    }
+    if (e.key === "?" || e.key === "h" || e.key === "H") {
+      toggleHelp();
+      e.preventDefault();
+      return;
+    }
+    const map = A.getMap();
+    if (!map) return;
+    const key = e.key.toLowerCase();
+    if (key === "w" || e.key === "ArrowUp") {
+      if (!e.shiftKey) { map.panBy([0, -80], { duration: 150 }); poke(); }
+    } else if (key === "s" || e.key === "ArrowDown") {
+      if (!e.shiftKey) { map.panBy([0, 80], { duration: 150 }); poke(); }
+    } else if (key === "a" || e.key === "ArrowLeft") {
+      if (!e.shiftKey) { map.panBy([-80, 0], { duration: 150 }); poke(); }
+    } else if (key === "d" || e.key === "ArrowRight") {
+      if (!e.shiftKey) { map.panBy([80, 0], { duration: 150 }); poke(); }
+    } else if (key === "q") {
+      map.easeTo({ bearing: map.getBearing() - 15, duration: 200 }); poke();
+    } else if (key === "e") {
+      map.easeTo({ bearing: map.getBearing() + 15, duration: 200 }); poke();
+    } else if (key === "r") {
+      map.easeTo({ pitch: Math.min(85, map.getPitch() + 10), duration: 200 }); poke();
+    } else if (key === "f") {
+      map.easeTo({ pitch: Math.max(0, map.getPitch() - 10), duration: 200 }); poke();
+    } else if (key === "+" || key === "=") {
+      map.zoomIn({ duration: 200 }); poke();
+    } else if (key === "-" || key === "_") {
+      map.zoomOut({ duration: 200 }); poke();
+    } else if (key === "o") {
+      $("#dio-orbit")?.click(); poke();
+    } else if (e.key === " ") {
+      $("#dio-play")?.click(); poke();
+      e.preventDefault();
+    }
+  });
   document.addEventListener("fullscreenchange", () => { if (on && !document.fullscreenElement) { /* leaving fullscreen keeps the mode, Escape or Exit leaves it */ } });
   window.Daylight.onThemeChange = () => { if (on || !window.Daylight.enabled) A.restyle(); };
 
