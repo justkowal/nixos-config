@@ -180,7 +180,7 @@
   // writes the light into the scene (each frame) and into MapLibre (a few times a second)
   D.apply = (scene, map) => {
     if (!scene) return;
-    if (!D.enabled) { scene.setLight({ sun: NEUTRAL.sun, sunColor: lin(NEUTRAL.sunColor), ambient: lin(NEUTRAL.ambient), night: 0, bg: lin(D.bg) }); return; }
+    if (!D.enabled) { scene.setLight({ sun: NEUTRAL.sun, sunColor: lin(NEUTRAL.sunColor), ambient: lin(NEUTRAL.ambient), night: 0, bg: lin(D.bg), timeMin: 720, sunsetMin: 1110, sunriseMin: 360 }); return; }
     const now = performance.now();
     if (D.mode === "cycle") {
       D.minutes = (D.minutes + ((now - D._last) / 1000) * D.speed) % 1440;
@@ -192,7 +192,9 @@
     const s = D._state = D.state(), alt = s.alt * RAD, up = Math.sin(alt), horiz = Math.cos(alt);
     const dir = s.alt > -1 ? [Math.sin(s.az) * horiz, Math.cos(s.az) * horiz, Math.max(up, 0.03)] : [0.3, -0.4, 0.8];  // below the horizon the "sun" becomes a moon light from the sky
     const col = s.alt > -1 ? s.sunColor : s.moon.map((v) => v * 1.0);
-    scene.setLight({ sun: dir, sunColor: lin(col.map((v, i) => v + (s.alt > -1 ? s.moon[i] : 0))), ambient: lin(s.ambient), night: s.night, bg: lin(D.bg) });
+    const m = Math.floor(D.mode === "live" ? localMinutes(new Date()) : D.minutes % 1440);
+    const st = D.sunTimes();
+    scene.setLight({ sun: dir, sunColor: lin(col.map((v, i) => v + (s.alt > -1 ? s.moon[i] : 0))), ambient: lin(s.ambient), night: s.night, bg: lin(D.bg), timeMin: m, sunsetMin: st.sunset ?? 1110, sunriseMin: st.sunrise ?? 360 });
     scene.weather = D.weather.condition;
     if (now - D._lightAt > 250 && map) {
       D._lightAt = now;

@@ -265,6 +265,10 @@
       const A = roofs.anchor, ax = mercX(A.lon), ay = mercY(A.lat), rx = (ax - ox) / k, ry = (oy - ay) / k;
       for (const [hex, rgb] of roofs.meshes) scene.batches.get("roof:" + hex)?.batch.push(rx, ry, 1, 0, 0, 255, 0, rgb[0], rgb[1], rgb[2], 255);
     }
+    if (threeD && facades.anchor && scene.hasFacades()) {
+      const A = facades.anchor, ax = mercX(A.lon), ay = mercY(A.lat);
+      scene.setFacadeAnchorOffset((ax - ox) / k, (oy - ay) / k);
+    }
     if (meshes && infra.anchor && threeD) {
       const A = infra.anchor, ax = mercX(A.lon), ay = mercY(A.lat), rx = (ax - ox) / k, ry = (oy - ay) / k;
       for (const [name, rgb] of infra.meshes) {
@@ -540,6 +544,7 @@
     if (scene) { scene.showDots = scene.showMeshes = scene.showLabels = shown(); }
     const bt = $("#btn-veh");
     if (bt) bt.hidden = !(ctx || force || followId !== null);
+    if (threeD) rebuildFacades();
     map.triggerRepaint();
     refreshSched();
   }
@@ -682,6 +687,7 @@
     clearTimeout(rebuildTimer);
     rebuildTimer = setTimeout(() => {
       if (roofs.ways.size) rebuildRoofs();
+      rebuildFacades();
       if (ambient) { laneKey = ""; loadLanes(); }
       map?.triggerRepaint();
     }, 400);
@@ -775,6 +781,27 @@
     } catch { /* retried on the next move */ } finally { roofs.busy = false; }
     if (want.length > take.length) setTimeout(loadRoofs, 1500);
   }
+  // procedural building facades with windows that randomly light up after sunset and go almost fully dark after midnight
+  const facades = { anchor: null, mesh: null };
+  function rebuildFacades() {
+    if (!threeD || !scene || !window.Facades || !map || !map.getSource("openmaptiles") || map.getZoom() < 14.5) {
+      if (scene?.hasFacades?.()) scene.setFacadeMesh(null);
+      return;
+    }
+    const c = map.getCenter();
+    const anchor = { lon: +c.lng.toFixed(2), lat: +c.lat.toFixed(2) };
+    facades.anchor = anchor;
+    let feats = [];
+    try { feats = map.querySourceFeatures("openmaptiles", { sourceLayer: "building" }); } catch { return; }
+    if (!feats.length) return;
+    const kA = 1 / (40075016.686 * Math.cos((anchor.lat * Math.PI) / 180)), ax = mercX(anchor.lon), ay = mercY(anchor.lat);
+    const getGround = (x, y) => (terrain.on && dem ? dem.sampleMerc(ax + x * kA, ay - y * kA) : 0);
+    const mesh = window.Facades.buildFacades(feats, anchor, getGround);
+    if (mesh) {
+      facades.mesh = mesh;
+      scene.setFacadeMesh(mesh);
+    }
+  }
   // trips with no live position, played back from the timetable
   // outside diorama only operators with no live positions at all are estimated (trains, trams without a feed); in diorama every trip without a position is
   let schedBusy = false, schedMode = "";
@@ -849,8 +876,11 @@
     map.on("dragstart", (e) => { if (followId && e.originalEvent) stopFollow(); });
     map.on("zoomstart", (e) => { if (followId && cam && e.originalEvent) cam.free = true; });
     let deb = 0, deb2 = 0;
-    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); loadRoofs(); ensureDem(); }, 400); });
-    map.on("sourcedata", (e) => { if (ambient && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); } });
+    map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); loadRoofs(); ensureDem(); rebuildFacades(); }, 400); });
+    map.on("sourcedata", (e) => {
+      if (ambient && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); }
+      if (threeD && e.sourceId === "openmaptiles" && e.isSourceLoaded) { clearTimeout(deb); deb = setTimeout(rebuildFacades, 500); }
+    });
     setInterval(refresh, 5000);
     setInterval(refreshSched, 15000);
     map.touchPitch?.disable();
@@ -861,7 +891,7 @@
 
   window.Vehicles = {
     init, follow, followTrip, stopFollow, set3d, is3d: () => threeD, scene: () => scene,
-    setTerrain, terrain: () => ({ ...terrain }), dem: () => dem, decor: () => decor, rideSync, loadRoofs, roofs: () => roofs, setAmbient, ambient: () => ambient, traffic: () => traffic,
+    setTerrain, terrain: () => ({ ...terrain }), dem: () => dem, decor: () => decor, rideSync, loadRoofs, roofs: () => roofs, facades: () => facades, rebuildFacades, setAmbient, ambient: () => ambient, traffic: () => traffic,
     infra: () => infra, rebuildInfra, refreshSched,
     setContext: (c) => { ctx = !!c; syncVisibility(); if (shown()) refresh(); }, setForce: (f) => { force = !!f; syncVisibility(); if (shown()) refresh(); },
     highlight: (ids) => { hi = new Set(ids || []); },

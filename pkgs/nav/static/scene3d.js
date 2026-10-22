@@ -270,10 +270,147 @@ precision mediump float;
 uniform sampler2D u_tex; in vec2 v_uv; out vec4 o;
 void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
 
-  function program(gl, vs, fs) {
+  const VS_FACADE = `#version 300 es
+precision highp float;
+uniform mat4 u_matrix;
+uniform vec2 u_anchorOffset;
+in vec3 a_pos; in vec3 a_nrm; in vec2 a_uv; in vec4 a_meta;
+out vec3 v_pos; out vec3 v_nrm; out vec2 v_uv; out vec4 v_meta;
+void main() {
+  vec3 pos = vec3(a_pos.xy + u_anchorOffset, a_pos.z);
+  gl_Position = u_matrix * vec4(pos, 1.0);
+  v_pos = pos;
+  v_nrm = a_nrm;
+  v_uv = a_uv;
+  v_meta = a_meta;
+}`;
+  const FS_FACADE = `#version 300 es
+precision highp float;
+uniform vec3 u_sun; uniform vec3 u_sunColor; uniform vec3 u_ambient; uniform float u_night; uniform vec3 u_bg;
+uniform float u_timeMin; uniform float u_sunsetMin; uniform float u_sunriseMin;
+in vec3 v_pos; in vec3 v_nrm; in vec2 v_uv; in vec4 v_meta;
+out vec4 o;
+
+float hash1(vec3 p) {
+  p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+  p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+vec3 getWallLight(int idx) {
+  if (idx == 0) return vec3(0.785, 0.741, 0.665);
+  if (idx == 1) return vec3(0.697, 0.647, 0.573);
+  if (idx == 2) return vec3(0.745, 0.722, 0.665);
+  if (idx == 3) return vec3(0.638, 0.603, 0.531);
+  if (idx == 4) return vec3(0.768, 0.686, 0.603);
+  return vec3(0.697, 0.677, 0.634);
+}
+
+vec3 getWallDark(int idx) {
+  if (idx == 0) return vec3(0.043, 0.052, 0.068);
+  if (idx == 1) return vec3(0.052, 0.046, 0.043);
+  if (idx == 2) return vec3(0.038, 0.046, 0.060);
+  if (idx == 3) return vec3(0.060, 0.052, 0.043);
+  if (idx == 4) return vec3(0.043, 0.052, 0.046);
+  return vec3(0.052, 0.054, 0.068);
+}
+
+void main() {
+  float wallL = max(v_meta.x, 1.0);
+  float wallH = max(v_meta.y, 2.0);
+  float seed = v_meta.z;
+  int palIdx = int(mod(v_meta.w + 0.5, 6.0));
+
+  float floorH = 3.2;
+  float floorF = floor(v_uv.y / floorH);
+  float fy = fract(v_uv.y / floorH);
+
+  float numBays = max(1.0, floor(wallL / 2.6 + 0.4));
+  float bayW = wallL / numBays;
+  float bayF = floor(v_uv.x / bayW);
+  float fx = fract(v_uv.x / bayW);
+
+  bool isRoofline = (v_uv.y > wallH - 0.6);
+  bool isPlinth = (v_uv.y < 0.6);
+  bool isCorner = (v_uv.x < 0.4 || v_uv.x > wallL - 0.4);
+  bool hasWindow = (!isRoofline && !isPlinth && !isCorner);
+
+  bool inWindow = hasWindow && (fx >= 0.22 && fx <= 0.78 && fy >= 0.24 && fy <= 0.84);
+  bool inFrame = inWindow && (fx < 0.26 || fx > 0.74 || fy < 0.27 || fy > 0.81);
+  bool inMullion = inWindow && (abs(fx - 0.50) < 0.02 || abs(fy - 0.60) < 0.02);
+  bool inGlass = inWindow && !inFrame && !inMullion;
+
+  bool inSill = (!inWindow && hasWindow && fx >= 0.18 && fx <= 0.82 && fy >= 0.18 && fy < 0.24);
+  bool inBand = (fy < 0.05);
+
+  vec3 n = normalize(v_nrm);
+
+  // Window lighting logic
+  bool isLit = false;
+  vec3 coord = vec3(bayF, floorF, seed);
+  float r1 = hash1(coord);
+  float r2 = hash1(coord + vec3(19.3, 7.1, 31.7));
+  float r3 = hash1(coord + vec3(43.7, 53.1, 89.2));
+
+  if (r1 < 0.70) {
+    float t_on = u_sunsetMin - 15.0 + r2 * 90.0;
+    float t_off;
+    if (r3 < 0.25) {
+      t_off = 1320.0 + (r3 / 0.25) * 60.0;
+    } else if (r3 < 0.65) {
+      t_off = 1380.0 + ((r3 - 0.25) / 0.40) * 45.0;
+    } else if (r3 < 0.93) {
+      t_off = 1425.0 + ((r3 - 0.65) / 0.28) * 45.0;
+    } else {
+      t_off = 1470.0 + ((r3 - 0.93) / 0.07) * 180.0;
+    }
+
+    float t_eval = (u_timeMin < u_sunriseMin) ? (u_timeMin + 1440.0) : u_timeMin;
+    if (t_eval >= (u_sunsetMin - 15.0) && t_eval < (u_sunriseMin + 1440.0)) {
+      if (t_eval >= t_on && t_eval < t_off) {
+        isLit = true;
+      }
+    }
+  }
+
+  vec3 wallBase = mix(getWallLight(palIdx), getWallDark(palIdx), u_night);
+  if (inFrame || inMullion) wallBase *= 0.35;
+  else if (inSill) wallBase *= 0.80;
+  else if (inBand) wallBase *= 0.88;
+  else if (isRoofline) wallBase *= 0.92;
+
+  float diff = max(dot(n, u_sun), 0.0);
+  float hemi = 0.55 + 0.45 * n.z;
+  vec3 wallLit = wallBase * (u_ambient * hemi + u_sunColor * diff);
+
+  vec3 col;
+  if (inGlass) {
+    if (isLit) {
+      vec3 warmColor = mix(vec3(1.0, 0.78, 0.42), vec3(1.0, 0.92, 0.74), r1);
+      float cx = (fx - 0.5) / 0.24;
+      float cy = (fy - 0.54) / 0.28;
+      float interiorFade = clamp(1.0 - (cx * cx + cy * cy) * 0.4, 0.5, 1.0);
+      float blindH = fract(r2 * 5.7);
+      float blindMask = (blindH > 0.5 && fy > 0.65) ? 0.35 : 1.0;
+      vec3 emission = warmColor * interiorFade * blindMask * 2.2 * u_night;
+      col = wallLit * 0.15 + emission;
+    } else {
+      vec3 glassBase = mix(vec3(0.012, 0.016, 0.024), vec3(0.035, 0.05, 0.075), u_ambient.z);
+      float spec = pow(max(dot(reflect(-u_sun, n), vec3(0.0, 0.0, 1.0)), 0.0), 12.0);
+      col = glassBase * u_ambient + u_sunColor * spec * 0.25 * (1.0 - u_night);
+    }
+  } else {
+    col = wallLit;
+  }
+
+  o = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+}
+`;
+
+  function program(gl, vs, fs, attribs) {
     const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
     const p = gl.createProgram();
-    ["a_pos", "a_nrm", "a_part", "i_pos", "i_dir", "i_meta", "i_tint", "i_z"].forEach((n, i) => gl.bindAttribLocation(p, i, n));  // the mesh and beam programs share their vertex arrays
+    (attribs || ["a_pos", "a_nrm", "a_part", "i_pos", "i_dir", "i_meta", "i_tint", "i_z"]).forEach((n, i) => gl.bindAttribLocation(p, i, n));  // the mesh and beam programs share their vertex arrays
     gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
     return p;
@@ -307,6 +444,10 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
     S.addBatch = (name, mesh, capacity, opts) => { const b = new InstanceBatch(capacity); S.batches.set(name, { mesh, batch: b, gpu: null, beam: !!(opts && opts.beam) }); return b; };
     S.setFrame = (f) => Object.assign(S.frame, f);
     S.setLight = (l) => Object.assign(S.light, l);
+    S.facadeMesh = null; S.facadeGpu = null; S.facadePending = false; S.facadeAnchorOffset = [0, 0];
+    S.setFacadeMesh = (mesh) => { S.facadeMesh = mesh; S.facadePending = true; };
+    S.setFacadeAnchorOffset = (x, y) => { S.facadeAnchorOffset[0] = x; S.facadeAnchorOffset[1] = y; };
+    S.hasFacades = () => !!(S.facadeMesh || S.facadeGpu);
 
     // one VAO per batch: the mesh buffers plus that batch's own instance buffer
     function buildGpu(gl, b) {
@@ -342,6 +483,8 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
       S.uMesh = Object.fromEntries(["u_matrix", "u_sun", "u_sunColor", "u_ambient", "u_night", "u_bg", "u_liv"].map((n) => [n, gl.getUniformLocation(S.progMesh, n)]));
       S.uDot = Object.fromEntries(["u_matrix", "u_dpr"].map((n) => [n, gl.getUniformLocation(S.progDot, n)]));
       S.uLabel = Object.fromEntries(["u_matrix", "u_viewport", "u_atlas", "u_cell", "u_dpr", "u_tex"].map((n) => [n, gl.getUniformLocation(S.progLabel, n)]));
+      S.progFacade = program(gl, VS_FACADE, FS_FACADE, ["a_pos", "a_nrm", "a_uv", "a_meta"]);
+      S.uFacade = Object.fromEntries(["u_matrix", "u_anchorOffset", "u_sun", "u_sunColor", "u_ambient", "u_night", "u_bg", "u_timeMin", "u_sunsetMin", "u_sunriseMin"].map((n) => [n, gl.getUniformLocation(S.progFacade, n)]));
       const attr = (p, n) => gl.getAttribLocation(p, n);
       // meshes: one VAO per batch (mesh buffers + that batch's instance buffer)
       for (const b of S.batches.values()) buildGpu(gl, b);
@@ -374,7 +517,10 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
     const layer = {
       id: S.id, type: "custom", renderingMode: "3d",
       onAdd(map, gl) { S.map = map; initGL(gl); },
-      onRemove(map, gl) { S.gl = null; },
+      onRemove(map, gl) {
+        if (S.facadeGpu) { gl.deleteVertexArray(S.facadeGpu.vao); gl.deleteBuffer(S.facadeGpu.vb); gl.deleteBuffer(S.facadeGpu.ib); S.facadeGpu = null; }
+        S.gl = null;
+      },
       render(gl, args) {
         if (!S.gl) return;
         const main = args.defaultProjectionData?.mainMatrix || args.modelViewProjectionMatrix;
@@ -384,6 +530,38 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
         for (const [name, b] of S.batches) {
           if (b.drop) { if (b.gpu) { gl.deleteVertexArray(b.gpu.vao); gl.deleteBuffer(b.gpu.vb); gl.deleteBuffer(b.gpu.ib); gl.deleteBuffer(b.gpu.inst); } S.batches.delete(name); S.meshes.delete(name); }
           else if (b.pending) { b.pending = false; buildGpu(gl, b); }
+        }
+        if (S.facadePending) {
+          S.facadePending = false;
+          if (S.facadeGpu) { gl.deleteVertexArray(S.facadeGpu.vao); gl.deleteBuffer(S.facadeGpu.vb); gl.deleteBuffer(S.facadeGpu.ib); S.facadeGpu = null; }
+          if (S.facadeMesh && S.facadeMesh.triangles) {
+            const vao = gl.createVertexArray(), vb = gl.createBuffer(), ib = gl.createBuffer();
+            gl.bindVertexArray(vao);
+            gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, S.facadeMesh.vertex, gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 48, 0);
+            gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 48, 12);
+            gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 48, 24);
+            gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 48, 32);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, S.facadeMesh.index, gl.STATIC_DRAW);
+            gl.bindVertexArray(null);
+            S.facadeGpu = { vao, vb, ib, triangles: S.facadeMesh.triangles, use32: S.facadeMesh.index instanceof Uint32Array };
+          }
+        }
+        if (S.showMeshes && fr.zoom >= 14.5 && S.facadeGpu && S.facadeGpu.triangles) {
+          gl.useProgram(S.progFacade);
+          const L = S.light;
+          gl.uniformMatrix4fv(S.uFacade.u_matrix, false, m32);
+          gl.uniform2f(S.uFacade.u_anchorOffset, S.facadeAnchorOffset[0], S.facadeAnchorOffset[1]);
+          gl.uniform3fv(S.uFacade.u_sun, L.sun); gl.uniform3fv(S.uFacade.u_sunColor, L.sunColor); gl.uniform3fv(S.uFacade.u_ambient, L.ambient);
+          gl.uniform1f(S.uFacade.u_night, L.night); gl.uniform3fv(S.uFacade.u_bg, L.bg);
+          gl.uniform1f(S.uFacade.u_timeMin, L.timeMin ?? 720.0);
+          gl.uniform1f(S.uFacade.u_sunsetMin, L.sunsetMin ?? 1110.0);
+          gl.uniform1f(S.uFacade.u_sunriseMin, L.sunriseMin ?? 360.0);
+          gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CCW);
+          gl.bindVertexArray(S.facadeGpu.vao);
+          gl.drawElements(gl.TRIANGLES, S.facadeGpu.triangles * 3, S.facadeGpu.use32 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+          gl.bindVertexArray(null);
+          draws++; tris += S.facadeGpu.triangles;
         }
         if (S.showMeshes && fr.zoom >= S.meshZoom) {
           gl.useProgram(S.progMesh);
@@ -437,5 +615,5 @@ void main() { o = texture(u_tex, v_uv); if (o.a < 0.02) discard; }`;
     return S;
   }
 
-  window.Scene3D = { PART, MeshBuilder, carMesh, bellowsMesh, roadVehicleMesh, ROAD_TYPES, InstanceBatch, DotBatch, Palette, STRIDE, DOT_STRIDE, mul, localToMercator, createLayer };
+  window.Scene3D = { PART, MeshBuilder, carMesh, bellowsMesh, roadVehicleMesh, ROAD_TYPES, InstanceBatch, DotBatch, Palette, STRIDE, DOT_STRIDE, mul, localToMercator, createLayer, VS_FACADE, FS_FACADE };
 })();
