@@ -379,3 +379,109 @@ body.dio-on .sheet, body.dio-on .tabs, body.dio-on #mapctl, body.dio-on .guide, 
 .dio-time input[type="range"] { background: linear-gradient(to right, var(--surface-3) 0, var(--surface-3) var(--rise, 25%), color-mix(in srgb, var(--accent) 35%, var(--surface-3)) var(--rise, 25%), color-mix(in srgb, var(--accent) 35%, var(--surface-3)) var(--set, 75%), var(--surface-3) var(--set, 75%)); border-radius: 6px; height: 8px; align-self: center; -webkit-appearance: none; appearance: none; }
 .dio-time input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
 .dio-time input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); }
+
+/* diorama vehicle tracking bar */
+.dio-track {
+  position: fixed;
+  z-index: 10;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 140px);
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+  transition: bottom 0.4s var(--ease-out), opacity 0.3s;
+}
+.dio-track[hidden] { display: none; }
+body.dio-on:has(#diorama.idle) .dio-track {
+  bottom: calc(var(--safe-b) + 18px);
+}
+.dt-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dt-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.dt-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#dt-dir { font-size: 0.95rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.dt-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.dt-chip { font-size: 0.75rem; font-weight: 600; padding: 2px 7px; border-radius: 6px; background: var(--surface-3); color: var(--ink-2); }
+.dt-chip.src-live { background: rgba(34, 197, 94, 0.18); color: #15803d; }
+.dt-chip.src-sim { background: rgba(234, 179, 8, 0.18); color: #b45309; }
+.dt-chip.src-replay { background: rgba(59, 130, 246, 0.18); color: #1d4ed8; }
+.dt-chip.on-time { background: rgba(34, 197, 94, 0.18); color: #15803d; }
+.dt-chip.late { background: rgba(239, 68, 68, 0.18); color: #b91c1c; }
+.dt-chip.early { background: rgba(59, 130, 246, 0.18); color: #1d4ed8; }
+.dt-chip.meta { background: transparent; color: var(--ink-3); padding: 2px 0; }
+body.theme-dark .dt-chip.src-live, body.theme-dark .dt-chip.on-time { color: #4ade80; }
+body.theme-dark .dt-chip.src-sim { color: #facc15; }
+body.theme-dark .dt-chip.src-replay, body.theme-dark .dt-chip.early { color: #60a5fa; }
+body.theme-dark .dt-chip.late { color: #f87171; }
+
+.dt-timeline {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 8px 4px 6px 4px;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+.dt-timeline::-webkit-scrollbar { display: none; }
+.dt-stop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  max-width: 95px;
+  text-align: center;
+  position: relative;
+}
+.dt-stop::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: -9px;
+  right: 50%;
+  height: 2px;
+  background: var(--line);
+  z-index: 0;
+}
+.dt-stop:first-child::before { display: none; }
+.dt-stop::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  right: -9px;
+  height: 2px;
+  background: var(--line);
+  z-index: 0;
+}
+.dt-stop:last-child::after { display: none; }
+.dt-stop.past::before, .dt-stop.past::after { background: var(--accent); }
+.dt-stop.current::before { background: var(--accent); }
+.dt-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 2px solid var(--line);
+  z-index: 1;
+  transition: transform 0.2s, background 0.2s, border-color 0.2s;
+}
+.dt-stop.past .dt-dot { background: var(--accent); border-color: var(--accent); }
+.dt-stop.current .dt-dot { background: #ffffff; border-color: var(--accent); transform: scale(1.35); box-shadow: 0 0 8px var(--accent); }
+.dt-stop.upcoming .dt-dot { background: var(--surface); border-color: var(--line); }
+.dt-name {
+  font-size: 0.75rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+.dt-stop.current .dt-name { font-weight: 700; color: var(--ink); }
+.dt-nostops { font-size: 0.82rem; color: var(--ink-2); font-style: italic; }

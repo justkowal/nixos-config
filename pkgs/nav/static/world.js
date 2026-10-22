@@ -173,54 +173,88 @@
 
   const area = (r) => { let a = 0; for (let i = 0; i < r.length; i++) { const p = r[i], q = r[(i + 1) % r.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
 
+  function hashStr(str) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619) >>> 0;
+    return h;
+  }
+  function makeRng(seed) {
+    let s = (seed | 0) || 1;
+    return () => {
+      s = (Math.imul(s ^ (s >>> 15), 0x2c1b3c6d) + 0x9e3779b9) | 0;
+      return ((s ^ (s >>> 13)) >>> 0) / 4294967296;
+    };
+  }
+
   // lanes: from Traffic.lanesFromFeatures (offset to the right of travel, local metres). rings: building outlines, parks: park polygons, stops: [x, y] bus stop points.
-  // rnd: () => 0..1, month: 1..12. Returns lists of { x, y, fx, fy, tint:[r,g,b], kind }.
-  function place({ lanes, rings = [], parks = [], stops = [], rnd = Math.random, month = 6, caps = {} }) {
-    const cap = { trees: 5000, lamps: 2500, benches: 700, bins: 600, stops: 300, ...caps };
+  // rnd: () => 0..1 (optional), month: 1..12, zoom: map zoom level. Returns lists of { x, y, fx, fy, tint:[r,g,b], kind }.
+  function place({ lanes, rings = [], parks = [], stops = [], rnd = null, month = 6, caps = {}, zoom = 16 }) {
+    const z = typeof zoom === "number" ? zoom : 16;
+    const densityMult = z >= 18 ? 1.7 : z >= 17 ? 1.35 : 1.0;
+    const cap = {
+      trees: Math.round(5000 * densityMult),
+      lamps: Math.round(2500 * densityMult),
+      benches: Math.round(700 * densityMult),
+      bins: Math.round(600 * densityMult),
+      stops: 300,
+      ...caps,
+    };
     const B = new Blocker();
     for (const r of rings) B.addRing(r);
     for (const l of lanes) if (l.key.endsWith(">")) B.addLane(l);  // one direction stands for the street; the other differs only by the offset
     const out = { trees: [], lamps: [], benches: [], bins: [], stops: [] };
     const bare = bareSeason(month);
-    const treeAt = (x, y, kind) => { const t = leaf(month, rnd); out.trees.push({ x, y, fx: 1, fy: 0, tint: t, kind: bare ? "tree_bare" : kind === "cone" ? "tree_cone" : "tree_round" }); };
     const tangentAt = (l, i) => { const a = Math.max(0, i - 1), b = Math.min(l.X.length - 1, i + 1), dx = l.X[b] - l.X[a], dy = l.Y[b] - l.Y[a], d = Math.hypot(dx, dy) || 1; return [dx / d, dy / d]; };
-    const walk = (l, spacing, jitter, f) => {
-      let s = 8 + rnd() * spacing, i = 0;
+
+    const walk = (l, spacing, jitter, lrnd, f) => {
+      let s = 8 + lrnd() * spacing, i = 0;
       while (s < l.len - 8) {
         while (i < l.X.length - 2 && l.cum[i + 1] < s) i++;
         const seg = l.cum[i + 1] - l.cum[i] || 1, t = (s - l.cum[i]) / seg, x = l.X[i] + (l.X[i + 1] - l.X[i]) * t, y = l.Y[i] + (l.Y[i + 1] - l.Y[i]) * t, [tx, ty] = tangentAt(l, i);
         f(x, y, tx, ty, s);
-        s += spacing * (1 - jitter + rnd() * 2 * jitter);
+        s += spacing * (1 - jitter + lrnd() * 2 * jitter);
       }
     };
+
     for (const l of lanes) {
+      // Deterministic PRNG seeded per-lane so camera pans and lane ordering do not shuffle objects
+      const lSeed = l.key ? hashStr(l.key) : 12345;
+      const lrnd = rnd ? rnd : makeRng(lSeed);
+      const treeAt = (x, y, kind) => { const t = leaf(month, lrnd); out.trees.push({ x, y, fx: 1, fy: 0, tint: t, kind: bare ? "tree_bare" : kind === "cone" ? "tree_cone" : "tree_round" }); };
+
       const hw = half(l.cls), nx = (tx, ty) => [ty, -tx];  // right of travel
       const at = (x, y, tx, ty, extra) => { const [rx, ry] = nx(tx, ty), lat = hw + extra - l.off; return [x + rx * lat, y + ry * lat]; };
       const mean = l.cls === "motorway" || l.cls === "trunk";
+
+      const lampSpacing = (l.cls === "service" ? 60 : 34) / densityMult;
       if (!mean && out.lamps.length < cap.lamps) {
-        walk(l, l.cls === "service" ? 60 : 34, 0.1, (x, y, tx, ty) => {
+        walk(l, lampSpacing, 0.1, lrnd, (x, y, tx, ty) => {
           for (const extra of [0.9, 0.4]) {  // narrow streets: closer to the kerb
             const [px, py] = at(x, y, tx, ty, extra);
             if (B.free(px, py, 0.3) && out.lamps.length < cap.lamps) { out.lamps.push({ x: px, y: py, fx: tx, fy: ty, tint: [0, 0, 0], kind: "lamp" }); break; }
           }
         });
       }
+
+      const treeSpacing = (l.cls === "secondary" ? 22 : 15) / densityMult;
       if (["secondary", "tertiary", "minor", "residential"].includes(l.cls) && out.trees.length < cap.trees) {
-        walk(l, l.cls === "secondary" ? 22 : 15, 0.35, (x, y, tx, ty) => {
-          if (rnd() < 0.3) return;
+        walk(l, treeSpacing, 0.35, lrnd, (x, y, tx, ty) => {
+          if (lrnd() < (0.3 / densityMult)) return;
           const [px, py] = at(x, y, tx, ty, 2.7);
-          if (B.free(px, py, 1.4) && out.trees.length < cap.trees) treeAt(px, py, rnd() < 0.22 ? "cone" : "round");
+          if (B.free(px, py, 1.4) && out.trees.length < cap.trees) treeAt(px, py, lrnd() < 0.22 ? "cone" : "round");
         });
       }
+
       if (["primary", "secondary", "tertiary", "minor", "residential"].includes(l.cls) && out.benches.length < cap.benches) {
-        walk(l, 75, 0.4, (x, y, tx, ty) => {
+        walk(l, 75 / densityMult, 0.4, lrnd, (x, y, tx, ty) => {
           const [px, py] = at(x, y, tx, ty, 1.5);
           if (!B.free(px, py, 0.8)) return;
-          if (rnd() < 0.55 && out.benches.length < cap.benches) out.benches.push({ x: px, y: py, fx: tx, fy: ty, tint: [0, 0, 0], kind: "bench" });
-          else if (out.bins.length < cap.bins) { const t = rnd() < 0.5 ? [52, 92, 64] : [62, 66, 72]; out.bins.push({ x: px + tx * 1.2, y: py + ty * 1.2, fx: tx, fy: ty, tint: t, kind: "bin" }); }
+          if (lrnd() < 0.55 && out.benches.length < cap.benches) out.benches.push({ x: px, y: py, fx: tx, fy: ty, tint: [0, 0, 0], kind: "bench" });
+          else if (out.bins.length < cap.bins) { const t = lrnd() < 0.5 ? [52, 92, 64] : [62, 66, 72]; out.bins.push({ x: px + tx * 1.2, y: py + ty * 1.2, fx: tx, fy: ty, tint: t, kind: "bin" }); }
         });
       }
     }
+
     // bus stops: the shelter stands on the right of the nearest lane, its open side toward the road
     for (const [sx, sy] of stops) {
       if (out.stops.length >= cap.stops) break;
@@ -237,21 +271,27 @@
       if (B.inBuilding(px, py) || B.onRoad(px, py)) continue;
       out.stops.push({ x: px, y: py, fx: tx, fy: ty, tint: [0, 0, 0], kind: "busstop" });
     }
-    // parks and woods: trees at a density by area
+
+    // parks and woods: trees at a density by area, deterministic per park
     for (const ring of parks) {
       const a = Math.abs(area(ring));
       if (a < 300) continue;
       let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const p of ring) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
-      const want = Math.min(900, Math.round(a / 170));
+      const pSeed = hashStr(ring.length + "_" + (x1 - x0).toFixed(1) + "_" + (y1 - y0).toFixed(1));
+      const prnd = rnd ? rnd : makeRng(pSeed);
+      const treeAt = (x, y, kind) => { const t = leaf(month, prnd); out.trees.push({ x, y, fx: 1, fy: 0, tint: t, kind: bare ? "tree_bare" : kind === "cone" ? "tree_cone" : "tree_round" }); };
+      const want = Math.min(Math.round(900 * densityMult), Math.round(a / (170 / densityMult)));
       for (let n = 0, tries = 0; n < want && tries < want * 6 && out.trees.length < cap.trees; tries++) {
-        const x = x0 + rnd() * (x1 - x0), y = y0 + rnd() * (y1 - y0);
+        const x = x0 + prnd() * (x1 - x0), y = y0 + prnd() * (y1 - y0);
         let inside = false;
         for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const p = ring[i], q = ring[j]; if ((p[1] > y) !== (q[1] > y) && x < ((q[0] - p[0]) * (y - p[1])) / (q[1] - p[1]) + p[0]) inside = !inside; }
-        if (inside && B.free(x, y, 0.5)) { treeAt(x, y, rnd() < 0.3 ? "cone" : "round"); n++; }
+        if (inside && B.free(x, y, 0.5)) { treeAt(x, y, prnd() < 0.3 ? "cone" : "round"); n++; }
       }
     }
     return out;
   }
+
+
 
   window.World = { BEAMS, MESHES, place, leaf, Blocker, bareSeason, HALF };
 })();

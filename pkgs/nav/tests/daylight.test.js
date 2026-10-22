@@ -84,3 +84,29 @@ test("apply sets neutral light outside diorama and a night factor inside it", ()
   assert.ok(scene.light.night < 0.05, "1 pm is day");
   assert.ok(scene.light.sun[2] > 0.25, "the sun is above the horizon at 1 pm in any season");
 });
+
+test("weather simulation adjusts sky, horizon, fog, and sun lighting", () => {
+  const clear = D.skyState(45, "clear");
+  const rain = D.skyState(45, "rain");
+  const fog = D.skyState(45, "fog");
+  const snow = D.skyState(45, "snow");
+
+  assert.ok(rain.sunColor[0] < clear.sunColor[0] * 0.5, "rain dims the sun");
+  assert.ok(fog.fogDensity > clear.fogDensity, "fog increases fog density");
+  assert.ok(snow.ambient[0] > clear.ambient[0] * 0.9, "snow has bright ambient reflection");
+
+  D.setWeather("rain");
+  assert.equal(D.weather.condition, "rain");
+  D.setWeather("clear");
+  assert.equal(D.weather.condition, "clear");
+});
+
+test("realtime pace replay advances simulation time at 1x speed", () => {
+  D.setMinutes(12 * 60); // 12:00
+  D.play(1.0, "replay");
+  assert.equal(D.mode, "replay");
+  assert.equal(D.speed, 1.0);
+  D.pause();
+  assert.equal(D.mode, "fixed");
+});
+

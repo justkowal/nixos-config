@@ -101,7 +101,7 @@ function initMap() {
   const home = store.get("view", { c: [19.94, 50.06], z: 11 });
   try {
     styleNow = styleUrl();
-    map = new maplibregl.Map({ container: "map", style: styleNow, center: home.c, zoom: home.z, attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, maxPitch: 70 });
+    map = new maplibregl.Map({ container: "map", style: styleNow, center: home.c, zoom: home.z, attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, maxPitch: 85 });
   } catch {
     map = null;  // no WebGL: planning, times and departures keep working
     $("#map").classList.add("nomap");

@@ -231,7 +231,7 @@
     const routeOn = hi.size > 0, dotAlpha = z < Z_MESH + 0.5 ? 1 : Math.max(0, 1 - (z - (Z_MESH + 0.5)) / 1.2);
     const dotSize = z < 12 ? 7 : z < 14 ? 10 : 14, labels = z >= Z_LABEL && z < 17.6, meshes = z >= Z_MESH;
     for (const v of V.values()) {
-      if (v.sched ? window.Daylight?.mode === "cycle" : !live) continue;
+      if (v.sched ? (window.Daylight?.mode === "cycle" && window.Daylight.speed > 60) : !live) continue;
       const a = step(v, dt, nowSec), sh = v.shape || v.ray;
       if (a < 0.02 || (v.sched && !sh)) continue;
       if (sh) { const i = cursor(sh, v, "seg0", v.s), t = (v.s - sh.cum[i]) / (sh.cum[i + 1] - sh.cum[i] || 1); v.mx = sh.MX[i] + (sh.MX[i + 1] - sh.MX[i]) * t; v.my = sh.MY[i] + (sh.MY[i + 1] - sh.MY[i]) * t; }
@@ -269,6 +269,12 @@
       const A = facades.anchor, ax = mercX(A.lon), ay = mercY(A.lat);
       scene.setFacadeAnchorOffset((ax - ox) / k, (oy - ay) / k);
     }
+    if (meshes && infra.anchor && threeD) {
+      const A = infra.anchor, ax = mercX(A.lon), ay = mercY(A.lat), rx = (ax - ox) / k, ry = (oy - ay) / k;
+      for (const [name, rgb] of infra.meshes) {
+        scene.batches.get("infra:" + name)?.batch.push(rx, ry, 1, 0, 0, 255, 0, rgb[0], rgb[1], rgb[2], 255);
+      }
+    }
     if (decor.items && ambient && z >= 16) {
       const night = scene.light.night, mpp = (78271.517 * Math.cos((c.lat * Math.PI) / 180)) / Math.pow(2, z), glow = night > 0.2 ? Math.min(1, (night - 0.2) / 0.5) : 0;
       for (const list of ["trees", "lamps", "benches", "bins", "stops"]) for (const o of decor.items[list]) {
@@ -295,6 +301,25 @@
         }
       });
     }
+    // Weather particles in 3D: rain or snow falling around the camera
+    const weather = window.Daylight?.weather?.condition;
+    if (ambient && threeD && (weather === "rain" || weather === "snow" || weather === "thunderstorm")) {
+      const isSnow = weather === "snow";
+      const count = isSnow ? 140 : 200;
+      const speed = isSnow ? 4.5 : 28.0;
+      const size = isSnow ? -3.5 : 1.8;
+      const r = isSnow ? 245 : 190, g = isSnow ? 250 : 210, b = isSnow ? 255 : 230, a = isSnow ? 190 : 160;
+      const t = performance.now() * 0.001;
+      for (let i = 0; i < count; i++) {
+        const pSeed = (i * 1013904223) >>> 0;
+        const rx = ((pSeed % 1200) - 600) * 0.1;
+        const ry = (((pSeed * 31) % 1200) - 600) * 0.1;
+        const rzBase = ((pSeed * 17) % 350) * 0.1 + 1.0;
+        const dropZ = ((rzBase - t * speed) % 35 + 35) % 35;
+        const windX = isSnow ? Math.sin(t + i) * 1.5 : 0;
+        scene.dots.push(rx + windX, ry, r, g, b, a, size, -1, dropZ);
+      }
+    }
     scene.setFrame({ ox, oy, k, zoom: z, dpr: window.devicePixelRatio || 1 });
     window.Daylight?.apply(scene, map);
     if (followId) chase(V.get(followId), dt);
@@ -310,9 +335,115 @@
     map.triggerRepaint();
   }
 
+  let dioTrackBar = null;
+  function updateDioTrackBar(v) {
+    const isDio = document.body.classList.contains("dio-on");
+    if (!isDio || !v) {
+      if (dioTrackBar) dioTrackBar.hidden = true;
+      return;
+    }
+    if (!dioTrackBar) {
+      dioTrackBar = h("section", { id: "dio-track", class: "dio-track glass", "aria-label": "Tracking vehicle in diorama" },
+        h("div", { class: "dt-top" },
+          h("div", { class: "dt-head" },
+            h("span", { id: "dt-badge" }),
+            h("div", { class: "dt-meta" },
+              h("b", { id: "dt-dir" }),
+              h("div", { class: "dt-tags" },
+                h("span", { id: "dt-src", class: "dt-chip" }),
+                h("span", { id: "dt-delay", class: "dt-chip" }),
+                h("span", { id: "dt-agency", class: "dt-chip meta" })
+              )
+            )
+          ),
+          h("button", { class: "icon-btn small", id: "dt-stop", "aria-label": "Stop tracking", onclick: () => stopFollow() }, icon("x"))
+        ),
+        h("div", { id: "dt-timeline", class: "dt-timeline" })
+      );
+      document.body.append(dioTrackBar);
+    }
+    dioTrackBar.hidden = false;
+
+    // Line and Direction
+    $("#dt-badge").replaceChildren(A.badge(v.line || "?", v.color, v.mode));
+    $("#dt-dir").textContent = v.to ? `to ${v.to}` : (v.line ? `Line ${v.line}` : "Vehicle");
+    $("#dt-agency").textContent = A.providerOf(v.ag)?.name || v.ag || "";
+
+    // Data source indicator: live, simulated live, or replayed from schedule
+    const live = simLive();
+    let srcText = "", srcClass = "";
+    if (!live) {
+      srcText = "Replayed from schedule";
+      srcClass = "src-replay";
+    } else if (v.sched) {
+      srcText = "Simulated live";
+      srcClass = "src-sim";
+    } else {
+      srcText = "Live data";
+      srcClass = "src-live";
+    }
+    const srcEl = $("#dt-src");
+    srcEl.textContent = srcText;
+    srcEl.className = "dt-chip " + srcClass;
+
+    // Delay indicator
+    const delayEl = $("#dt-delay");
+    if (v.sched) {
+      delayEl.textContent = "Scheduled";
+      delayEl.className = "dt-chip";
+    } else if (v.delay != null) {
+      const min = Math.round(v.delay / 60);
+      if (min === 0) {
+        delayEl.textContent = "On time";
+        delayEl.className = "dt-chip on-time";
+      } else if (min > 0) {
+        delayEl.textContent = `+${min} min`;
+        delayEl.className = "dt-chip late";
+      } else {
+        delayEl.textContent = `${min} min`;
+        delayEl.className = "dt-chip early";
+      }
+    } else {
+      delayEl.textContent = v.vel > 0.5 ? "Moving" : "Standing";
+      delayEl.className = "dt-chip";
+    }
+
+    // Timeline with stops along route
+    const tlEl = $("#dt-timeline");
+    const stops = v.shape?.stops || [];
+    if (!stops.length) {
+      tlEl.innerHTML = `<span class="dt-nostops">${v.shape === "pending" ? "Loading route stops…" : (v.sn ? `Next stop: ${v.sn}` : "Route timeline")}</span>`;
+    } else {
+      let curIdx = 0;
+      for (let i = 0; i < stops.length; i++) {
+        if (stops[i].a <= v.s) curIdx = i;
+      }
+      const items = stops.map((st, i) => {
+        let cls = "dt-stop";
+        if (i < curIdx) cls += " past";
+        else if (i === curIdx || (i === curIdx + 1 && Math.abs(st.a - v.s) < 40)) cls += " current";
+        else cls += " upcoming";
+        return h("div", { class: cls, title: st.n },
+          h("div", { class: "dt-dot" }),
+          h("div", { class: "dt-name" }, st.n)
+        );
+      });
+      tlEl.replaceChildren(...items);
+      const curEl = tlEl.children[curIdx];
+      if (curEl && tlEl.scrollLeft != null) {
+        const targetX = curEl.offsetLeft - tlEl.clientWidth / 2 + curEl.clientWidth / 2;
+        tlEl.scrollLeft = targetX;
+      }
+    }
+  }
+
   // chase camera: glides to the vehicle, and in 3D turns to look along its direction of travel
   function chase(v, dt) {
-    if (!v) { if (followBar) $("#follow-status").textContent = "No position for this vehicle right now"; return; }
+    if (!v) {
+      if (followBar) $("#follow-status").textContent = "No position for this vehicle right now";
+      if (dioTrackBar) dioTrackBar.hidden = true;
+      return;
+    }
     const lon = lonOf(v.mx), lat = latOf(v.my), c = map.getCenter(), k = 1 - Math.exp(-dt / 0.4);
     cam = cam || { lon: c.lng, lat: c.lat, zoom: map.getZoom(), target: Math.max(map.getZoom(), 17.8) };
     cam.lon += (lon - cam.lon) * k; cam.lat += (lat - cam.lat) * k;
@@ -321,6 +452,7 @@
     if (threeD) { const hd = (Math.atan2(v.hx, v.hy) * 180) / Math.PI, bear = map.getBearing(); opts.bearing = bear + (((hd - bear + 540) % 360) - 180) * (1 - Math.exp(-dt / 0.8)); }
     map.jumpTo(opts);
     $("#follow-status").textContent = v.sched ? (v.vel > 0.5 ? "Estimated from the timetable and its delay" : "Standing, by the timetable") : v.st === "STOPPED_AT" ? `At ${v.sn || "a stop"}` : v.sn ? `Next stop: ${v.sn}` : v.vel > 0.5 ? "Moving" : "Standing";
+    updateDioTrackBar(v);
   }
   function showBar(v) {
     if (!followBar) {
@@ -332,6 +464,7 @@
     followBar.hidden = false;
     $("#follow-title").replaceChildren(A.badge(v.line || "?", v.color, v.mode), v.to ? ` to ${v.to}` : "");
     $("#follow-sub").textContent = A.providerOf(v.ag)?.name || v.ag || "";
+    updateDioTrackBar(v);
   }
   function follow(id) {
     const v = V.get(id);
@@ -344,6 +477,7 @@
   function stopFollow() {
     followId = null; cam = null;
     if (followBar) followBar.hidden = true;
+    if (dioTrackBar) dioTrackBar.hidden = true;
     syncVisibility();
     map.easeTo({ bearing: threeD ? map.getBearing() : 0, duration: 400 });
   }
@@ -468,8 +602,18 @@
   function set3d(v) {
     threeD = v; store.set("3d", v);
     $("#btn-3d")?.setAttribute("aria-pressed", v);
-    if (v) { map.dragRotate.enable(); map.touchPitch.enable(); map.touchZoomRotate.enableRotation(); map.easeTo({ pitch: 58, duration: 600 }); }
-    else { map.easeTo({ pitch: 0, bearing: 0, duration: 500 }); map.dragRotate.disable(); map.touchPitch.disable(); map.touchZoomRotate.disableRotation(); }
+    if (v) {
+      map.setMaxPitch(85);
+      map.dragRotate?.enable();
+      map.touchPitch?.enable();
+      map.touchZoomRotate?.enableRotation();
+      map.easeTo({ pitch: 58, duration: 600 });
+    } else {
+      map.easeTo({ pitch: 0, bearing: 0, duration: 500 });
+      map.dragRotate?.disable();
+      map.touchPitch?.disable();
+      map.touchZoomRotate?.disableRotation();
+    }
     syncVisibility();
   }
   function setupScene() {
@@ -541,7 +685,12 @@
   let rebuildTimer = 0;
   function terrainChanged() {
     clearTimeout(rebuildTimer);
-    rebuildTimer = setTimeout(() => { if (roofs.ways.size) rebuildRoofs(); rebuildFacades(); map?.triggerRepaint(); }, 400);
+    rebuildTimer = setTimeout(() => {
+      if (roofs.ways.size) rebuildRoofs();
+      rebuildFacades();
+      if (ambient) { laneKey = ""; loadLanes(); }
+      map?.triggerRepaint();
+    }, 400);
   }
   function setTerrain(level) {  // 0 = flat, otherwise the vertical exaggeration
     terrain.on = level > 0;
@@ -571,14 +720,37 @@
       for (const p of polys(f.geometry)) { const id = "p" + p[0][0].join(",") + p[0].length; if (!seen.has(id) && p[0].length < 400) { seen.add(id); parks.push(ring2local(p[0], anchor, kx)); } }
     }
     for (const f of q("poi")) { const p = f.properties; if (f.geometry.type === "Point" && (p.subclass === "bus_stop" || p.subclass === "tram_stop")) { const id = "s" + f.geometry.coordinates.join(","); if (!seen.has(id)) { seen.add(id); stops.push([(f.geometry.coordinates[0] - anchor.lon) * kx, (f.geometry.coordinates[1] - anchor.lat) * 111320]); } } }
-    let h = 0; for (const l of lanes) h = (h * 31 + l.len) | 0;  // the same streets give the same trees
-    const rnd = () => { h = (Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) + 0x9e3779b9) | 0; return ((h ^ (h >>> 13)) >>> 0) / 4294967296; };
     const month = (window.Daylight ? window.Daylight.time() : new Date()).getMonth() + 1;
-    const res = window.World.place({ lanes, rings, parks, stops, rnd, month });
+    const zoom = map ? map.getZoom() : 16;
+    const res = window.World.place({ lanes, rings, parks, stops, month, zoom });
     decor.inputs = { lanes, rings };
     const kA = 1 / (40075016.686 * Math.cos((anchor.lat * Math.PI) / 180)), ax = mercX(anchor.lon), ay = mercY(anchor.lat);
     for (const list of Object.values(res)) for (const o of list) { o.mx = ax + o.x * kA; o.my = ay - o.y * kA; }
     decor.items = res; decor.month = month;
+  }
+  // 3D infrastructure: roads, curbs, bridges, tunnels, rail ballast, steel rails, and catenary lines
+  const infra = { anchor: null, meshes: new Map() };
+  function rebuildInfra(anchor, features) {
+    if (!scene || !window.Roads3D || !features) return;
+    infra.anchor = anchor;
+    const groundFn = (x, y) => {
+      if (!terrain.on || !dem) return 0;
+      const kA = 1 / (40075016.686 * Math.cos((anchor.lat * Math.PI) / 180));
+      return dem.sampleMerc(mercX(anchor.lon) + x * kA, mercY(anchor.lat) - y * kA);
+    };
+    const res = window.Roads3D.build(features, anchor, groundFn);
+    for (const [name, mesh] of Object.entries(res.meshes)) {
+      const batchName = "infra:" + name;
+      if (!mesh || !mesh.verts || mesh.verts.length === 0) {
+        if (infra.meshes.has(name)) {
+          scene.dropMesh(batchName);
+          infra.meshes.delete(name);
+        }
+        continue;
+      }
+      scene.setDynamicMesh(batchName, mesh);
+      infra.meshes.set(name, window.Roads3D.COLORS[name] || [128, 128, 128]);
+    }
   }
   // roof shapes from OSM (roof:shape): streamed in 0.01 degree cells, built into one mesh per colour around a fixed anchor
   const roofs = { cells: new Map(), ways: new Map(), anchor: null, meshes: new Map(), busy: false, key: "" };
@@ -675,11 +847,19 @@
     const lanes = window.Traffic.lanesFromFeatures(inside, anchor);
     traffic.setLanes(lanes, anchor);
     buildDecor(anchor, lanes);
+    rebuildInfra(anchor, inside);
   }
   function setAmbient(on) {
     ambient = !!on;
     refreshSched();
-    if (!ambient) decor.items = null;
+    if (!ambient) {
+      decor.items = null;
+      if (scene) {
+        for (const name of infra.meshes.keys()) scene.dropMesh("infra:" + name);
+        infra.meshes.clear();
+        infra.anchor = null;
+      }
+    }
     if (ambient && !traffic) traffic = new window.Traffic.Traffic();
     laneKey = "";
     if (ambient) loadLanes();
@@ -712,6 +892,7 @@
   window.Vehicles = {
     init, follow, followTrip, stopFollow, set3d, is3d: () => threeD, scene: () => scene,
     setTerrain, terrain: () => ({ ...terrain }), dem: () => dem, decor: () => decor, rideSync, loadRoofs, roofs: () => roofs, facades: () => facades, rebuildFacades, setAmbient, ambient: () => ambient, traffic: () => traffic,
+    infra: () => infra, rebuildInfra, refreshSched,
     setContext: (c) => { ctx = !!c; syncVisibility(); if (shown()) refresh(); }, setForce: (f) => { force = !!f; syncVisibility(); if (shown()) refresh(); },
     highlight: (ids) => { hi = new Set(ids || []); },
     stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on: shown(), threeD, zoom: map ? +map.getZoom().toFixed(1) : null, render: scene?.stats }),

@@ -24,20 +24,67 @@
     return { az, alt };
   }
 
-  // light and sky for a sun altitude (degrees). Colours are display colours 0..1; the shader gets them linearised.
-  function skyState(altDeg) {
+  // light and sky for a sun altitude (degrees) and weather condition. Colours are display colours 0..1; the shader gets them linearised.
+  function skyState(altDeg, weather = "clear") {
     const day = smooth(-4, 8, altDeg), night = 1 - smooth(-9, 1.5, altDeg), warm = 1 - smooth(4, 30, altDeg);
     const sunWhite = [1.0, 0.97, 0.92], sunWarm = [1.0, 0.62, 0.32];
-    const sunColor = mix(sunWhite, sunWarm, warm).map((v) => v * smooth(-1, 12, altDeg) * 0.95);
+    let sunColor = mix(sunWhite, sunWarm, warm).map((v) => v * smooth(-1, 12, altDeg) * 0.95);
     const moon = [0.45, 0.55, 0.85].map((v) => v * 0.16 * night);
     const ambientDay = [0.56, 0.64, 0.78], ambientDusk = [0.62, 0.5, 0.5], ambientNight = [0.13, 0.17, 0.3];
-    const ambient = mix(mix(ambientNight, ambientDusk, smooth(-8, 0, altDeg)), ambientDay, smooth(2, 25, altDeg)).map((v) => v * (0.5 + 0.2 * day));
-    const sky = mix(mix([0.03, 0.05, 0.12], [0.35, 0.28, 0.42], smooth(-10, -2, altDeg)), [0.45, 0.68, 0.95], smooth(-1, 14, altDeg));
-    const horizon = mix(mix([0.06, 0.09, 0.18], [0.95, 0.55, 0.32], smooth(-8, -1, altDeg)), [0.82, 0.9, 0.98], smooth(3, 22, altDeg));
-    return { day, night, sunColor, moon, ambient, sky, horizon, alt: altDeg };
+    let ambient = mix(mix(ambientNight, ambientDusk, smooth(-8, 0, altDeg)), ambientDay, smooth(2, 25, altDeg)).map((v) => v * (0.5 + 0.2 * day));
+    let sky = mix(mix([0.03, 0.05, 0.12], [0.35, 0.28, 0.42], smooth(-10, -2, altDeg)), [0.45, 0.68, 0.95], smooth(-1, 14, altDeg));
+    let horizon = mix(mix([0.06, 0.09, 0.18], [0.95, 0.55, 0.32], smooth(-8, -1, altDeg)), [0.82, 0.9, 0.98], smooth(3, 22, altDeg));
+    let fog = horizon;
+    let fogDensity = 0.6;
+
+    if (weather === "cloudy") {
+      sunColor = sunColor.map((v) => v * 0.45);
+      ambient = ambient.map((v) => v * 1.15 + 0.05);
+      sky = mix(sky, [0.55, 0.58, 0.64], 0.75);
+      horizon = mix(horizon, [0.65, 0.68, 0.72], 0.75);
+      fog = horizon;
+      fogDensity = 0.75;
+    } else if (weather === "rain" || weather === "thunderstorm") {
+      const storm = weather === "thunderstorm";
+      sunColor = sunColor.map((v) => v * (storm ? 0.15 : 0.25));
+      ambient = ambient.map((v) => v * 0.85);
+      sky = mix(sky, storm ? [0.18, 0.20, 0.26] : [0.28, 0.32, 0.38], 0.85);
+      horizon = mix(horizon, storm ? [0.22, 0.24, 0.30] : [0.36, 0.39, 0.45], 0.85);
+      fog = horizon;
+      fogDensity = 0.85;
+    } else if (weather === "fog") {
+      sunColor = sunColor.map((v) => v * 0.2);
+      ambient = ambient.map((v) => v * 1.1);
+      sky = [0.72, 0.74, 0.78];
+      horizon = [0.72, 0.74, 0.78];
+      fog = [0.72, 0.74, 0.78];
+      fogDensity = 0.95;
+    } else if (weather === "snow") {
+      sunColor = sunColor.map((v) => v * 0.6);
+      ambient = ambient.map((v) => v * 1.25 + 0.08);
+      sky = mix(sky, [0.74, 0.78, 0.84], 0.7);
+      horizon = mix(horizon, [0.82, 0.85, 0.90], 0.7);
+      fog = horizon;
+      fogDensity = 0.8;
+    }
+
+    return { day, night, sunColor, moon, ambient, sky, horizon, fog, fogDensity, alt: altDeg, weather };
   }
 
-  const D = { enabled: false, mode: "live", minutes: 720, speed: 16, lat: 50.06, lon: 19.94, _last: 0, _lightAt: 0, _state: null, _dark: false, bg: [0.78, 0.78, 0.8] };
+  const D = {
+    enabled: false,
+    mode: "live",
+    minutes: 720,
+    speed: 1.0,
+    lat: 50.06,
+    lon: 19.94,
+    _last: 0,
+    _lightAt: 0,
+    _state: null,
+    _dark: false,
+    bg: [0.78, 0.78, 0.8],
+    weather: { condition: "clear", temp: 16, cloud: 10, precip: 0, auto: true },
+  };
   const NEUTRAL = { sun: [0.35, -0.45, 0.82], sunColor: [0.78, 0.74, 0.68], ambient: [0.34, 0.36, 0.4], night: 0 };
   const TZ = "Europe/Warsaw";
 
@@ -85,14 +132,49 @@
   D.sunText = () => { const t = D.sunTimes(); return `Sunrise ${hm(t.sunrise)}, sunset ${hm(t.sunset)} (${Math.floor(t.dayLength / 60)} h ${String(t.dayLength % 60).padStart(2, "0")} min of daylight)`; };
   D.hm = hm;
   D.clockText = () => { const m = Math.floor(D.mode === "live" ? localMinutes(new Date()) : D.minutes % 1440); return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
+  D.clockTextWithSeconds = () => {
+    const m = D.mode === "live" ? localMinutes(new Date()) : D.minutes % 1440;
+    const totalSec = Math.floor(m * 60);
+    return `${String(Math.floor(totalSec / 3600)).padStart(2, "0")}:${String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0")}:${String(totalSec % 60).padStart(2, "0")}`;
+  };
   D.clockHour = () => (D.mode === "live" ? localMinutes(new Date()) : D.minutes % 1440) / 60;
   D.localMinutes = () => localMinutes(D.time());
   D.enable = (on) => { D.enabled = on; D._lightAt = 0; if (!on) D.clear(); };
   D.setLive = () => { D.mode = "live"; };
   D.setMinutes = (m) => { D.mode = "fixed"; D.minutes = ((m % 1440) + 1440) % 1440; };
-  D.play = (speed) => { if (D.mode === "live") D.minutes = D.localMinutes(); D.mode = "cycle"; D.speed = speed || D.speed; D._last = performance.now(); };
-  D.pause = () => { if (D.mode === "cycle") { D.mode = "fixed"; } };
-  D.state = () => { const t = D.time(), p = sunPosition(t, D.lat, D.lon), s = skyState(p.alt / RAD); s.az = p.az; return s; };
+  D.play = (speed, mode = "replay") => {
+    if (D.mode === "live") D.minutes = D.localMinutes();
+    D.mode = mode;
+    D.speed = speed !== undefined ? speed : 1.0;
+    D._last = performance.now();
+  };
+  D.pause = () => { if (D.mode === "cycle" || D.mode === "replay") { D.mode = "fixed"; } };
+  D.setWeather = (cond) => {
+    if (cond === "auto") {
+      D.weather.auto = true;
+      D.fetchWeather?.();
+    } else {
+      D.weather.auto = false;
+      D.weather.condition = cond;
+      D._lightAt = 0;
+    }
+  };
+  D.fetchWeather = async () => {
+    try {
+      const res = await fetch(`/api/weather?lat=${D.lat.toFixed(4)}&lon=${D.lon.toFixed(4)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.condition && D.weather.auto) {
+          D.weather.condition = data.condition;
+          D.weather.temp = data.temp;
+          D.weather.cloud = data.cloud;
+          D.weather.precip = data.precip;
+          D._lightAt = 0;
+        }
+      }
+    } catch { /* offline / fallback */ }
+  };
+  D.state = () => { const t = D.time(), p = sunPosition(t, D.lat, D.lon), s = skyState(p.alt / RAD, D.weather.condition); s.az = p.az; return s; };
   D.wantsDark = () => D.enabled && D._dark;
 
   // writes the light into the scene (each frame) and into MapLibre (a few times a second)
@@ -100,7 +182,12 @@
     if (!scene) return;
     if (!D.enabled) { scene.setLight({ sun: NEUTRAL.sun, sunColor: lin(NEUTRAL.sunColor), ambient: lin(NEUTRAL.ambient), night: 0, bg: lin(D.bg), timeMin: 720, sunsetMin: 1110, sunriseMin: 360 }); return; }
     const now = performance.now();
-    if (D.mode === "cycle") { D.minutes = (D.minutes + ((now - D._last) / 1000) * D.speed) % 1440; }
+    if (D.mode === "cycle") {
+      D.minutes = (D.minutes + ((now - D._last) / 1000) * D.speed) % 1440;
+    } else if (D.mode === "replay") {
+      // realtime pace: speed is simulation seconds per real second
+      D.minutes = (D.minutes + ((now - D._last) / 1000) * (D.speed / 60)) % 1440;
+    }
     D._last = now;
     const s = D._state = D.state(), alt = s.alt * RAD, up = Math.sin(alt), horiz = Math.cos(alt);
     const dir = s.alt > -1 ? [Math.sin(s.az) * horiz, Math.cos(s.az) * horiz, Math.max(up, 0.03)] : [0.3, -0.4, 0.8];  // below the horizon the "sun" becomes a moon light from the sky
@@ -108,13 +195,22 @@
     const m = Math.floor(D.mode === "live" ? localMinutes(new Date()) : D.minutes % 1440);
     const st = D.sunTimes();
     scene.setLight({ sun: dir, sunColor: lin(col.map((v, i) => v + (s.alt > -1 ? s.moon[i] : 0))), ambient: lin(s.ambient), night: s.night, bg: lin(D.bg), timeMin: m, sunsetMin: st.sunset ?? 1110, sunriseMin: st.sunrise ?? 360 });
+    scene.weather = D.weather.condition;
     if (now - D._lightAt > 250 && map) {
       D._lightAt = now;
       try {
         const azDeg = (s.az / RAD + 360) % 360, polar = clamp(90 - Math.max(s.alt, 4), 8, 86);
         map.setLight({ anchor: "map", color: hex(s.alt > -1 ? s.sunColor.map((v) => v + 0.12 * (1 - s.night)) : [0.3, 0.35, 0.6]), intensity: clamp(0.25 + 0.55 * s.day), position: [1.5, azDeg, polar] });
         if (map.getLayer("dem-hill")) { map.setPaintProperty("dem-hill", "hillshade-illumination-direction", azDeg); map.setPaintProperty("dem-hill", "hillshade-exaggeration", s.alt > 0 ? clamp(0.22 + 0.35 * (1 - Math.min(1, s.alt / 50)), 0.2, 0.6) : 0.12); }  // long shadows at low sun
-        map.setSky({ "sky-color": hex(s.sky), "horizon-color": hex(s.horizon), "fog-color": hex(s.horizon), "fog-ground-blend": 0.6, "horizon-fog-blend": 0.8, "sky-horizon-blend": 0.6, "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 12, 0.4] });
+        map.setSky({
+          "sky-color": hex(s.sky),
+          "horizon-color": hex(s.horizon),
+          "fog-color": hex(s.fog || s.horizon),
+          "fog-ground-blend": s.fogDensity || 0.6,
+          "horizon-fog-blend": 0.8,
+          "sky-horizon-blend": 0.6,
+          "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 12, 0.4]
+        });
       } catch { /* an older runtime without sky support */ }
       const dark = D._dark ? s.night > 0.35 : s.night > 0.6;  // hysteresis so the style does not flicker at dusk
       if (dark !== D._dark) { D._dark = dark; D.onThemeChange?.(); }
