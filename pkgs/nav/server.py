@@ -220,6 +220,72 @@ def leg_out(l):
     return out
 
 
+HEADROOM_MODES = {"rail": "RAIL", "bus": "BUS", "tram": "TRAM"}
+
+
+def parse_headrooms(q):
+    """Parses transfer headroom in minutes per transit mode -> {MODE_NAME: seconds}."""
+    res = {}
+    for k, m in HEADROOM_MODES.items():
+        v = (q.get(f"headroom_{k}") or [""])[0]
+        if v:
+            res[m] = int(num(v, 0, 180, f"headroom_{k}")) * 60
+    comb = (q.get("headroom") or [""])[0]
+    if comb:
+        for part in comb.split(","):
+            if ":" in part:
+                k, val = part.split(":", 1)
+                k = k.strip().lower()
+                if k in HEADROOM_MODES:
+                    res[HEADROOM_MODES[k]] = int(num(val.strip(), 0, 180, f"headroom {k}")) * 60
+    return res
+
+
+def check_transfer_headroom(legs, headroom):
+    """Computes transfer headroom for each transfer leg.
+
+    A transit leg is a transfer if there was a preceding transit leg in the journey.
+    Headroom is the duration between arriving at the transfer platform (end of preceding leg)
+    and departure of the transit leg (start of current leg).
+    Annotates leg with 'transfer_headroom_s'.
+    Returns True if all transfers satisfy any configured minimum headroom for that mode.
+    """
+    has_prior_transit = False
+    ok = True
+    for idx, leg in enumerate(legs):
+        is_transit = bool(leg.get("line") or leg.get("mode") in ("RAIL", "BUS", "TRAM", "SUBWAY"))
+        if is_transit:
+            if has_prior_transit and idx > 0:
+                prev_leg = legs[idx - 1]
+                sched_headroom_s = None
+                try:
+                    t_curr_sched = datetime.datetime.fromisoformat(leg["scheduled_start"])
+                    t_prev_sched = datetime.datetime.fromisoformat(prev_leg["scheduled_end"])
+                    sched_headroom_s = round((t_curr_sched - t_prev_sched).total_seconds())
+                except (KeyError, ValueError):
+                    pass
+
+                headroom_s = sched_headroom_s
+                try:
+                    t_curr = datetime.datetime.fromisoformat(leg["start"])
+                    t_prev = datetime.datetime.fromisoformat(prev_leg["end"])
+                    headroom_s = round((t_curr - t_prev).total_seconds())
+                except (KeyError, ValueError):
+                    pass
+
+                effective_headroom = headroom_s if headroom_s is not None else sched_headroom_s
+                leg["transfer_headroom_s"] = effective_headroom
+
+                req_s = headroom.get(leg["mode"], 0)
+                if req_s > 0:
+                    if effective_headroom is not None and effective_headroom < req_s:
+                        ok = False
+                    elif sched_headroom_s is not None and sched_headroom_s < req_s:
+                        ok = False
+            has_prior_transit = True
+    return ok
+
+
 def api_plan(q):
     one = lambda k, d="": (q.get(k) or [d])[0]
     la, lo = point(one("from"), "from")
@@ -230,6 +296,9 @@ def api_plan(q):
     when = local_iso(one("at"))
     arrive = one("by") == "arrive"
     n = int(num(one("n", "3"), 1, 4, "n"))
+    headroom = parse_headrooms(q) if mode == "transit" else {}
+    has_headroom = any(v > 0 for v in headroom.values())
+    fetch_n = max(n * 4, 12) if has_headroom else n
     dt = f'dateTime:{{{"latestArrival" if arrive else "earliestDeparture"}:"{when}"}}'
     if mode == "transit":
         picked = [TRANSIT[k] for k in one("transit", "rail,bus,tram").split(",") if k in TRANSIT]
@@ -237,17 +306,17 @@ def api_plan(q):
             raise Bad("pick at least one transit mode")
         modes = f'modes:{{transit:{{transit:[{",".join("{mode:" + m + "}" for m in picked)}]}}}}'
     else:
-        modes, n = f"modes:{{directOnly:true,direct:[{DIRECT[mode]}]}}", 1  # a street search yields exactly one itinerary
+        modes, fetch_n = f"modes:{{directOnly:true,direct:[{DIRECT[mode]}]}}", 1  # a street search yields exactly one itinerary
     loc = lambda a, b: f"{{location:{{coordinate:{{latitude:{a},longitude:{b}}}}}}}"
-    def run(dt_clause):
-        query = f"{{ planConnection(origin:{loc(la, lo)} destination:{loc(ta, to)} {dt_clause} {modes} first:{n}) {{ edges {{ node {{ start end duration numberOfTransfers walkDistance {LEG} }} }} }} }}"
+    def run(dt_clause, count):
+        query = f"{{ planConnection(origin:{loc(la, lo)} destination:{loc(ta, to)} {dt_clause} {modes} first:{count}) {{ edges {{ node {{ start end duration numberOfTransfers walkDistance {LEG} }} }} }} }}"
         return gql(query)["planConnection"]["edges"]
 
-    edges, note = run(dt), None
+    edges, note = run(dt, fetch_n), None
     if not edges and arrive and mode == "transit":
         # nothing gets there in time within the search window: offer the closest ones and say how late they are
         before = (datetime.datetime.fromisoformat(when) - datetime.timedelta(hours=3)).isoformat()
-        edges = run(f'dateTime:{{earliestDeparture:"{before}"}}')
+        edges = run(f'dateTime:{{earliestDeparture:"{before}"}}', fetch_n)
         note = "Nothing arrives by then. These are the closest options."
     target = datetime.datetime.fromisoformat(when)
     out = []
@@ -258,7 +327,16 @@ def api_plan(q):
         late = round((datetime.datetime.fromisoformat(e["node"]["end"]) - target).total_seconds() / 60)
         if arrive and late > 0:
             it["late_min"] = late
-        out.append(it)
+        ok = check_transfer_headroom(it["legs"], headroom)
+        if ok or not has_headroom:
+            out.append(it)
+        if len(out) >= n:
+            break
+
+    if has_headroom and not out and edges:
+        labels = [f"{k}: {headroom[m] // 60}m" for k, m in HEADROOM_MODES.items() if headroom.get(m, 0) > 0]
+        note = f"No routes found with the requested transfer headroom ({', '.join(labels)}). Try reducing headroom."
+
     return {"itineraries": out, "when": when, "by": "arrive" if arrive else "depart", "note": note}
 
 

@@ -30,8 +30,8 @@ sudo cat /var/lib/mcp-gateway/nav.env   # copy the value into your password mana
 ## Features
 
 - Search with local autocomplete, recent places (clearable), long press on the map for "From here" or "To here", share state in the URL hash.
-- Mode picker (transit, walk, bike, car), transit type filter (train, bus, tram), leave at or arrive by.
-- Results as a journey ribbon, detail with every leg, intermediate stops, live status per leg, stop departures (auto refresh every 30 s).
+- Mode picker (transit, walk, bike, car), transit type filter (train, bus, tram), leave at or arrive by, and Advanced menu for per-mode transfer headroom (e.g. minimum 10 min buffer when transferring to a train, remembered on device and in URL hash).
+- Results as a journey ribbon, detail with every leg, transfer buffer at platforms, intermediate stops, live status per leg, stop departures (auto refresh every 30 s).
 - Live guidance (Start button): GPS follow with heading, next maneuver or boarding, stops remaining, get-off prompt, wake lock, optional voice, vibration.
   - Off route (more than 40 m walking, 60 m driving, 130 m on a vehicle, three fixes in a row) replans from the current position.
   - Every 45 s live times of the trips ahead are refreshed. If a vehicle will be missed, or the projected arrival is more than 5 minutes after the planned one, it searches for a way to arrive by the original arrival time and switches when the new plan arrives 3 or more minutes earlier (or the old one is no longer possible). While on a vehicle the new plan starts at the get-off stop.
@@ -96,7 +96,7 @@ The page and every script URL carry a content hash of the build (`?v=...`, shown
 | --- | --- |
 | `POST /api/v1/login` `{"secret", "device": "pixel-8"}` | named device: returns `{"token"}` valid 365 days. Without `device` it sets the web cookie |
 | `GET /geocode?q=&lat=&lon=`, `/reverse?lat=&lon=` | places |
-| `GET /plan?from=lat,lon&to=lat,lon&mode=transit\|walk\|bike\|car&transit=rail,bus,tram&at=ISO&by=depart\|arrive&n=3` | itineraries; legs carry live times, delay, encoded polyline (precision 5), stops with coordinates, `trip_id`, `stop_id` |
+| `GET /plan?from=lat,lon&to=lat,lon&mode=transit\|walk\|bike\|car&transit=rail,bus,tram&at=ISO&by=depart\|arrive&n=3[&headroom_rail=10][&headroom_bus=5][&headroom_tram=3]` | itineraries; legs carry live times, delay, encoded polyline (precision 5), stops with coordinates, transfer headroom, `trip_id`, `stop_id` |
 | `GET /vehicles?bbox=minLon,minLat,maxLon,maxLat[&lod=heat]` | live vehicles with line, mode, operator, destination, last position and feed time (up to 700 in a bbox of at most 1.5 by 1.0 degrees), or only positions for the heatmap |
 | `GET /shape?trip=` | encoded trip shape, stops and signals with their distance along it |
 | `GET /nearby?lat=&lon=&r=`, `/departures?stop=&n=`, `/trip?id=&date=`, `/info` | stops, departures, one trip, data age and attribution |
