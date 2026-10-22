@@ -41,6 +41,7 @@
   <symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
   <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/></symbol>
 </svg>
 
 <div id="map" role="application" aria-label="Map"></div>
@@ -119,6 +120,54 @@
           </div>
           <input id="at" type="datetime-local" aria-label="Date and time" step="300">
           <button id="now" class="text-btn">Now</button>
+        </div>
+        <button id="advanced" class="row-btn" aria-expanded="false" aria-controls="advanced-panel"><svg class="ic"><use href="#i-sliders"/></svg><span id="advanced-text">Advanced</span><svg class="ic chev"><use href="#i-chev"/></svg></button>
+        <div id="advanced-panel" class="advanced-panel" hidden>
+          <div class="adv-sec-title">Transfer headroom</div>
+          <div class="adv-rows">
+            <div class="adv-row">
+              <label for="headroom-rail" class="adv-label"><svg class="ic"><use href="#i-rail"/></svg><span>To train</span></label>
+              <select id="headroom-rail" class="adv-select" data-mode="rail" aria-label="Transfer headroom to train">
+                <option value="0">Default</option>
+                <option value="3">3 min</option>
+                <option value="5">5 min</option>
+                <option value="7">7 min</option>
+                <option value="10">10 min</option>
+                <option value="15">15 min</option>
+                <option value="20">20 min</option>
+                <option value="30">30 min</option>
+              </select>
+            </div>
+            <div class="adv-row">
+              <label for="headroom-bus" class="adv-label"><svg class="ic"><use href="#i-bus"/></svg><span>To bus</span></label>
+              <select id="headroom-bus" class="adv-select" data-mode="bus" aria-label="Transfer headroom to bus">
+                <option value="0">Default</option>
+                <option value="3">3 min</option>
+                <option value="5">5 min</option>
+                <option value="7">7 min</option>
+                <option value="10">10 min</option>
+                <option value="15">15 min</option>
+                <option value="20">20 min</option>
+                <option value="30">30 min</option>
+              </select>
+            </div>
+            <div class="adv-row">
+              <label for="headroom-tram" class="adv-label"><svg class="ic"><use href="#i-tram"/></svg><span>To tram</span></label>
+              <select id="headroom-tram" class="adv-select" data-mode="tram" aria-label="Transfer headroom to tram">
+                <option value="0">Default</option>
+                <option value="3">3 min</option>
+                <option value="5">5 min</option>
+                <option value="7">7 min</option>
+                <option value="10">10 min</option>
+                <option value="15">15 min</option>
+                <option value="20">20 min</option>
+                <option value="30">30 min</option>
+              </select>
+            </div>
+          </div>
+          <div class="adv-footer">
+            <button id="headroom-reset" class="text-btn small">Reset to default</button>
+          </div>
         </div>
       </div>
 

@@ -44,6 +44,30 @@ class Explore(unittest.TestCase):
         p._db = lambda: FakeConn([[], []])
         p.explore("cafe", 50, 19, 999999)  # clamped, not an error
 
+    def test_all_categories_nearby(self):
+        rows = [
+            ("N", 1, "amenity", "restaurant", "Resto", 19.9380, 50.0614, None),
+            ("N", 2, "tourism", "museum", "Museum", 19.9372, 50.0615, None),
+            ("N", 1, "amenity", "restaurant", "Resto Dup", 19.9380, 50.0614, None),  # duplicate id
+            ("N", 3, "shop", "bakery", "Bakery", 19.99, 50.0614, None),  # outside radius
+        ]
+        conn = FakeConn([rows])
+        p._db = lambda: conn
+        out = p.explore("all", 50.0614, 19.9371, 800)
+        self.assertEqual(out["category"], "Nearby")
+        self.assertEqual([c["title"] for c in out["places"]], ["Museum", "Resto"])
+        self.assertEqual([c["cat"] for c in out["places"]], ["Museum", "Restaurant"])
+        self.assertIn("class = ANY(:cls)", conn.sql[0][0])
+        self.assertEqual(conn.sql[0][1]["cls"], ["amenity", "shop", "tourism", "leisure", "historic"])
+
+        # Also works with cat=None and cat=""
+        conn2 = FakeConn([[("N", 2, "tourism", "museum", "Museum", 19.9372, 50.0615, None)]])
+        p._db = lambda: conn2
+        out_none = p.explore(None, 50.0614, 19.9371, 800)
+        self.assertEqual(out_none["category"], "Nearby")
+        self.assertEqual(len(out_none["places"]), 1)
+
+
 
 class Card(unittest.TestCase):
     def test_card_from_tags(self):

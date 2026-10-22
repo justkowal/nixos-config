@@ -47,6 +47,103 @@ class Validation(unittest.TestCase):
         with self.assertRaises(s.Bad):
             s.api_plan({"from": ["50,19"], "to": ["50.1,19.1"], "mode": ["rocket"]})
 
+    def test_parse_headrooms(self):
+        self.assertEqual(s.parse_headrooms({"headroom_rail": ["10"], "headroom_bus": ["5"]}), {"RAIL": 600, "BUS": 300})
+        self.assertEqual(s.parse_headrooms({"headroom": ["rail:10,bus:5,tram:3"]}), {"RAIL": 600, "BUS": 300, "TRAM": 180})
+        self.assertEqual(s.parse_headrooms({}), {})
+        with self.assertRaises(s.Bad):
+            s.parse_headrooms({"headroom_rail": ["-5"]})
+        with self.assertRaises(s.Bad):
+            s.parse_headrooms({"headroom_rail": ["9999"]})
+        with self.assertRaises(s.Bad):
+            s.parse_headrooms({"headroom_rail": ["not_a_num"]})
+
+    def test_check_transfer_headroom_logic(self):
+        # Journey 1: Walk -> Bus -> Walk -> Train
+        # Bus ends 10:20. Walk ends 10:25. Train starts 10:35. Headroom = 10 min (600s)
+        legs_ok = [
+            {"mode": "WALK", "start": "2026-10-22T10:00:00+02:00", "end": "2026-10-22T10:05:00+02:00",
+             "scheduled_start": "2026-10-22T10:00:00+02:00", "scheduled_end": "2026-10-22T10:05:00+02:00"},
+            {"mode": "BUS", "line": "125", "start": "2026-10-22T10:05:00+02:00", "end": "2026-10-22T10:20:00+02:00",
+             "scheduled_start": "2026-10-22T10:05:00+02:00", "scheduled_end": "2026-10-22T10:20:00+02:00"},
+            {"mode": "WALK", "start": "2026-10-22T10:20:00+02:00", "end": "2026-10-22T10:25:00+02:00",
+             "scheduled_start": "2026-10-22T10:20:00+02:00", "scheduled_end": "2026-10-22T10:25:00+02:00"},
+            {"mode": "RAIL", "line": "IC 10", "start": "2026-10-22T10:35:00+02:00", "end": "2026-10-22T11:20:00+02:00",
+             "scheduled_start": "2026-10-22T10:35:00+02:00", "scheduled_end": "2026-10-22T10:35:00+02:00"}
+        ]
+        # Train transfer requires 10 min -> ok (600 >= 600)
+        self.assertTrue(s.check_transfer_headroom(legs_ok, {"RAIL": 600}))
+        self.assertEqual(legs_ok[3]["transfer_headroom_s"], 600)
+        # Train transfer requires 15 min -> false (600 < 900)
+        self.assertFalse(s.check_transfer_headroom(legs_ok, {"RAIL": 900}))
+
+        # First transit leg (Bus) is NOT a transfer and does not get transfer_headroom_s
+        self.assertNotIn("transfer_headroom_s", legs_ok[1])
+
+        # Realtime delay test: incoming bus delayed by 5 min -> arrival at platform is 10:30, train departs 10:35 -> effective headroom 5 min (300s)
+        legs_rt_late = [
+            {"mode": "BUS", "line": "125", "start": "2026-10-22T10:05:00+02:00", "end": "2026-10-22T10:25:00+02:00",
+             "scheduled_start": "2026-10-22T10:05:00+02:00", "scheduled_end": "2026-10-22T10:20:00+02:00"},
+            {"mode": "WALK", "start": "2026-10-22T10:25:00+02:00", "end": "2026-10-22T10:30:00+02:00",
+             "scheduled_start": "2026-10-22T10:20:00+02:00", "scheduled_end": "2026-10-22T10:25:00+02:00"},
+            {"mode": "RAIL", "line": "IC 10", "start": "2026-10-22T10:35:00+02:00", "end": "2026-10-22T11:20:00+02:00",
+             "scheduled_start": "2026-10-22T10:35:00+02:00", "scheduled_end": "2026-10-22T10:35:00+02:00"}
+        ]
+        self.assertFalse(s.check_transfer_headroom(legs_rt_late, {"RAIL": 600}))
+        self.assertEqual(legs_rt_late[2]["transfer_headroom_s"], 300)
+
+    def test_api_plan_headroom_filters_tight_transfers(self):
+        orig_gql = s.gql
+        queries = []
+        # Return 2 itineraries:
+        # Itin 1: Bus -> Train with 5 min headroom
+        # Itin 2: Bus -> Train with 12 min headroom
+        def raw_leg(mode, line, start, end):
+            return {
+                "mode": mode, "duration": 600, "distance": 1000, "realTime": False, "headsign": "Dest",
+                "from": {"name": "A", "lat": 50.0, "lon": 19.0, "stop": None},
+                "to": {"name": "B", "lat": 50.1, "lon": 19.1, "stop": None},
+                "start": {"scheduledTime": start, "estimated": None},
+                "end": {"scheduledTime": end, "estimated": None},
+                "route": {"shortName": line, "longName": line, "color": "000000", "textColor": "ffffff", "agency": {"name": "Test"}} if line else None,
+                "legGeometry": {"points": ""}, "intermediateStops": [], "trip": {"gtfsId": "t:1"} if line else None, "steps": []
+            }
+        edge_tight = {
+            "node": {
+                "start": "2026-10-22T10:00:00+02:00", "end": "2026-10-22T11:00:00+02:00", "duration": 3600,
+                "numberOfTransfers": 1, "walkDistance": 100,
+                "legs": [
+                    raw_leg("BUS", "100", "2026-10-22T10:00:00+02:00", "2026-10-22T10:20:00+02:00"),
+                    raw_leg("WALK", None, "2026-10-22T10:20:00+02:00", "2026-10-22T10:25:00+02:00"),
+                    raw_leg("RAIL", "IC", "2026-10-22T10:30:00+02:00", "2026-10-22T11:00:00+02:00")  # 5m headroom
+                ]
+            }
+        }
+        edge_ample = {
+            "node": {
+                "start": "2026-10-22T10:00:00+02:00", "end": "2026-10-22T11:15:00+02:00", "duration": 4500,
+                "numberOfTransfers": 1, "walkDistance": 100,
+                "legs": [
+                    raw_leg("BUS", "100", "2026-10-22T10:00:00+02:00", "2026-10-22T10:20:00+02:00"),
+                    raw_leg("WALK", None, "2026-10-22T10:20:00+02:00", "2026-10-22T10:25:00+02:00"),
+                    raw_leg("RAIL", "IC", "2026-10-22T10:37:00+02:00", "2026-10-22T11:15:00+02:00")  # 12m headroom
+                ]
+            }
+        }
+        s.gql = lambda q, v=None: (queries.append(q), {"planConnection": {"edges": [edge_tight, edge_ample]}})[1]
+        try:
+            # When headroom_rail=10 is requested:
+            res = s.api_plan({"from": ["50.0,19.0"], "to": ["50.1,19.1"], "mode": ["transit"], "headroom_rail": ["10"]})
+            self.assertIn("first:12", queries[0])
+            self.assertEqual(len(res["itineraries"]), 1)
+            self.assertEqual(res["itineraries"][0]["legs"][2]["transfer_headroom_s"], 720)
+
+            # When no headroom is requested: both returned
+            res_all = s.api_plan({"from": ["50.0,19.0"], "to": ["50.1,19.1"], "mode": ["transit"]})
+            self.assertEqual(len(res_all["itineraries"]), 2)
+        finally:
+            s.gql = orig_gql
+
 
 class Watching(unittest.TestCase):
     def setUp(self):
@@ -245,6 +342,24 @@ class Serving(unittest.TestCase):
         self.assertEqual([v["id"] for v in s.api_vehicles({"trip": ["t:1"]})["vehicles"]], ["a"])
         with self.assertRaises(s.Bad):
             s.api_vehicles({"trip": ["bad id"]})
+
+    def test_api_explore_defaults_and_validation(self):
+        orig = s.places.explore
+        calls = []
+        s.places.explore = lambda cat, lat, lon, r: (calls.append((cat, lat, lon, r)), {"category": cat, "places": []})[1]
+        try:
+            s.api_explore({"lat": ["50.0614"], "lon": ["19.9371"]})
+            self.assertEqual(calls[-1], ("all", 50.0614, 19.9371, 800))
+            s.api_explore({"cat": ["cafe"], "lat": ["50.0614"], "lon": ["19.9371"], "r": ["500"]})
+            self.assertEqual(calls[-1], ("cafe", 50.0614, 19.9371, 500))
+            with self.assertRaises(s.Bad):
+                s.api_explore({"lat": ["not_a_num"], "lon": ["19.9371"]})
+            s.places.explore = lambda cat, lat, lon, r: (_ for _ in ()).throw(ValueError("unknown category"))
+            with self.assertRaises(s.Bad):
+                s.api_explore({"cat": ["bogus"], "lat": ["50.0614"], "lon": ["19.9371"]})
+        finally:
+            s.places.explore = orig
+
 
 
 class Weather(unittest.TestCase):

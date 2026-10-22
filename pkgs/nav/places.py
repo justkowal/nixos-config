@@ -74,30 +74,53 @@ def _row_card(row, lat=None, lon=None):
     return c
 
 
+NEARBY_CLASSES = ["amenity", "shop", "tourism", "leisure", "historic"]
+EXCLUDE_TYPES = ("bench", "waste_basket", "recycling", "post_box", "vending_machine", "telephone", "waste_disposal", "grit_bin", "shelter")
+
+
 def explore(cat, lat, lon, radius=800):
-    """places of one category around a point, nearest first"""
-    if cat not in CATS:
-        raise ValueError("unknown category")
+    """places around a point, nearest first. If cat is None, 'all' or 'nearby', returns all nearby POIs."""
     radius = max(100, min(int(radius), 3000))
     dy, dx = radius / 110540, radius / (111320 * math.cos(math.radians(lat)))
     box = {"x1": lon - dx, "y1": lat - dy, "x2": lon + dx, "y2": lat + dy}
     out = []
     conn = _db()
     try:
-        for klass, types in CATS[cat][1]:
-            tcond = "AND type = ANY(:tlist)" if types else "AND type IS NOT NULL"
-            params = dict(box, k=klass)
-            if types:
-                params["tlist"] = types
+        if not cat or cat in ("all", "nearby"):
+            category_name = "Nearby"
+            params = dict(box, cls=NEARBY_CLASSES)
             rows = conn.run(
                 "SELECT osm_type, osm_id, class, type, name->'name', ST_X(centroid), ST_Y(centroid), extratags->'opening_hours' FROM placex "
-                f"WHERE class = :k {tcond} AND name ? 'name' AND geometry && ST_MakeEnvelope(:x1, :y1, :x2, :y2, 4326) LIMIT 120", **params)
-            out += [_row_card(r, lat, lon) for r in rows]
+                "WHERE class = ANY(:cls) AND name ? 'name' AND geometry && ST_MakeEnvelope(:x1, :y1, :x2, :y2, 4326) "
+                "AND (type IS NULL OR type NOT IN ('bench', 'waste_basket', 'recycling', 'post_box', 'vending_machine', 'telephone', 'waste_disposal', 'grit_bin', 'shelter')) "
+                "LIMIT 250", **params)
+            out = [_row_card(r, lat, lon) for r in rows]
+        elif cat in CATS:
+            category_name = CATS[cat][0]
+            for klass, types in CATS[cat][1]:
+                tcond = "AND type = ANY(:tlist)" if types else "AND type IS NOT NULL"
+                params = dict(box, k=klass)
+                if types:
+                    params["tlist"] = types
+                rows = conn.run(
+                    "SELECT osm_type, osm_id, class, type, name->'name', ST_X(centroid), ST_Y(centroid), extratags->'opening_hours' FROM placex "
+                    f"WHERE class = :k {tcond} AND name ? 'name' AND geometry && ST_MakeEnvelope(:x1, :y1, :x2, :y2, 4326) LIMIT 120", **params)
+                out += [_row_card(r, lat, lon) for r in rows]
+        else:
+            raise ValueError("unknown category")
     finally:
         conn.close()
-    out = [c for c in out if c["dist_m"] <= radius]
+
+    seen = set()
+    dedup = []
+    for c in out:
+        if c["id"] not in seen:
+            seen.add(c["id"])
+            dedup.append(c)
+    out = [c for c in dedup if c["dist_m"] <= radius]
     out.sort(key=lambda c: c["dist_m"])
-    return {"category": CATS[cat][0], "places": out[:80]}
+    return {"category": category_name, "places": out[:80]}
+
 
 
 def _parse_tags(js):

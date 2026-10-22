@@ -30,8 +30,8 @@ sudo cat /var/lib/mcp-gateway/nav.env   # copy the value into your password mana
 ## Features
 
 - Search with local autocomplete, recent places (clearable), long press on the map for "From here" or "To here", share state in the URL hash.
-- Mode picker (transit, walk, bike, car), transit type filter (train, bus, tram), leave at or arrive by.
-- Results as a journey ribbon, detail with every leg, intermediate stops, live status per leg, stop departures (auto refresh every 30 s).
+- Mode picker (transit, walk, bike, car), transit type filter (train, bus, tram), leave at or arrive by, and Advanced menu for per-mode transfer headroom (e.g. minimum 10 min buffer when transferring to a train, remembered on device and in URL hash).
+- Results as a journey ribbon, detail with every leg, transfer buffer at platforms, intermediate stops, live status per leg, stop departures (auto refresh every 30 s).
 - Live guidance (Start button): GPS follow with heading, next maneuver or boarding, stops remaining, get-off prompt, wake lock, optional voice, vibration.
   - Off route (more than 40 m walking, 60 m driving, 130 m on a vehicle, three fixes in a row) replans from the current position.
   - Every 45 s live times of the trips ahead are refreshed. If a vehicle will be missed, or the projected arrival is more than 5 minutes after the planned one, it searches for a way to arrive by the original arrival time and switches when the new plan arrives 3 or more minutes earlier (or the old one is no longer possible). While on a vehicle the new plan starts at the get-off stop.
@@ -56,7 +56,7 @@ How a vehicle moves between reports (the feed delivers positions every 10 to 120
 
 ## Explore (general maps)
 
-The default tab. Search places and addresses (local Nominatim), browse categories around the map centre (food, cafes, bars, groceries, pharmacies, health, fuel and charging, ATMs, parking, toilets, hotels, sights, parks, shops) from the OSM data in the local database, tap a marker or a map point of interest, and open its card.
+The default tab. Automatically displays nearby POIs around the map centre or current location (markers on the map and places in the sheet). Search places and addresses (local Nominatim), filter categories around the map centre (All, food, cafes, bars, groceries, pharmacies, health, fuel and charging, ATMs, parking, toilets, hotels, sights, parks, shops) from the OSM data in the local database, tap a marker or a map point of interest, and open its card.
 - The card: name, category, address, open now (from OSM `opening_hours`, common syntax only, otherwise the raw text), phone, website, accessibility, cuisine, payment and diet attributes, a link to view or edit the place on OpenStreetMap, Directions (sets the destination and opens Plan), Save (stored on the server, shared by every browser you are signed in on), Share.
 - Descriptions and photos: Wikipedia (the `wikipedia` tag, or the article linked from `wikidata`) and Wikimedia Commons, fetched by the server and cached, so the browser never talks to Wikimedia (images go through `/api/img`, restricted to Wikimedia hosts). Attribution and licence are shown under the text.
 - Reviews: there is no large open review corpus. Open reviews come from Mangrove Reviews where a place has any (very few in Poland); Google, Yelp and TripAdvisor data are proprietary and not used. You can rate a place 1 to 5 and keep a private note, stored on this server (`notes` table), not published anywhere.
@@ -96,7 +96,7 @@ The page and every script URL carry a content hash of the build (`?v=...`, shown
 | --- | --- |
 | `POST /api/v1/login` `{"secret", "device": "pixel-8"}` | named device: returns `{"token"}` valid 365 days. Without `device` it sets the web cookie |
 | `GET /geocode?q=&lat=&lon=`, `/reverse?lat=&lon=` | places |
-| `GET /plan?from=lat,lon&to=lat,lon&mode=transit\|walk\|bike\|car&transit=rail,bus,tram&at=ISO&by=depart\|arrive&n=3` | itineraries; legs carry live times, delay, encoded polyline (precision 5), stops with coordinates, `trip_id`, `stop_id` |
+| `GET /plan?from=lat,lon&to=lat,lon&mode=transit\|walk\|bike\|car&transit=rail,bus,tram&at=ISO&by=depart\|arrive&n=3[&headroom_rail=10][&headroom_bus=5][&headroom_tram=3]` | itineraries; legs carry live times, delay, encoded polyline (precision 5), stops with coordinates, transfer headroom, `trip_id`, `stop_id` |
 | `GET /vehicles?bbox=minLon,minLat,maxLon,maxLat[&lod=heat]` | live vehicles with line, mode, operator, destination, last position and feed time (up to 700 in a bbox of at most 1.5 by 1.0 degrees), or only positions for the heatmap |
 | `GET /shape?trip=` | encoded trip shape, stops and signals with their distance along it |
 | `GET /nearby?lat=&lon=&r=`, `/departures?stop=&n=`, `/trip?id=&date=`, `/info` | stops, departures, one trip, data age and attribution |

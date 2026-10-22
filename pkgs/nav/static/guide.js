@@ -169,7 +169,12 @@
   // best way to reach the destination from origin: first try to arrive by the target, else the earliest arrival
   async function search(origin, notBefore, target) {
     const base = { from: `${origin.lat},${origin.lon}`, to: `${S.to.lat},${S.to.lon}`, mode: S.mode, n: 3 };
-    if (S.mode === "transit") base.transit = Object.keys(S.transit).filter((q) => S.transit[q]).join(",");
+    if (S.mode === "transit") {
+      base.transit = Object.keys(S.transit).filter((q) => S.transit[q]).join(",");
+      for (const [k, v] of Object.entries(S.headroom || {})) {
+        if (v > 0) base[`headroom_${k}`] = v;
+      }
+    }
     if (target) {
       const r = await api("plan", { ...base, by: "arrive", at: A.localInput(new Date(target)) });
       const ok = r.itineraries.filter((i) => Date.parse(i.end) <= target + 30000 && Date.parse(i.start) >= notBefore - 60000);

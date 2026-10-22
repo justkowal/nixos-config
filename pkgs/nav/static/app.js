@@ -76,6 +76,7 @@ function badge(line, c, mode) {
 // ---------------------------------------------------------------- state
 const S = {
   tab: "explore", from: null, to: null, mode: "transit", transit: { rail: true, bus: true, tram: true },
+  headroom: store.get("nav_headroom", { rail: 0, bus: 0, tram: 0 }),
   by: "depart", at: "", results: [], sel: -1, me: null, detent: "peek", active: "to", stop: null,
 };
 let ctl = null;
@@ -399,7 +400,14 @@ function radios(root, attr, get, set) {
     bs[(i + (e.key === "ArrowRight" ? 1 : bs.length - 1)) % bs.length].click();
   });
 }
-radios($("#modes"), "data-mode", () => S.mode, (v) => { S.mode = v; $("#transit-filter").hidden = v !== "transit"; updateContext(); plan(); });
+radios($("#modes"), "data-mode", () => S.mode, (v) => {
+  S.mode = v;
+  $("#transit-filter").hidden = v !== "transit";
+  $("#advanced").hidden = v !== "transit";
+  if (v !== "transit") $("#advanced-panel").hidden = true;
+  updateContext();
+  plan();
+});
 radios($("#by"), "data-by", () => S.by, (v) => { S.by = v; if (v === "arrive" && !S.at) setAt(new Date(Date.now() + 36e5)); updateWhen(); plan(); });
 $("#transit-filter").addEventListener("click", (e) => {
   const b = e.target.closest("[data-t]");
@@ -427,6 +435,48 @@ $("#when").addEventListener("click", () => {
 $("#at").addEventListener("change", (e) => { S.at = e.target.value; updateWhen(); plan(); });
 $("#now").addEventListener("click", () => { S.at = ""; S.by = "depart"; $("#at").value = ""; $$("#by [data-by]").forEach((x) => x.setAttribute("aria-checked", x.dataset.by === "depart")); updateWhen(); plan(); });
 
+function updateAdvanced() {
+  const parts = [];
+  const labels = { rail: "Train", bus: "Bus", tram: "Tram" };
+  for (const [k, v] of Object.entries(S.headroom || {})) {
+    if (v > 0) parts.push(`${labels[k] || k} ${v}m`);
+  }
+  const txt = $("#advanced-text");
+  if (txt) txt.textContent = parts.length ? `Advanced · ${parts.join(", ")}` : "Advanced";
+  $$(".adv-select").forEach((sel) => {
+    const m = sel.dataset.mode;
+    if (m && S.headroom && S.headroom[m] != null) {
+      if (![...sel.options].some((o) => o.value === String(S.headroom[m]))) {
+        sel.append(h("option", { value: String(S.headroom[m]) }, `${S.headroom[m]} min`));
+      }
+      sel.value = String(S.headroom[m]);
+    }
+  });
+}
+$("#advanced")?.addEventListener("click", () => {
+  const open = $("#advanced-panel").hidden;
+  $("#advanced-panel").hidden = !open;
+  $("#advanced").setAttribute("aria-expanded", open);
+});
+$$(".adv-select").forEach((sel) => {
+  sel.addEventListener("change", (e) => {
+    const m = e.target.dataset.mode;
+    if (m) {
+      S.headroom[m] = parseInt(e.target.value, 10) || 0;
+      store.set("nav_headroom", S.headroom);
+      updateAdvanced();
+      plan();
+    }
+  });
+});
+$("#headroom-reset")?.addEventListener("click", () => {
+  S.headroom = { rail: 0, bus: 0, tram: 0 };
+  $$(".adv-select").forEach((sel) => sel.value = "0");
+  store.set("nav_headroom", S.headroom);
+  updateAdvanced();
+  plan();
+});
+
 // ---------------------------------------------------------------- planning
 function clearResults() { $("#results").replaceChildren(); $("#status").replaceChildren(); S.results = []; clearRoute(); }
 function status(msg, err = false) { const s = $("#status"); s.textContent = msg; s.classList.toggle("error", err); }
@@ -451,7 +501,12 @@ async function runPlan() {
   status("");
   if (!wide.matches && S.detent === "peek") setDetent("half");
   const params = { from: `${from.lat},${from.lon}`, to: `${S.to.lat},${S.to.lon}`, mode: S.mode, by: S.by, n: 3 };
-  if (S.mode === "transit") params.transit = Object.keys(S.transit).filter((k) => S.transit[k]).join(",");
+  if (S.mode === "transit") {
+    params.transit = Object.keys(S.transit).filter((k) => S.transit[k]).join(",");
+    for (const [k, v] of Object.entries(S.headroom || {})) {
+      if (v > 0) params[`headroom_${k}`] = v;
+    }
+  }
   if (S.at) params.at = S.at;
   try {
     const r = await api("plan", params, ctl.signal);
@@ -537,7 +592,7 @@ function stepFor(l, idx) {
     return h("div", { class: "step", style: { "--c": c } }, left,
       h("div", { class: "body" },
         h("h3", {}, badge(l.line, c, l.mode), l.headsign ? `to ${l.headsign}` : "", showBtn(idx)),
-        h("div", { class: "meta" }, "Board at ", board),
+        h("div", { class: "meta" }, "Board at ", board, l.transfer_headroom_s != null ? h("span", { class: "headroom-tag", title: "Transfer buffer at platform" }, `${mins(l.transfer_headroom_s)} min transfer`) : null),
         h("div", { class: "meta" }, liveBadge(l), ` · ${dur(l.duration_s)} · ${providerOf(l.agency)?.name || l.agency || ""}`),
         stops.length ? h("details", {}, h("summary", {}, `${stops.length + 1} stop${stops.length ? "s" : ""}`), h("ul", {}, stops.map((s) => h("li", {}, h("button", { class: "link", onclick: () => focusPoint(s.lon, s.lat, s.name) }, s.name))), h("li", {}, h("button", { class: "link", onclick: () => focusPoint(l.to.lon, l.to.lat, l.to.name) }, `${l.to.name}, ${hm(l.end)}`)))) : null));
   }
@@ -620,6 +675,9 @@ function hashWrite() {
   pl("f", S.from); pl("t", S.to);
   if (S.mode !== "transit") p.set("m", S.mode);
   if (S.at) { p.set("at", S.at); p.set("by", S.by); }
+  for (const [k, v] of Object.entries(S.headroom || {})) {
+    if (v > 0) p.set(`hr_${k}`, v);
+  }
   history.replaceState(null, "", p.toString() ? "#" + p : location.pathname);
 }
 function hashRead() {
@@ -629,6 +687,18 @@ function hashRead() {
   if (p.get("t")) setPlace("to", pl(p.get("t")));
   if (["walk", "bike", "car"].includes(p.get("m"))) $(`[data-mode=${p.get("m")}]`).click();
   if (p.get("at")) { S.at = p.get("at"); $("#at").value = S.at; if (p.get("by") === "arrive") $("[data-by=arrive]").click(); updateWhen(); }
+  let hrChanged = false;
+  for (const k of ["rail", "bus", "tram"]) {
+    const val = p.get(`hr_${k}`);
+    if (val != null) {
+      const num = parseInt(val, 10);
+      if (!isNaN(num) && num >= 0 && num <= 180) {
+        S.headroom[k] = num;
+        hrChanged = true;
+      }
+    }
+  }
+  if (hrChanged) updateAdvanced();
 }
 
 // ---------------------------------------------------------------- start and login
@@ -659,6 +729,7 @@ function start() {
   started = true;
   initMap();
   setDetent("peek");
+  updateAdvanced();
   hashRead();
   if (S.to) { setTab("plan"); plan(); } else { setTab("explore"); window.Explore?.fromHash(); }
 }

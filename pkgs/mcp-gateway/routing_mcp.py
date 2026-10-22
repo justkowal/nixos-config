@@ -224,7 +224,7 @@ LEG = """legs { mode duration distance realTime headsign
   steps { relativeDirection streetName distance } }"""
 
 
-def app_link(a, b, direct, depart_at, arrive_by):
+def app_link(a, b, direct, depart_at, arrive_by, headroom=None):
     """link that opens the navigation web app on this exact trip (the app restores it from the URL hash)."""
     pl = lambda p: f'{p["lat"]:.5f},{p["lon"]:.5f},{(p.get("name") or "Pin").split(",")[0][:40]}'
     q = {"f": pl(a), "t": pl(b)}
@@ -235,10 +235,36 @@ def app_link(a, b, direct, depart_at, arrive_by):
     if when:
         q["at"] = parse_dt(when).astimezone(TZ).strftime("%Y-%m-%dT%H:%M")
         q["by"] = "arrive" if arrive_by else "depart"
+    if headroom:
+        for mode, sec in headroom.items():
+            if sec > 0:
+                k = {"RAIL": "rail", "BUS": "bus", "TRAM": "tram"}.get(mode, mode.lower())
+                q[f"hr_{k}"] = sec // 60
     return NAV_URL + "/#" + urllib.parse.urlencode(q, quote_via=urllib.parse.quote)
 
 
-def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=False):
+def check_mcp_headroom(raw_legs, headroom_cfg):
+    has_prior_transit = False
+    for idx, leg in enumerate(raw_legs):
+        mode = leg.get("mode")
+        is_transit = bool(leg.get("route") or mode in ("RAIL", "BUS", "TRAM", "SUBWAY"))
+        if is_transit:
+            if has_prior_transit and idx > 0:
+                prev_leg = raw_legs[idx - 1]
+                try:
+                    t_curr = datetime.datetime.fromisoformat(leg["start"]["scheduledTime"])
+                    t_prev = datetime.datetime.fromisoformat(prev_leg["end"]["scheduledTime"])
+                    headroom_s = round((t_curr - t_prev).total_seconds())
+                except (KeyError, TypeError, ValueError):
+                    headroom_s = None
+                req_s = headroom_cfg.get(mode, 0)
+                if req_s > 0 and (headroom_s is None or headroom_s < req_s):
+                    return False
+            has_prior_transit = True
+    return True
+
+
+def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=False, headroom=None):
     a, b = resolve(frm), resolve(to)
     when = ""
     if arrive_by:
@@ -250,8 +276,11 @@ def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=Fals
     if direct:
         n = 1  # a street search yields exactly one itinerary; asking for more makes OTP return none
 
+    has_hr = bool(transit and headroom and any(v > 0 for v in headroom.values()))
+    fetch_n = max(int(n) * 4, 12) if has_hr else max(1, min(int(n), 3))
+
     def run(dt_clause):
-        q = f"{{ planConnection(origin:{coord_input(a)} destination:{coord_input(b)} {dt_clause} {modes} first:{max(1, min(int(n), 3))}) {{ edges {{ node {{ start end duration numberOfTransfers {LEG} }} }} }} }}"
+        q = f"{{ planConnection(origin:{coord_input(a)} destination:{coord_input(b)} {dt_clause} {modes} first:{fetch_n}) {{ edges {{ node {{ start end duration numberOfTransfers {LEG} }} }} }} }}"
         return gql(q)["planConnection"]["edges"]
 
     edges, note = run(when), None
@@ -269,6 +298,9 @@ def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=Fals
         raise RuntimeError(why)
     its = []
     for e in edges:
+        raw_legs = e["node"]["legs"]
+        if has_hr and not check_mcp_headroom(raw_legs, headroom):
+            continue
         it = {"start": e["node"]["start"][11:16], "end": e["node"]["end"][11:16], "duration_min": round(e["node"]["duration"] / 60),
               "transfers": e["node"]["numberOfTransfers"], "distance_m": round(sum(l["distance"] for l in e["node"]["legs"])),
               "legs": [leg_out(l) for l in e["node"]["legs"]]}
@@ -277,7 +309,14 @@ def plan(frm, to, direct=None, depart_at=None, arrive_by=None, n=1, transit=Fals
             if late > 0:
                 it["misses_deadline_by_min"] = late
         its.append(it)
-    out = {"from": a, "to": b, "itineraries": its, "app_link": app_link(a, b, direct, depart_at, arrive_by), "attribution": ATTRIBUTION}
+        if len(its) >= int(n):
+            break
+
+    if has_hr and not its and edges:
+        labels = [f"{k}: {sec // 60}m" for k, sec in headroom.items() if sec > 0]
+        note = f"no options found with requested transfer headroom ({', '.join(labels)}); try reducing headroom"
+
+    out = {"from": a, "to": b, "itineraries": its, "app_link": app_link(a, b, direct, depart_at, arrive_by, headroom), "attribution": ATTRIBUTION}
     if note:
         out["note"] = note
     return out
@@ -309,7 +348,12 @@ def t_route(a):
 
 def t_transit_plan(a):
     need_feeds()
-    return cap(plan(a["from"], a["to"], depart_at=a.get("depart_at"), arrive_by=a.get("arrive_by"), n=a.get("alternatives", 2), transit=True))
+    hr = {}
+    for k, m in [("rail", "RAIL"), ("bus", "BUS"), ("tram", "TRAM")]:
+        v = a.get(f"headroom_{k}")
+        if v is not None:
+            hr[m] = int(v) * 60
+    return cap(plan(a["from"], a["to"], depart_at=a.get("depart_at"), arrive_by=a.get("arrive_by"), n=a.get("alternatives", 2), transit=True, headroom=hr))
 
 
 def t_stops_nearby(a):
@@ -585,7 +629,10 @@ TOOLS = {
     "route": dict(desc="Street route between two places by walk, bike or car. Echoes the resolved coordinates. The result has app_link: give it to the user to open the trip in the navigation app (live GPS guidance).", **R,
                   schema=obj({"from": PLACE, "to": PLACE, "mode": {"type": "string", "enum": ["walk", "bike", "car"]}, "alternatives": {"type": "integer"}, **WHEN}, ["from", "to"]), fn=t_route),
     "transit_plan": dict(desc="Public transport itinerary between two places. " + NO_FEEDS + " when the graph has no feeds. The result has app_link: give it to the user to open the trip in the navigation app.", **R,
-                         schema=obj({"from": PLACE, "to": PLACE, **WHEN, "arrive_by": {"type": "string"}, "alternatives": {"type": "integer"}}, ["from", "to"]), fn=t_transit_plan),
+                         schema=obj({"from": PLACE, "to": PLACE, **WHEN, "arrive_by": {"type": "string"}, "alternatives": {"type": "integer"},
+                                     "headroom_rail": {"type": "integer", "description": "Minimum transfer headroom when boarding a train, in minutes (e.g. 10)"},
+                                     "headroom_bus": {"type": "integer", "description": "Minimum transfer headroom when boarding a bus, in minutes"},
+                                     "headroom_tram": {"type": "integer", "description": "Minimum transfer headroom when boarding a tram, in minutes"}}, ["from", "to"]), fn=t_transit_plan),
     "stops_nearby": dict(desc="Transit stops near a place.", **R, schema=obj({"place": PLACE, "radius_m": {"type": "number"}}, ["place"]), fn=t_stops_nearby),
     "stop_departures": dict(desc="Next departures at a stop, realtime-aware.", **R, schema=obj({"stop_id": {"type": "string"}, "count": {"type": "integer"}}, ["stop_id"]), fn=t_stop_departures),
     "vehicle_positions": dict(desc="Live vehicle positions for a route.", **R, schema=obj({"route_id": {"type": "string"}}, ["route_id"]), fn=t_vehicle_positions),
