@@ -692,9 +692,10 @@ def api_explore(q):
     one = lambda k, d="": (q.get(k) or [d])[0]
     la, lo = point(f'{one("lat")},{one("lon")}', "point")
     try:
-        return places.explore(one("cat"), la, lo, num(one("r", "800"), 100, 3000, "r"))
+        return places.explore(one("cat", "all") or "all", la, lo, num(one("r", "800"), 100, 3000, "r"))
     except ValueError as e:
         raise Bad(str(e))
+
 
 
 def place_args(q):

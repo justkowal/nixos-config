@@ -5,10 +5,10 @@
   const A = window.App;
   const { api, h, icon, $, store } = A;
   const dist = A.dist;
-  const CATS = [["food", "Food"], ["cafe", "Cafes"], ["bar", "Bars"], ["groceries", "Groceries"], ["pharmacy", "Pharmacies"], ["health", "Health"], ["fuel", "Fuel and charging"],
+  const CATS = [["all", "All"], ["food", "Food"], ["cafe", "Cafes"], ["bar", "Bars"], ["groceries", "Groceries"], ["pharmacy", "Pharmacies"], ["health", "Health"], ["fuel", "Fuel and charging"],
                 ["atm", "ATMs"], ["parking", "Parking"], ["toilets", "Toilets"], ["hotels", "Hotels"], ["sights", "Sights"], ["parks", "Parks"], ["shops", "Shops"]];
   const OSM_ID = /^[NWR]\d{1,12}$/;
-  let map = null, active = null, place = null, searchedAt = null, marker = null, baseLayers = [], typeTimer = 0, typeCtl = null;
+  let map = null, active = "all", place = null, searchedAt = null, marker = null, baseLayers = [], typeTimer = 0, typeCtl = null;
 
   async function send(method, path, body) {
     const r = await fetch(path, { method, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -16,7 +16,11 @@
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `error ${r.status}`);
     return r.json();
   }
-  const center = () => { if (A.S.me) return A.S.me; const c = map ? map.getCenter() : { lat: 50.06, lng: 19.94 }; return { lat: c.lat, lon: c.lng }; };
+  const center = () => {
+    if (map) { const c = map.getCenter(); return { lat: c.lat, lon: c.lng }; }
+    if (A.S.me) return A.S.me;
+    return { lat: 50.06, lon: 19.94 };
+  };
   const radiusFor = (z) => (z >= 16 ? 400 : z >= 15 ? 700 : z >= 14 ? 1200 : z >= 13 ? 2000 : 3000);
   const status = (t, err) => { const s = $("#ex-status"); s.textContent = t; s.classList.toggle("error", !!err); };
 
@@ -35,8 +39,12 @@
   }
   function init(m) {
     map = m;
-    map.on("style.load", layers);
-    if (map.isStyleLoaded()) layers();
+    const startNearby = () => {
+      layers();
+      if ($("#explore-place").hidden && !searchedAt) loadCat("all", true);
+    };
+    map.on("style.load", startNearby);
+    if (map.isStyleLoaded()) startNearby();
     map.on("click", (e) => {
       if (A.S.tab !== "explore") return;
       const f = map.queryRenderedFeatures(e.point, { layers: ["poi-dot", ...baseLayers].filter((id) => map.getLayer(id)) })[0];
@@ -47,27 +55,33 @@
     map.on("mouseenter", "poi-dot", () => (map.getCanvas().style.cursor = "pointer"));
     map.on("mouseleave", "poi-dot", () => (map.getCanvas().style.cursor = ""));
     map.on("moveend", () => {
-      if (!active || !searchedAt) return;
+      if (!searchedAt) return;
       const c = center(), moved = Math.hypot((c.lat - searchedAt.lat) * 110540, (c.lon - searchedAt.lon) * 71000);
       $("#ex-here").hidden = moved < radiusFor(map.getZoom()) * 0.5;
+    });
+    $("#locate")?.addEventListener("click", () => {
+      if (A.S.tab === "explore") {
+        map?.once?.("moveend", () => {
+          if (A.S.tab === "explore") loadCat(active || "all", true);
+        });
+      }
     });
   }
 
   // ---- categories
   function buildChips() {
     const box = $("#cats");
-    CATS.forEach(([k, name]) => box.append(h("button", { class: "chip", "aria-pressed": "false", "data-cat": k, onclick: () => (active === k ? clearCat() : loadCat(k)) }, name)));
-    box.after(h("button", { id: "ex-here", class: "text-btn", hidden: true, onclick: () => active && loadCat(active) }, "Search this area"));
+    box.replaceChildren();
+    CATS.forEach(([k, name]) => box.append(h("button", { class: "chip", "aria-pressed": k === active ? "true" : "false", "data-cat": k, onclick: () => (active === k ? (k === "all" ? loadCat("all") : clearCat()) : loadCat(k)) }, name)));
+    box.after(h("button", { id: "ex-here", class: "text-btn", hidden: true, onclick: () => loadCat(active || "all") }, "Search this area"));
   }
   function clearCat() {
-    active = null; searchedAt = null;
-    $$all("#cats .chip").forEach((b) => b.setAttribute("aria-pressed", "false"));
-    $("#ex-results").replaceChildren(); status(""); setMarkers([]); $("#ex-here").hidden = true;
+    loadCat("all");
   }
   const $$all = (s) => [...document.querySelectorAll(s)];
-  async function loadCat(cat) {
+  async function loadCat(cat = "all", keepDetent = false) {
     active = cat;
-    $$all("#cats .chip").forEach((b) => b.setAttribute("aria-pressed", b.dataset.cat === cat));
+    $$all("#cats .chip").forEach((b) => b.setAttribute("aria-pressed", b.dataset.cat === cat ? "true" : "false"));
     $("#ex-suggest").hidden = true;
     const c = center(), r = radiusFor(map ? map.getZoom() : 14);
     status("Searching...");
@@ -76,10 +90,16 @@
       const out = await api("explore", { cat, lat: c.lat, lon: c.lon, r });
       searchedAt = c; $("#ex-here").hidden = true;
       setMarkers(out.places);
-      status(out.places.length ? `${out.places.length} ${out.category.toLowerCase()} within ${dist(r)}` : `No ${out.category.toLowerCase()} within ${dist(r)}. Zoom out or move the map and search again.`);
+      const isAll = cat === "all" || !cat;
+      const count = out.places.length;
+      if (count) {
+        status(isAll ? `${count} places nearby within ${dist(r)}` : `${count} ${out.category.toLowerCase()} within ${dist(r)}`);
+      } else {
+        status(isAll ? `No places found within ${dist(r)}. Move the map and search again.` : `No ${out.category.toLowerCase()} within ${dist(r)}. Zoom out or move the map and search again.`);
+      }
       $("#ex-results").replaceChildren(...out.places.map((p) => placeRow(p)));
-      if (out.places.length && map.getZoom() > 15) map.easeTo({ zoom: 14.5, duration: 400 });
-      if (!A.sheetWide() && A.S.detent === "peek") A.setDetent("half");
+      if (!isAll && out.places.length && map?.getZoom() > 15) map.easeTo({ zoom: 14.5, duration: 400 });
+      if (!keepDetent && !A.sheetWide() && A.S.detent === "peek") A.setDetent("half");
     } catch (e) { $("#ex-results").replaceChildren(); status(e.message === "signed out" ? "" : `Could not search: ${e.message}`, true); }
   }
   function openBadge(open) {
@@ -216,8 +236,14 @@
     history.replaceState(null, "", location.pathname);
     show("main");
     loadSaved();
+    if (!searchedAt) loadCat(active || "all", true);
   }
-  function onShow() { if ($("#explore-place").hidden) loadSaved(); }
+  function onShow() {
+    if ($("#explore-place").hidden) {
+      loadSaved();
+      if (!searchedAt) loadCat(active || "all", true);
+    }
+  }
   function fromHash() {
     const id = new URLSearchParams(location.hash.slice(1)).get("p");
     if (id && OSM_ID.test(id)) openPlace(id);

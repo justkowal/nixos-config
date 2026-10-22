@@ -246,6 +246,24 @@ class Serving(unittest.TestCase):
         with self.assertRaises(s.Bad):
             s.api_vehicles({"trip": ["bad id"]})
 
+    def test_api_explore_defaults_and_validation(self):
+        orig = s.places.explore
+        calls = []
+        s.places.explore = lambda cat, lat, lon, r: (calls.append((cat, lat, lon, r)), {"category": cat, "places": []})[1]
+        try:
+            s.api_explore({"lat": ["50.0614"], "lon": ["19.9371"]})
+            self.assertEqual(calls[-1], ("all", 50.0614, 19.9371, 800))
+            s.api_explore({"cat": ["cafe"], "lat": ["50.0614"], "lon": ["19.9371"], "r": ["500"]})
+            self.assertEqual(calls[-1], ("cafe", 50.0614, 19.9371, 500))
+            with self.assertRaises(s.Bad):
+                s.api_explore({"lat": ["not_a_num"], "lon": ["19.9371"]})
+            s.places.explore = lambda cat, lat, lon, r: (_ for _ in ()).throw(ValueError("unknown category"))
+            with self.assertRaises(s.Bad):
+                s.api_explore({"cat": ["bogus"], "lat": ["50.0614"], "lon": ["19.9371"]})
+        finally:
+            s.places.explore = orig
+
+
 
 if __name__ == "__main__":
     unittest.main()
