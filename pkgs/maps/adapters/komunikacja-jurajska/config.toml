@@ -26,11 +26,11 @@ hourly_budget = 100
 static_hourly = 60
 
 [limits.kp]
-spacing_s = 5
-jitter_s = 3
-hourly_budget = 240
-static_hourly = 60
-rt_hourly = 150
+spacing_s = 2
+jitter_s = 1
+hourly_budget = 600
+static_hourly = 200
+rt_hourly = 400
 
 [static]
 home_check_interval_s = 86400
@@ -45,14 +45,14 @@ idle_sleep_s = 900
 [realtime]
 # Only trips calling at these stops get live data. Place ids from the kiedyPrzyjedzie /stops list.
 priority_stops = ["622548", "676874", "2303517:2391682"]
-max_stops_per_call = 8
-idle_interval_s = 180
-boost_interval_s = 90
+max_stops_per_call = 30
+idle_interval_s = 60
+boost_interval_s = 30
 boost_duration_s = 900
-trips_per_cycle_idle = 2
-trips_per_cycle_boost = 4
+trips_per_cycle_idle = 15
+trips_per_cycle_boost = 30
 # Live trips that need a one-off /api/trip call to be matched to the operator timetable, per cycle.
-map_per_cycle = 4
+map_per_cycle = 12
 # Only trips scheduled within this many seconds get a trip_execution call.
 execution_window_s = 2700
 max_age_s = 600

@@ -66,7 +66,19 @@ class Geocoder:
             self.sleep(wait)
         self.last = self.clock()
         try:
-            found = pick(self.fetch(name))
+            res = self.fetch(name)
+            found = pick(res)
+            if not found:
+                try:
+                    found = pick(self.fetch(f"{name} stacja kolejowa"))
+                except Exception:
+                    pass
+            if not found and res:
+                for r in res:
+                    dn = (r.get("display_name") or "").casefold()
+                    if any(w in dn for w in ("stacja", "dworzec", "kolej", "pkp")):
+                        found = (float(r["lat"]), float(r["lon"]))
+                        break
         except (OSError, ValueError) as e:
             log.warning("geocode failed for %s: %s", sid, type(e).__name__)
             return None

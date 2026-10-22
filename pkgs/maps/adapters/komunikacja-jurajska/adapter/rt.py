@@ -118,6 +118,7 @@ class Rt:
         need = {(kp trip id, kp index, day type)}
         """
         cands, need = [], set()
+        cand_keys = set()
         with self.lock:
             for blk in resp["departures"]:
                 pid = self.designators.get(blk["designator"])
@@ -147,8 +148,11 @@ class Rt:
                         en["stops"][seq] = {"stop_id": sid, "delay": int(r["time_diff"]) * 60, "ts": now}
                         en["ts"] = now
                         if r.get("trip_execution_id"):
-                            sched = local_midnight(sd) + self.idx.times[e["op"]][seq][1]
-                            cands.append((sched, ktid, kidx, r["trip_execution_id"], e["op"], sd))
+                            key = (ktid, r["trip_execution_id"])
+                            if key not in cand_keys:
+                                cand_keys.add(key)
+                                sched = local_midnight(sd) + self.idx.times[e["op"]][seq][1]
+                                cands.append((sched, ktid, kidx, r["trip_execution_id"], e["op"], sd))
             self.last_poll_ok = now
         cands.sort()
         return cands, need
@@ -188,10 +192,7 @@ class Rt:
                 at = bool(raw.get("at_stop"))
                 kidx = raw.get("vehicle_trip_index") if at else nxt
                 seq = seqmap.get(str(kidx))
-                if seq is not None:
-                    en["vehicle"] = {"lat": v["lat"], "lon": v["lon"], "seq": seq, "stopped": at, "ts": now}
-                else:
-                    ok = False
+                en["vehicle"] = {"lat": v["lat"], "lon": v["lon"], "seq": seq, "stopped": at, "ts": now}
             en["ts"] = now
             self.stats["executions_ok" if ok else "executions_unmatched"] += 1
             return ok
@@ -237,11 +238,14 @@ class Rt:
                         self._trip(ent.vehicle.trip, tid, trip_row, sd)
                         ent.vehicle.position.latitude = v["lat"]
                         ent.vehicle.position.longitude = v["lon"]
-                        ent.vehicle.current_stop_sequence = v["seq"]
-                        ent.vehicle.stop_id = self.idx.stop_at(tid, v["seq"])
+                        if v.get("seq") is not None:
+                            ent.vehicle.current_stop_sequence = v["seq"]
+                            ent.vehicle.stop_id = self.idx.stop_at(tid, v["seq"])
                         ent.vehicle.current_status = (pb.VehiclePosition.STOPPED_AT if v["stopped"]
                                                       else pb.VehiclePosition.IN_TRANSIT_TO)
                         ent.vehicle.timestamp = int(v["ts"])
+                        ent.vehicle.vehicle.id = f"kj-{tid}"
+                        ent.vehicle.vehicle.label = trip_row.get("route_short_name") or trip_row.get("trip_short_name") or "KJ"
                 out.append(f.SerializeToString())
             return tuple(out)
 

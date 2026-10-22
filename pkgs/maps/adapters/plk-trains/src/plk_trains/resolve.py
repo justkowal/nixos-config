@@ -9,8 +9,11 @@ log = logging.getLogger("plk.resolve")
 MAX_AGE_S = 90 * 86400
 
 
+import re
+
 def norm(s):
-    return " ".join(str(s).casefold().split())
+    s = re.sub(r"[^\w\s]", " ", str(s), flags=re.UNICODE)
+    return " ".join(s.casefold().split())
 
 
 def _fingerprint(corridor):
@@ -50,10 +53,17 @@ def resolve(client, cfg, cache_path, now=time.time):
         for e in entries:
             if isinstance(e, int):
                 out.append(e)
-            elif norm(e) in by_name:
-                out.append(by_name[norm(e)])
             else:
-                unresolved.append(e)
+                ne = norm(e)
+                if ne in by_name:
+                    out.append(by_name[ne])
+                else:
+                    tokens = set(ne.split())
+                    match = next((sid for name, sid in by_name.items() if set(name.split()) == tokens), None)
+                    if match:
+                        out.append(match)
+                    else:
+                        unresolved.append(e)
         return out
 
     pairs = [{"from": ids(p["from"]), "to": ids(p["to"])} for p in corridor["pairs"]]

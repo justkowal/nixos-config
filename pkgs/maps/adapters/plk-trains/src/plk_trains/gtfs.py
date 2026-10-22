@@ -146,7 +146,10 @@ def build(responses, geocoder, today, cfg, schedules_version):
             used_stops.add(st["stationId"])
             stop_times.append((tid, hms(arr), hms(dep), str(st["stationId"]), seq))
         trip_index[tid] = {"dates": [d.replace("-", "") for d in dates],
-                           "stops": [str(st["stationId"]) for st, _, _ in rows]}
+                           "stops": [str(st["stationId"]) for st, _, _ in rows],
+                           "times": [(arr, dep, str(st["stationId"])) for st, arr, dep in rows],
+                           "headsign": head,
+                           "short_name": rt.get("nationalNumber") or short}
     stats["trips"] = len(trips)
     if not trips:
         raise ValueError("no usable trips in schedule data")
@@ -186,7 +189,8 @@ def build(responses, geocoder, today, cfg, schedules_version):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for name in sorted(files):
             z.writestr(zipfile.ZipInfo(name, (2020, 1, 1, 0, 0, 0)), files[name], zipfile.ZIP_DEFLATED)
-    index = {"built_for": today.isoformat(), "schedules_version": schedules_version, "trips": trip_index}
+    index = {"built_for": today.isoformat(), "schedules_version": schedules_version, "trips": trip_index,
+             "positions": {str(s): [lat, lon] for s, (lat, lon, _) in positions.items()}}
     return buf.getvalue(), index, stats
 
 

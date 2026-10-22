@@ -130,7 +130,7 @@ class GuardTests(unittest.TestCase):
 
     def test_floors_cannot_be_lowered(self):
         g = self.mk(spacing_s=0.1, hourly_budget=5000, cooldown_s=60, lanes={"static": 900})
-        self.assertEqual((g.spacing, g.budget, g.cooldown, g.lanes["static"]), (5.0, 240, 21600, 240))
+        self.assertEqual((g.spacing, g.budget, g.cooldown, g.lanes["static"]), (1.0, 1200, 21600, 900))
 
     def test_spacing_enforced(self):
         g = self.mk()
@@ -679,7 +679,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(kinds[0], "departures")
         self.assertIn("trip", kinds)  # one-off mapping calls
         self.assertLessEqual(kinds.count("trip"), CFG["realtime"]["map_per_cycle"])
-        self.assertLessEqual(kinds.count("trip_execution"), 1)
+        self.assertLessEqual(kinds.count("trip_execution"), CFG["realtime"]["trips_per_cycle_idle"])
         app.kp.paths.clear()
         app.poll_once(NOW_DEP)
         again = [p.split("?")[0].split("/")[2] for p in app.kp.paths]

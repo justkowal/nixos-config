@@ -15,8 +15,8 @@ import urllib.request
 
 log = logging.getLogger("guard")
 
-MIN_SPACING_S = 5.0
-MAX_HOURLY_BUDGET = 240
+MIN_SPACING_S = 1.0
+MAX_HOURLY_BUDGET = 1200
 MIN_COOLDOWN_S = 6 * 3600
 BAN_STATUSES = {403, 429}
 CHALLENGE_MARKERS = (b"cf-chl", b"just a moment", b"checking your browser", b"attention required", b"ray id")

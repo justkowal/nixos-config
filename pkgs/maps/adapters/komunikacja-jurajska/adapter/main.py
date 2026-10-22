@@ -125,7 +125,19 @@ class App:
 
     def poll_once(self, now):
         r = self.cfg["realtime"]
-        resp = self.kp.departures(r["priority_stops"][: r["max_stops_per_call"]])
+        all_stops = list(self.store.s["kp_stops"].keys()) if self.store.s.get("kp_stops") else r.get("priority_stops", [])
+        chunk_size = r.get("max_stops_per_call", 25)
+        combined_departures = []
+        for i in range(0, len(all_stops), chunk_size):
+            chunk = all_stops[i:i + chunk_size]
+            try:
+                sub_resp = self.kp.departures(chunk)
+                combined_departures.extend(sub_resp.get("departures") or [])
+            except Blocked:
+                break
+            except Exception as e:
+                log.warning("departures chunk failed: %s", e)
+        resp = {"departures": combined_departures}
         cands, need = self.rt.ingest_departures(resp, now)
         if need:
             for ktid, kidx, dt in sorted(need)[: r["map_per_cycle"]]:
@@ -152,7 +164,7 @@ class App:
             now = self.clock()
             mode = self.mode(now)
             wait = r["boost_interval_s"] if mode == "boost" else r["idle_interval_s"]
-            if mode == "quiet" or self.rt.idx is None or not r["priority_stops"] or not self.store.s["kp_stops"]:
+            if mode == "quiet" or self.rt.idx is None or not self.store.s["kp_stops"]:
                 wait = 60
             else:
                 try:

@@ -153,6 +153,8 @@ class App:
             raise ApiError("snapshot too old: %ds" % (self.clock() - ts))
         blob, st = rt.build_trip_updates(trains, self.index, ts)
         _atomic(os.path.join(self.out, "trip-updates.pb"), blob)
+        vp_blob, vp_st = rt.build_vehicle_positions(trains, self.index, ts)
+        _atomic(os.path.join(self.out, "vehicle-positions.pb"), vp_blob)
         ratio = st["matched"] / max(st["matched"] + st["unmatched"], 1)
         self._ok("realtime", snapshot_ts=int(ts), stats=st, match_ratio=round(ratio, 3), pages=page)
 
@@ -251,6 +253,7 @@ class App:
         app = self
         files = {"/gtfs.zip": ("gtfs.zip", "application/zip"),
                  "/gtfs-rt/trip-updates.pb": ("trip-updates.pb", "application/x-protobuf"),
+                 "/gtfs-rt/vehicle-positions.pb": ("vehicle-positions.pb", "application/x-protobuf"),
                  "/gtfs-rt/alerts.pb": ("alerts.pb", "application/x-protobuf")}
 
         class H(BaseHTTPRequestHandler):
