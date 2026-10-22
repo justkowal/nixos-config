@@ -197,7 +197,7 @@ uniform mat4 u_matrix; uniform vec3 u_sun; uniform vec3 u_sunColor; uniform vec3
 uniform vec3 u_liv[128];
 in vec3 a_pos; in vec3 a_nrm; in float a_part;
 in vec2 i_pos; in vec2 i_dir; in vec4 i_meta; in vec4 i_tint; in float i_z;
-out vec3 v_col;
+out vec3 v_col; out float v_alpha;
 void main() {
   vec2 f = i_dir, l = vec2(-f.y, f.x);
   vec2 en = f * a_pos.x + l * a_pos.y;
@@ -644,7 +644,7 @@ void main() {
         S.stats = { draws, triangles: tris, instances: inst, dots: S.dots.count };
       },
     };
-    S.layer = layer; S.meshZoom = 15;
+    S.layer = layer; S.meshZoom = 14.5;
     return S;
   }
 

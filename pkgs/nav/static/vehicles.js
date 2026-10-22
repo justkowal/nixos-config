@@ -245,21 +245,16 @@
     const Ux = sinB * cosP, Uy = cosB * cosP, Uz = sinP;
 
     let camX = 0, camY = 0, camZ = 100;
-    let hasCam = false;
-    try {
-      const fcam = map.getFreeCameraOptions?.();
-      if (fcam && fcam.position) {
-        camX = (fcam.position.x - ox) / k;
-        camY = (oy - fcam.position.y) / k;
-        camZ = fcam.position.z / k;
-        hasCam = true;
-      }
-    } catch { /* fallback */ }
-
-    if (!hasCam) {
-      const canvasH = map.getCanvas?.()?.height || 800;
+    const tr = map.transform;
+    const camLL = tr?.getCameraLngLat?.();
+    if (camLL) {
+      camX = (mercX(camLL.lng) - ox) / k;
+      camY = (oy - mercY(camLL.lat)) / k;
+      camZ = (tr.getCameraAltitude?.() || 500) + (terrain.on && dem ? zAt(ox, oy) : 0);
+    } else {
+      const contH = map.getContainer?.()?.clientHeight || 800;
       const mpp = (78271.517 * Math.cos((c.lat * Math.PI) / 180)) / Math.pow(2, z);
-      const camDist = 1.5 * canvasH * mpp;
+      const camDist = 1.5 * contH * mpp;
       const ground0 = zAt(ox, oy);
       camX = -sinB * camDist * sinP;
       camY = -cosB * camDist * sinP;
@@ -267,24 +262,27 @@
     }
 
     const cull3D = threeD && pitch > 15;
-    const maxDist = z >= 16 ? 1300 : 1800;
+    const maxDist = z >= 16 ? 1400 : 2000;
+    const contW = map.getContainer?.()?.clientWidth || 1000, contH = map.getContainer?.()?.clientHeight || 800;
+    const aspect = Math.max(1.0, contW / contH);
+    const fovH = Math.max(1.6, aspect * 1.5);
     const frustumFade = (dx, dy, gz, isFollowed = false) => {
       if (isFollowed || !cull3D) return 1.0;
       const vx = dx - camX, vy = dy - camY, vz = gz - camZ;
       const fwd = vx * Fx + vy * Fy + vz * Fz;
-      if (fwd < -20 || fwd > maxDist) return 0.0;
+      if (fwd < -50 || fwd > maxDist) return 0.0;
       const side = Math.abs(vx * Rx + vy * Ry);
-      const maxSide = fwd * 1.25 + 60;
+      const maxSide = fwd * fovH + 120;
       if (side > maxSide) return 0.0;
 
       let fFade = 1.0;
       const fDistRem = maxDist - fwd;
       if (fDistRem < 250) fFade = Math.max(0, fDistRem / 250);
-      if (fwd < 10) fFade = Math.min(fFade, Math.max(0, (fwd + 20) / 30));
+      if (fwd < 10) fFade = Math.min(fFade, Math.max(0, (fwd + 50) / 60));
 
       const sRem = maxSide - side;
       let sFade = 1.0;
-      if (sRem < 40) sFade = Math.max(0, sRem / 40);
+      if (sRem < 80) sFade = Math.max(0, sRem / 80);
 
       return fFade * sFade;
     };
@@ -391,9 +389,9 @@
         const fallH = 30.0;
         const fallOffset = ((t * speed + ((pSeed * 7) % 100)) % fallH);
         const windX = isSnow ? Math.sin(t * 1.5 + i * 0.3) * 1.8 : 0;
-        const px = camX + Fx * fDist + Rx * rDist + Ux * uDist + windX;
-        const py = camY + Fy * fDist + Ry * rDist + Uy * uDist;
-        const pz = camZ + Fz * fDist + Rz * rDist + Uz * uDist - fallOffset;
+        const px = camX + Fx * fDist + Rx * (rDist + windX) + Ux * uDist;
+        const py = camY + Fy * fDist + Ry * (rDist + windX) + Uy * uDist;
+        const pz = camZ + Fz * fDist + Rz * (rDist + windX) + Uz * uDist - fallOffset;
         scene.dots.push(px, py, r, g, b, a, size, -1, pz);
       }
     }
@@ -404,7 +402,7 @@
   function tick() {
     requestAnimationFrame(tick);
     const t = performance.now();
-    if (!scene || !map || document.hidden || !shown() || map.getZoom() < Z_DOTS) { lastTick = t; return; }
+    if (!scene || !map || document.hidden || (!shown() && !threeD) || map.getZoom() < (threeD ? 14 : Z_DOTS)) { lastTick = t; return; }
     const dt = Math.min(0.05, (t - lastTick) / 1000);
     lastTick = t;
     nowSec = T();
@@ -613,14 +611,25 @@
     window.Daylight?.syncTheme?.(isDark());
     syncVisibility();
   }
-  const shown = () => on && (ctx || force || followId !== null);  // vehicles belong to transit contexts, not to general map browsing
+  const shown = () => on;
   function syncVisibility() {
     if (!map) return;
     if (map.getLayer("veh-heat")) map.setLayoutProperty("veh-heat", "visibility", shown() ? "visible" : "none");
-    for (const id of ["buildings-3d", "buildings-roof"]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", threeD ? "visible" : "none");
-    if (scene) { scene.showDots = scene.showMeshes = scene.showLabels = shown(); }
+    for (const id of ["buildings-3d", "buildings-roof"]) {
+      if (map.getLayer(id)) {
+        if (id === "buildings-3d" && threeD && scene?.hasFacades?.()) {
+          map.setLayoutProperty(id, "visibility", "none");
+        } else {
+          map.setLayoutProperty(id, "visibility", threeD ? "visible" : "none");
+        }
+      }
+    }
+    if (scene) {
+      scene.showDots = scene.showLabels = shown();
+      scene.showMeshes = threeD;
+    }
     const bt = $("#btn-veh");
-    if (bt) bt.hidden = !(ctx || force || followId !== null);
+    if (bt) bt.hidden = false;
     if (threeD) rebuildFacades();
     map.triggerRepaint();
     refreshSched();
@@ -886,6 +895,7 @@
     if (mesh) {
       facades.mesh = mesh;
       scene.setFacadeMesh(mesh);
+      syncVisibility();
     }
   }
   // trips with no live position, played back from the timetable
@@ -945,7 +955,13 @@
     let feats = [];
     try { feats = map.querySourceFeatures("openmaptiles", { sourceLayer: "transportation" }); } catch (e) { return; }
     const b = map.getBounds(), m = 0.6 * (b.getEast() - b.getWest());
-    const inside = feats.filter((f) => { const g = f.geometry, p = g.type === "LineString" ? g.coordinates[0] : g.coordinates?.[0]?.[0]; return p && p[0] > b.getWest() - m && p[0] < b.getEast() + m && p[1] > b.getSouth() - m && p[1] < b.getNorth() + m; });
+    const inside = feats.filter((f) => {
+      const g = f.geometry;
+      if (!g || !g.coordinates) return false;
+      const pts = g.type === "LineString" ? g.coordinates : g.type === "MultiLineString" ? g.coordinates.flat() : null;
+      if (!pts || !pts.length) return false;
+      return pts.some((pt) => pt[0] > b.getWest() - m && pt[0] < b.getEast() + m && pt[1] > b.getSouth() - m && pt[1] < b.getNorth() + m);
+    });
     const anchor = { lon: +c.lng.toFixed(2), lat: +c.lat.toFixed(2) };
     if (ambient) {
       if (!traffic) traffic = new window.Traffic.Traffic();
