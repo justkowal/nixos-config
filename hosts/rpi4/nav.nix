@@ -52,6 +52,8 @@ in {
       "--log-opt=max-size=5m"
       "--log-opt=max-file=3"
       "--health-interval=60s"
+      "--health-start-period=30s"
+      "--health-retries=3"
     ];
   };
 
