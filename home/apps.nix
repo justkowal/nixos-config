@@ -387,6 +387,15 @@ in {
       else
         warnEcho "claude_desktop_config.json is not valid json, skipped setting mcpServers"
       fi
+
+      g="${config.home.homeDirectory}/.gemini/config/mcp_config.json"
+      run mkdir -p "$(dirname "$g")"
+      [ -s "$g" ] || echo '{"mcpServers":{}}' > "$g"
+      if merged=$(${pkgs.jq}/bin/jq --slurpfile s ${servers} '.mcpServers = ($s[0] + (.mcpServers // {}))' "$g" 2>/dev/null); then
+        [ -n "''${DRY_RUN:-}" ] || { printf '%s\n' "$merged" > "$g" && chmod 600 "$g"; }
+      else
+        warnEcho "gemini mcp_config.json is not valid json, skipped setting mcpServers"
+      fi
     '';
 
   # the "Everything" vault: shared agent memory. it lives under Sync/Notes so syncthing carries it to every host.

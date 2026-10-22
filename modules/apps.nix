@@ -77,7 +77,16 @@
 
     # Claude Desktop & Claude Code
     claude-code
-    inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
+    # gtk3 file chooser aborts without its gsettings schema on XDG_DATA_DIRS
+    (pkgs.symlinkJoin {
+      name = "claude-desktop-wrapped";
+      paths = [inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default];
+      nativeBuildInputs = [pkgs.makeWrapper];
+      postBuild = ''
+        wrapProgram $out/bin/claude-desktop \
+          --prefix XDG_DATA_DIRS : "${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}"
+      '';
+    })
 
     # Development runtimes for Claude Desktop MCP servers
     nodejs_22
