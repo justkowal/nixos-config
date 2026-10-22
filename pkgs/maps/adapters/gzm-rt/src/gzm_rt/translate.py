@@ -31,11 +31,13 @@ def days(now):
     return [d.strftime("%Y%m%d"), (d - timedelta(days=1)).strftime("%Y%m%d")]
 
 
-def translate(rt_id, services, trips, now):
+def translate(rt_id, services, trips, now, prefix_map=None):
     """-> (static_trip_id, service_date) or None when the id cannot be placed on a known service day."""
     svc = rt_id.split("_", 1)[0]
     for day in days(now):
         for full in services.get(day, ()):
-            if full.split(":", 1)[-1] == svc and f"{full.split(':', 1)[0]}:{rt_id}" in trips:
-                return f"{full.split(':', 1)[0]}:{rt_id}", day
+            pub, full_svc = full.split(":", 1)
+            if full_svc == svc and f"{pub}:{rt_id}" in trips:
+                target_pub = (prefix_map or {}).get(day, pub)
+                return f"{target_pub}:{rt_id}", day
     return None

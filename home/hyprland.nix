@@ -598,7 +598,8 @@ in {
         }
         {
           timeout = 1800;
-          on-timeout = "hyprctl dispatch dpms off";
+          # a Moonlight viewer sends no input, so idle would blank the output under the stream
+          on-timeout = "[ -e /run/stream-host/active ] || hyprctl dispatch dpms off";
           on-resume = "hyprctl dispatch dpms on";
         }
       ];

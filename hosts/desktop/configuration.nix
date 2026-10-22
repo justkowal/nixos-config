@@ -452,6 +452,10 @@ in {
     settings.csrf_allowed_origins = "https://nixos-desktop.lab:47990,https://100.109.222.110:47990";
   };
 
+  # headless path: the worker specialisation starts Hyprland or gamescope on tty7 for a stream, with no greeter.
+  # HDMI-A-2 has a real monitor, so no EDID override (null), the monitor provides the output.
+  lab.streamHost.enable = true;
+
   # Sunshine runs from boot in the lingering user manager, not from a login, so Moonlight can reach the login
   # screen, sign in there and keep streaming the desktop. It must not see the stage as a Wayland display.
   systemd.user.services.sunshine = {

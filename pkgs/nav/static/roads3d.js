@@ -100,9 +100,12 @@
     toMesh() {
       const n = this.v.length / 7;
       if (!n) return null;
+      const use32 = n > 65535;
+      const index = use32 ? new Uint32Array(n) : new Uint16Array(n);
+      for (let i = 0; i < n; i++) index[i] = i;
       return {
         vertex: new Float32Array(this.v),
-        index: Uint16Array.from({ length: n }, (_, i) => i),
+        index,
         triangles: n / 3,
       };
     }
@@ -428,8 +431,20 @@
   }
 
   // ---------------------------------------------------------------- Main Builder
-  // Takes features array from openmaptiles transportation layer, anchor { lon, lat }, and optional ground elevation sampler
-  function build({ features, anchor, groundFn }) {
+  // Takes features array or { features, anchor, groundFn }, anchor { lon, lat }, and optional ground elevation sampler
+  function build(arg1, arg2, arg3) {
+    let features, anchor, groundFn;
+    if (Array.isArray(arg1)) {
+      features = arg1;
+      anchor = arg2;
+      groundFn = arg3;
+    } else if (arg1 && typeof arg1 === "object") {
+      features = arg1.features || [];
+      anchor = arg1.anchor;
+      groundFn = arg1.groundFn;
+    } else {
+      features = [];
+    }
     const bufAsphalt = new TriBuffer();
     const bufConcrete = new TriBuffer();
     const bufBallast = new TriBuffer();

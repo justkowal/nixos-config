@@ -40,6 +40,7 @@ global.window = { App: { api() {}, h() {}, icon() {}, $() {}, store: { get: (k, 
 global.document = {};
 global.requestAnimationFrame = () => {};
 eval(fs.readFileSync(path.join(__dirname, "../static/fleet.js"), "utf8"));
+eval(fs.readFileSync(path.join(__dirname, "../static/sched.js"), "utf8"));
 eval(fs.readFileSync(path.join(__dirname, "../static/vehicles.js"), "utf8"));
 const Veh = window.Vehicles;
 
@@ -192,3 +193,63 @@ test("riding: the passenger's GPS pulls the vehicle under the dot, and a far-awa
   for (let i = 0; i < 400; i++) { now += 0.05; Veh._step(v, 0.05, performance.now() / 1000); assert.ok(v.s >= last - 1e-9); last = v.s; }
   assert.ok(v.s > 1200 && v.s < 1200 + 9 * 21, "the drawn vehicle caught up to the passenger without going backwards");
 });
+
+test("scheduled trips fade in smoothly before start and fade out at end", () => {
+  const sh = shape([]);
+  const st = [[0, 100, 130], [1000, 200, 220]];
+  // sd = 1e9, so at epoch 1e9 + t, local trip time is t
+  const v = {
+    id: "S:test", sched: { sd: 1e9, st, hint: { i: 0 } },
+    shape: Veh._build(sh), s: 0, vel: 0, hx: 0, hy: 1, seg: 0, seg0: 0,
+  };
+  global.Date.now = () => 1e12; // base epoch 1e9
+
+  // 15s before first arrival (first = 100, t = 85): before fade threshold (< 10s)
+  Date.now = () => (1e9 + 85) * 1000;
+  assert.equal(Veh._step(v, 0.1, 1000), 0, "invisible well before trip");
+
+  // 5s before first arrival (t = 95): half faded in
+  Date.now = () => (1e9 + 95) * 1000;
+  const aPre = Veh._step(v, 0.1, 1000);
+  assert.ok(Math.abs(aPre - 0.5) < 0.05, `fading in before arrival: ${aPre}`);
+
+  // During dwell at first stop (t = 110): fully opaque
+  Date.now = () => (1e9 + 110) * 1000;
+  assert.equal(Veh._step(v, 0.1, 1000), 1, "fully visible during trip");
+
+  // 10s after last arrival (last = 200, t = 210): half faded out
+  Date.now = () => (1e9 + 210) * 1000;
+  const aPost = Veh._step(v, 0.1, 1000);
+  assert.ok(Math.abs(aPost - 0.5) < 0.05, `fading out after last stop: ${aPost}`);
+
+  // 25s after last arrival (t = 225): completely faded out
+  Date.now = () => (1e9 + 225) * 1000;
+  assert.equal(Veh._step(v, 0.1, 1000), 0, "transparent once trip is finished");
+});
+
+test("stale vehicles fade smoothly toward STALE_DROP without popping", () => {
+  const rep = fresh("stale_test");
+  const v = Veh._V.get("stale_test");
+  const t0 = performance.now() / 1000;
+  v.tRep = t0;
+  v.vRep = 0;
+  v.s = 0;
+  v.sRep = 0;
+
+  // At 200s (before STALE_DIM=240): full opacity
+  let a200 = Veh._step(v, 0.05, t0 + 200);
+  assert.equal(a200, 1.0, "full opacity before STALE_DIM");
+
+  // At 240s: starts decay at 1.0 (no cliff)
+  let a240 = Veh._step(v, 0.05, t0 + 240);
+  assert.equal(a240, 1.0, "1.0 at STALE_DIM start of decay");
+
+  // At 570s (midpoint of 240..900): 0.5
+  let a570 = Veh._step(v, 0.05, t0 + 570);
+  assert.ok(Math.abs(a570 - 0.5) < 0.02, `smooth midpoint fade: ${a570}`);
+
+  // At 900s (STALE_DROP): 0.0
+  let a900 = Veh._step(v, 0.05, t0 + 900);
+  assert.ok(a900 <= 1e-6, "completely faded out at STALE_DROP");
+});
+

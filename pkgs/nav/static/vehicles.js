@@ -15,7 +15,7 @@
   const ACC = { RAIL: 0.8, TRAM: 1.0, BUS: 1.1, TROLLEYBUS: 1.1, DEFAULT: 1.1 };
   const FALLBACK = { RAIL: "#b3311f", BUS: "#1c5fb0", TRAM: "#a35a00", TROLLEYBUS: "#4d7c0f" };
   const EXTRAP_MAX = 40, STALE_DIM = 240, STALE_DROP = 900, K_PULL = 0.3, RESYNC_M = 350, TELEPORT_M = 600, LIGHT_SLACK_M = 110;
-  const Z_DOTS = 10.4, Z_HEAT_OUT = 11.8, Z_MESH = 15, Z_LABEL = 13.2;
+  const Z_DOTS = 9.5, Z_HEAT_OUT = 11.8, Z_MESH = 15, Z_LABEL = 13.2;
   const TAU = Math.PI * 2;
 
   const V = new Map();        // vehicle id -> state
@@ -88,7 +88,7 @@
 
   // ---- vehicle state
   function newVehicle(r, now) {
-    return { id: r.id, s: 0, vel: 0, sRep: 0, vRep: 0, tRep: -1e9, shape: null, ray: null, hx: 0, hy: 1, fade: 0, lon: r.lon, lat: r.lat, seen: now, model: null, ns: 0, seg: 0, seg0: 0, liv: 0, rgb: [68, 80, 92], mx: mercX(r.lon), my: mercY(r.lat) };
+    return { id: r.id, s: 0, vel: 0, sRep: 0, vRep: 0, tRep: -1e9, shape: null, ray: null, hx: 0, hy: 1, fade: 0, visAlpha: 0, lon: r.lon, lat: r.lat, seen: now, model: null, ns: 0, seg: 0, seg0: 0, liv: 0, rgb: [68, 80, 92], mx: mercX(r.lon), my: mercY(r.lat) };
   }
   function ingest(list, serverNow) {
     const now = T();
@@ -110,6 +110,7 @@
         // no shape yet: a ray along the reported or observed heading keeps it moving until the real shape arrives
         let hd = r.hd;
         if (hd == null && prev.had && Math.abs(prev.lon - r.lon) + Math.abs(prev.lat - r.lat) > 2e-5) hd = (Math.atan2((r.lon - prev.lon) * 0.64, r.lat - prev.lat) * 180) / Math.PI;
+        if (hd == null && v.rayHd == null) hd = 0;
         if (hd != null) v.rayHd = (hd + 360) % 360;
         v.vRep = r.sp != null ? r.sp : v.vRep || 0;
         v.tRep = tRep;
@@ -167,8 +168,8 @@
     v.s = Math.min(sh.length, p.s); v.vel = p.v;
     const ia = cursor(sh, v, "seg", Math.min(sh.length, v.s + 6));
     v.hx = sh.UX[ia]; v.hy = sh.UY[ia];
-    const first = v.sched.st[0][2], last = v.sched.st[v.sched.st.length - 1][1];
-    return p.phase === "before" ? (first - t < 45 ? 1 : 0) : p.phase === "after" ? Math.max(0, 1 - (t - last) / 20) : 1;
+    const first = v.sched.st[0][1] ?? v.sched.st[0][2], last = v.sched.st[v.sched.st.length - 1][1];
+    return p.phase === "before" ? Math.max(0, Math.min(1, (10 - (first - t)) / 10)) : p.phase === "after" ? Math.max(0, 1 - (t - last) / 20) : 1;
   }
   // advances one vehicle by dt seconds; returns its draw alpha
   function step(v, dt, now) {
@@ -209,7 +210,8 @@
     const ia = cursor(sh, v, "seg", Math.min(sh.length, v.s + 6));  // direction a little ahead, so the nose turns into bends
     v.hx += (sh.UX[ia] - v.hx) * kHead; v.hy += (sh.UY[ia] - v.hy) * kHead;
     const l = Math.sqrt(v.hx * v.hx + v.hy * v.hy) || 1; v.hx /= l; v.hy /= l;
-    return (stale ? 0.45 : 1) * (1 - 0.9 * v.fade);
+    const staleAlpha = age <= STALE_DIM ? 1 : age >= STALE_DROP - 1e-4 ? 0 : Math.max(0, 1 - (age - STALE_DIM) / (STALE_DROP - STALE_DIM));
+    return staleAlpha * (1 - 0.9 * v.fade);
   }
 
   // ---- models: a fleet variant per vehicle (see fleet.js), cars laid out end to end; articulated cars sit on the track at their own distance
@@ -228,35 +230,97 @@
     scene.beginFrame();
     const zAt = terrain.on && dem ? (mx, my) => dem.sampleMerc(mx, my) : () => 0;  // ground elevation under a mercator point
     const live = simLive(), dark = scene.light.night, lights = dark > 0.12 ? Math.min(1, (dark - 0.1) / 0.5) : 0, bh = scene.batches.get("b_head")?.batch, bt = scene.batches.get("b_tail")?.batch;
-    const routeOn = hi.size > 0, dotAlpha = z < Z_MESH + 0.5 ? 1 : Math.max(0, 1 - (z - (Z_MESH + 0.5)) / 1.2);
-    const dotSize = z < 12 ? 7 : z < 14 ? 10 : 14, labels = z >= Z_LABEL && z < 17.6, meshes = z >= Z_MESH;
+    const routeOn = hi.size > 0;
+    const meshFade = !threeD ? 0 : Math.max(0, Math.min(1, (z - 14.6) / 0.6));
+    const dotAlpha = !threeD ? 1 : Math.max(0, Math.min(1, (15.2 - z) / 0.6));
+    const dotSize = z < 12 ? 7 : z < 14 ? 10 : 14, labels = z >= Z_LABEL && z < 17.6, meshes = threeD && meshFade > 0.02;
+
+    const pitch = map.getPitch ? map.getPitch() : 0;
+    const bearing = map.getBearing ? map.getBearing() : 0;
+    const radP = (pitch * Math.PI) / 180, radB = (bearing * Math.PI) / 180;
+    const sinP = Math.sin(radP), cosP = Math.cos(radP);
+    const sinB = Math.sin(radB), cosB = Math.cos(radB);
+    const Fx = sinB * sinP, Fy = cosB * sinP, Fz = -cosP;
+    const Rx = cosB, Ry = -sinB, Rz = 0;
+    const Ux = sinB * cosP, Uy = cosB * cosP, Uz = sinP;
+
+    let camX = 0, camY = 0, camZ = 100;
+    let hasCam = false;
+    try {
+      const fcam = map.getFreeCameraOptions?.();
+      if (fcam && fcam.position) {
+        camX = (fcam.position.x - ox) / k;
+        camY = (oy - fcam.position.y) / k;
+        camZ = fcam.position.z / k;
+        hasCam = true;
+      }
+    } catch { /* fallback */ }
+
+    if (!hasCam) {
+      const canvasH = map.getCanvas?.()?.height || 800;
+      const mpp = (78271.517 * Math.cos((c.lat * Math.PI) / 180)) / Math.pow(2, z);
+      const camDist = 1.5 * canvasH * mpp;
+      const ground0 = zAt(ox, oy);
+      camX = -sinB * camDist * sinP;
+      camY = -cosB * camDist * sinP;
+      camZ = ground0 + camDist * cosP;
+    }
+
+    const cull3D = threeD && pitch > 15;
+    const maxDist = z >= 16 ? 1300 : 1800;
+    const frustumFade = (dx, dy, gz, isFollowed = false) => {
+      if (isFollowed || !cull3D) return 1.0;
+      const vx = dx - camX, vy = dy - camY, vz = gz - camZ;
+      const fwd = vx * Fx + vy * Fy + vz * Fz;
+      if (fwd < -20 || fwd > maxDist) return 0.0;
+      const side = Math.abs(vx * Rx + vy * Ry);
+      const maxSide = fwd * 1.25 + 60;
+      if (side > maxSide) return 0.0;
+
+      let fFade = 1.0;
+      const fDistRem = maxDist - fwd;
+      if (fDistRem < 250) fFade = Math.max(0, fDistRem / 250);
+      if (fwd < 10) fFade = Math.min(fFade, Math.max(0, (fwd + 20) / 30));
+
+      const sRem = maxSide - side;
+      let sFade = 1.0;
+      if (sRem < 40) sFade = Math.max(0, sRem / 40);
+
+      return fFade * sFade;
+    };
+
     for (const v of V.values()) {
       if (v.sched ? (window.Daylight?.mode === "cycle" && window.Daylight.speed > 60) : !live) continue;
       const a = step(v, dt, nowSec), sh = v.shape || v.ray;
       if (a < 0.02 || (v.sched && !sh)) continue;
       if (sh) { const i = cursor(sh, v, "seg0", v.s), t = (v.s - sh.cum[i]) / (sh.cum[i + 1] - sh.cum[i] || 1); v.mx = sh.MX[i] + (sh.MX[i + 1] - sh.MX[i]) * t; v.my = sh.MY[i] + (sh.MY[i + 1] - sh.MY[i]) * t; }
       if (v.mx < x0 || v.mx > x1 || v.my < y0 || v.my > y1) continue;
-      const mine = hi.has(v.trip) || v.id === followId, alpha = a * (routeOn && !mine ? 0.35 : 1), dx = (v.mx - ox) / k, dy = (oy - v.my) / k;
+      v.visAlpha = Math.min(1, (v.visAlpha == null ? 0 : v.visAlpha) + dt * 2.5);
+      const mine = hi.has(v.trip) || v.id === followId, dx = (v.mx - ox) / k, dy = (oy - v.my) / k;
+      const gz = zAt(v.mx, v.my);
+      const ff = frustumFade(dx, dy, gz, mine);
+      if (ff <= 0.01) continue;
+      const alpha = a * ff * v.visAlpha * (routeOn && !mine ? 0.35 : 1);
       if (dotAlpha > 0.02) {
-        const gz = zAt(v.mx, v.my);
-        if (mine) scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], 90, dotSize * 2.1, -1, gz);
-        scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], Math.round(255 * alpha * dotAlpha), dotSize, -1, gz);
-        if (labels && v.line) scene.addLabel(v.line, dx, dy, gz);
+        const rSz = (v.mode === "RAIL" && z < 12) ? dotSize * 1.4 : dotSize;
+        if (mine) scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], 90, rSz * 2.1, -1, gz);
+        scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], Math.round(255 * alpha * dotAlpha), rSz, -1, gz);
+        if ((labels || (v.mode === "RAIL" && z >= 10.5)) && v.line) scene.addLabel(v.line, dx, dy, gz);
       }
       if (meshes && sh) {
         if (!v.model) { v.model = modelFor(v); const L = livery(v); v.liv = scene.palette.id(L); v.tint = window.Fleet.jitter(L.body, v.id); }
-        const al = Math.round(255 * alpha), cars = v.model.cars, bend = cars.length > 1, tn = v.tint;
-        for (let i = 0; i < cars.length; i++) {
+        const al = Math.round(255 * alpha * meshFade), cars = v.model.cars, bend = cars.length > 1, tn = v.tint;
+        if (al > 2) for (let i = 0; i < cars.length; i++) {
           const cd = cars[i];
-          let cx = dx, cy = dy, fx = v.hx, fy = v.hy, cz = zAt(v.mx, v.my);
+          let cx = dx, cy = dy, fx = v.hx, fy = v.hy, cz = gz;
           if (bend) { poseAt(sh, v.s + cd.c); cx = (pose[0] - ox) / k; cy = (oy - pose[1]) / k; fx = pose[2]; fy = pose[3]; cz = zAt(pose[0], pose[1]); }
           const tx = fx, ty = fy;  // the direction of travel, before a reversed car is turned round
           if (cd.flip) { fx = -fx; fy = -fy; }
           scene.batches.get(cd.mesh).batch.push(cx, cy, fx, fy, v.liv, al, 0, tn[0], tn[1], tn[2], 255, cz);
           if (lights && bh) {  // headlight cones at the front of the first car, tail cones at the back of the last
             const hl = (window.Fleet.LEN[cd.mesh] || 10) / 2;
-            if (i === cars.length - 1) bh.push(cx + tx * hl, cy + ty * hl, tx, ty, 0, Math.round(190 * lights * alpha), 0, 255, 246, 214, 255, cz);
-            if (i === 0) bt.push(cx - tx * hl, cy - ty * hl, tx, ty, 0, Math.round(170 * lights * alpha), 0, 255, 34, 22, 255, cz);
+            if (i === cars.length - 1) bh.push(cx + tx * hl, cy + ty * hl, tx, ty, 0, Math.round(190 * lights * alpha * meshFade), 0, 255, 246, 214, 255, cz);
+            if (i === 0) bt.push(cx - tx * hl, cy - ty * hl, tx, ty, 0, Math.round(170 * lights * alpha * meshFade), 0, 255, 34, 22, 255, cz);
           }
         }
       }
@@ -279,12 +343,16 @@
       const night = scene.light.night, mpp = (78271.517 * Math.cos((c.lat * Math.PI) / 180)) / Math.pow(2, z), glow = night > 0.2 ? Math.min(1, (night - 0.2) / 0.5) : 0;
       for (const list of ["trees", "lamps", "benches", "bins", "stops"]) for (const o of decor.items[list]) {
         if (o.mx < x0 || o.mx > x1 || o.my < y0 || o.my > y1) continue;
-        const dx = (o.mx - ox) / k, dy = (oy - o.my) / k, tinted = o.kind.startsWith("tree") || o.kind === "bin", gz = zAt(o.mx, o.my);
-        scene.batches.get("w_" + o.kind)?.batch.push(dx, dy, o.fx, o.fy, decor.liv[o.kind], 255, 0, o.tint[0], o.tint[1], o.tint[2], tinted ? 255 : 0, gz);
+        const dx = (o.mx - ox) / k, dy = (oy - o.my) / k, gz = zAt(o.mx, o.my);
+        const ff = frustumFade(dx, dy, gz);
+        if (ff <= 0.01) continue;
+        const itemAlpha = Math.round(255 * ff);
+        const tinted = o.kind.startsWith("tree") || o.kind === "bin";
+        scene.batches.get("w_" + o.kind)?.batch.push(dx, dy, o.fx, o.fy, decor.liv[o.kind], itemAlpha, 0, o.tint[0], o.tint[1], o.tint[2], tinted ? 255 : 0, gz);
         if (glow && o.kind === "lamp") {  // a cone of light from the lamp head down to a pool on the road, plus a small halo at the lamp
-          scene.batches.get("b_lamp")?.batch.push(dx, dy, o.fx, o.fy, 0, Math.round(190 * glow), 0, 255, 188, 96, 255, gz);
-          scene.dots.push(dx - o.fy * 1.4, dy + o.fx * 1.4, 255, 200, 120, Math.round(70 * glow), -Math.min(60, 3.2 / mpp), -1, gz + 6.9);
-        } else if (glow && o.kind === "busstop") scene.dots.push(dx, dy, 255, 200, 120, Math.round(60 * glow), -Math.min(60, 4 / mpp), -1, gz + 2);
+          scene.batches.get("b_lamp")?.batch.push(dx, dy, o.fx, o.fy, 0, Math.round(190 * glow * ff), 0, 255, 188, 96, 255, gz);
+          scene.dots.push(dx - o.fy * 1.4, dy + o.fx * 1.4, 255, 200, 120, Math.round(70 * glow * ff), -Math.min(60, 3.2 / mpp), -1, gz + 6.9);
+        } else if (glow && o.kind === "busstop") scene.dots.push(dx, dy, 255, 200, 120, Math.round(60 * glow * ff), -Math.min(60, 4 / mpp), -1, gz + 2);
       }
     }
     if (traffic && ambient && meshes) {
@@ -293,11 +361,16 @@
       const bhc = bh, btc = bt;
       traffic.write(ox, oy, k, x0, x1, y0, y1, (type, dx, dy, fx, fy, a, tn, len) => {
         const gz = zAt(ox + dx * k, oy - dy * k);
-        scene.batches.get("car_" + type).batch.push(dx, dy, fx, fy, 0, Math.round(255 * a), 0, tn[0], tn[1], tn[2], 255, gz);
+        const ff = frustumFade(dx, dy, gz);
+        if (ff <= 0.01) return;
+        const finalAlpha = a * ff * meshFade;
+        const al = Math.round(255 * finalAlpha);
+        if (al <= 2) return;
+        scene.batches.get("car_" + type).batch.push(dx, dy, fx, fy, 0, al, 0, tn[0], tn[1], tn[2], 255, gz);
         if (lights && bhc) {
           const hl = len / 2;
-          bhc.push(dx + fx * hl, dy + fy * hl, fx, fy, 0, Math.round(170 * lights * a), 0, 255, 246, 214, 255, gz);
-          btc.push(dx - fx * hl, dy - fy * hl, fx, fy, 0, Math.round(150 * lights * a), 0, 255, 34, 22, 255, gz);
+          bhc.push(dx + fx * hl, dy + fy * hl, fx, fy, 0, Math.round(170 * lights * finalAlpha), 0, 255, 246, 214, 255, gz);
+          btc.push(dx - fx * hl, dy - fy * hl, fx, fy, 0, Math.round(150 * lights * finalAlpha), 0, 255, 34, 22, 255, gz);
         }
       });
     }
@@ -312,12 +385,16 @@
       const t = performance.now() * 0.001;
       for (let i = 0; i < count; i++) {
         const pSeed = (i * 1013904223) >>> 0;
-        const rx = ((pSeed % 1200) - 600) * 0.1;
-        const ry = (((pSeed * 31) % 1200) - 600) * 0.1;
-        const rzBase = ((pSeed * 17) % 350) * 0.1 + 1.0;
-        const dropZ = ((rzBase - t * speed) % 35 + 35) % 35;
-        const windX = isSnow ? Math.sin(t + i) * 1.5 : 0;
-        scene.dots.push(rx + windX, ry, r, g, b, a, size, -1, dropZ);
+        const fDist = 6.0 + ((pSeed % 1000) / 1000) * 75.0;
+        const rDist = ((((pSeed * 31) >>> 0) % 1000) / 500 - 1.0) * 45.0;
+        const uDist = ((((pSeed * 17) >>> 0) % 1000) / 500 - 1.0) * 25.0;
+        const fallH = 30.0;
+        const fallOffset = ((t * speed + ((pSeed * 7) % 100)) % fallH);
+        const windX = isSnow ? Math.sin(t * 1.5 + i * 0.3) * 1.8 : 0;
+        const px = camX + Fx * fDist + Rx * rDist + Ux * uDist + windX;
+        const py = camY + Fy * fDist + Ry * rDist + Uy * uDist;
+        const pz = camZ + Fz * fDist + Rz * rDist + Uz * uDist - fallOffset;
+        scene.dots.push(px, py, r, g, b, a, size, -1, pz);
       }
     }
     scene.setFrame({ ox, oy, k, zoom: z, dpr: window.devicePixelRatio || 1 });
@@ -567,7 +644,7 @@
         ingest(r.vehicles, r.now);
         let budget = 30;
         for (const v of V.values()) {
-          if (v.shape || !v.trip || budget <= 0 || z < 12) continue;
+          if (v.shape || !v.trip || budget <= 0 || (v.mode !== "RAIL" && z < 11.5) || z < 9.5) continue;
           const known = SHAPES.get(v.trip);
           if (known && known.points) { attachShape(v, known); continue; }
           if (known === "pending" || (known && T() - known.fail < 60)) continue;  // loading, or failed less than a minute ago
@@ -608,11 +685,20 @@
       map.touchPitch?.enable();
       map.touchZoomRotate?.enableRotation();
       map.easeTo({ pitch: 58, duration: 600 });
+      laneKey = "";
+      loadLanes();
+      loadRoofs();
+      rebuildFacades();
     } else {
       map.easeTo({ pitch: 0, bearing: 0, duration: 500 });
       map.dragRotate?.disable();
       map.touchPitch?.disable();
       map.touchZoomRotate?.disableRotation();
+      if (scene) {
+        for (const name of infra.meshes.keys()) scene.dropMesh("infra:" + name);
+        infra.meshes.clear();
+        infra.anchor = null;
+      }
     }
     syncVisibility();
   }
@@ -741,7 +827,7 @@
     const res = window.Roads3D.build(features, anchor, groundFn);
     for (const [name, mesh] of Object.entries(res.meshes)) {
       const batchName = "infra:" + name;
-      if (!mesh || !mesh.verts || mesh.verts.length === 0) {
+      if (!mesh || !mesh.vertex || mesh.vertex.length === 0) {
         if (infra.meshes.has(name)) {
           scene.dropMesh(batchName);
           infra.meshes.delete(name);
@@ -808,7 +894,7 @@
   async function refreshSched() {
     const mode = ambient ? "all" : shown() ? "gap" : "";
     if (mode !== schedMode) { schedMode = mode; for (const [id, o] of V) if (o.sched) V.delete(id); }
-    if (!mode || !map || schedBusy || document.hidden || map.getZoom() < (mode === "all" ? Z_MESH - 1 : 11.5) || (window.Daylight?.mode === "cycle")) return;
+    if (!mode || !map || schedBusy || document.hidden || map.getZoom() < (mode === "all" ? Z_MESH - 1 : 9.5) || (window.Daylight?.mode === "cycle")) return;
     schedBusy = true;
     try {
       const b = map.getBounds(), w = (b.getEast() - b.getWest()) * 0.15, hh = (b.getNorth() - b.getSouth()) * 0.15, live = simLive();
@@ -829,13 +915,30 @@
         } else { v.sched.sd = tr.sd; v.sched.st = tr.st; }
         if (!v.shape) ensureShape(v);
       }
-      for (const [id, v] of V) if (v.sched && !keep.has(id) && id !== followId) V.delete(id);
+      const ep = simEpoch();
+      for (const [id, v] of V) {
+        if (v.sched && !keep.has(id) && id !== followId) {
+          if (v.sched.st && v.sched.st.length > 0) {
+            const t = ep - v.sched.sd;
+            const first = v.sched.st[0][2], last = v.sched.st[v.sched.st.length - 1][1];
+            if (t >= first - 10 && t <= last + 20) {
+              const m = 0.6 * Math.max(b.getEast() - b.getWest(), 1e-4);
+              if (v.mx && (v.mx < mercX(b.getWest() - m) || v.mx > mercX(b.getEast() + m) ||
+                           v.my < mercY(b.getNorth() + m) || v.my > mercY(b.getSouth() - m))) {
+                V.delete(id);
+              }
+              continue;
+            }
+          }
+          V.delete(id);
+        }
+      }
     } catch { /* the next refresh tries again */ } finally { schedBusy = false; }
   }
   // road lanes for ambient traffic come from the tiles already on screen
   let laneKey = "";
   function loadLanes() {
-    if (!ambient || !map || !map.getSource("openmaptiles") || map.getZoom() < Z_MESH) return;
+    if ((!ambient && !threeD) || !map || !map.getSource("openmaptiles") || map.getZoom() < 14.5) return;
     const c = map.getCenter(), STEP = 0.0025, key = Math.round(c.lng / STEP) + "," + Math.round(c.lat / STEP) + "," + Math.round(map.getZoom());  // rebuilding costs a few hundred ms, so only after a real move
     if (key === laneKey) return;
     laneKey = key;
@@ -844,21 +947,21 @@
     const b = map.getBounds(), m = 0.6 * (b.getEast() - b.getWest());
     const inside = feats.filter((f) => { const g = f.geometry, p = g.type === "LineString" ? g.coordinates[0] : g.coordinates?.[0]?.[0]; return p && p[0] > b.getWest() - m && p[0] < b.getEast() + m && p[1] > b.getSouth() - m && p[1] < b.getNorth() + m; });
     const anchor = { lon: +c.lng.toFixed(2), lat: +c.lat.toFixed(2) };
-    const lanes = window.Traffic.lanesFromFeatures(inside, anchor);
-    traffic.setLanes(lanes, anchor);
-    buildDecor(anchor, lanes);
-    rebuildInfra(anchor, inside);
+    if (ambient) {
+      if (!traffic) traffic = new window.Traffic.Traffic();
+      const lanes = window.Traffic.lanesFromFeatures(inside, anchor);
+      traffic.setLanes(lanes, anchor);
+      buildDecor(anchor, lanes);
+    }
+    if (threeD) {
+      rebuildInfra(anchor, inside);
+    }
   }
   function setAmbient(on) {
     ambient = !!on;
     refreshSched();
     if (!ambient) {
       decor.items = null;
-      if (scene) {
-        for (const name of infra.meshes.keys()) scene.dropMesh("infra:" + name);
-        infra.meshes.clear();
-        infra.anchor = null;
-      }
     }
     if (ambient && !traffic) traffic = new window.Traffic.Traffic();
     laneKey = "";
@@ -878,7 +981,7 @@
     let deb = 0, deb2 = 0;
     map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); loadRoofs(); ensureDem(); rebuildFacades(); }, 400); });
     map.on("sourcedata", (e) => {
-      if (ambient && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); }
+      if ((ambient || threeD) && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); }
       if (threeD && e.sourceId === "openmaptiles" && e.isSourceLoaded) { clearTimeout(deb); deb = setTimeout(rebuildFacades, 500); }
     });
     setInterval(refresh, 5000);

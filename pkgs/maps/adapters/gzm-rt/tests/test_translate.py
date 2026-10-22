@@ -43,6 +43,10 @@ class T(unittest.TestCase):
     def test_after_midnight_prefers_the_day_that_has_the_trip(self):
         self.assertEqual(tr.translate("1_100", self.s, self.t, NIGHT), ("11608:1_100", "20261022"))
 
+    def test_prefix_map_override(self):
+        m = {"20261021": "99999"}
+        self.assertEqual(tr.translate("1_100", self.s, self.t, NOON, prefix_map=m), ("99999:1_100", "20261021"))
+
     def test_unknown_trip_is_none(self):
         self.assertIsNone(tr.translate("1_999", self.s, self.t, NOON))
         self.assertIsNone(tr.translate("9_100", self.s, self.t, NOON))

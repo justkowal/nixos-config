@@ -245,3 +245,39 @@ test("facade building is fast for a realistic district", () => {
   assert.equal(mesh.triangles, 1200);
   assert.ok(dt < 50, `building 600 walls should take < 50ms, took ${dt.toFixed(2)}ms`);
 });
+
+test("window lighting handles late summer sunsets (e.g. 21:15 / 1275 min) correctly without remaining dark", () => {
+  const summerSunTimes = {
+    sunrise: 270,  // 04:30
+    sunset: 1275,  // 21:15
+  };
+
+  // Sample windows at 22:30 (1350 min) - should have significant lit percentage
+  let litCount = 0;
+  const total = 500;
+  for (let b = 0; b < 50; b++) {
+    for (let f = 0; f < 5; f++) {
+      for (let bay = 0; bay < 2; bay++) {
+        if (F.windowLight(b * 13.7 + 1.1, bay, f, 1350, summerSunTimes)) {
+          litCount++;
+        }
+      }
+    }
+  }
+  const ratio2230 = litCount / total;
+  assert.ok(ratio2230 > 0.30, `summer sunset at 22:30 should have > 30% lit windows, got ${(ratio2230 * 100).toFixed(1)}%`);
+
+  // Verify that any window that turns on in summer stays on for at least 30 minutes
+  for (let b = 0; b < 30; b++) {
+    let turnedOnMinute = -1, turnedOffMinute = -1;
+    for (let m = 1260; m < 1440 + 270; m++) {
+      const evalM = m % 1440;
+      const isLit = F.windowLight(b * 19.3, 0, 1, evalM, summerSunTimes);
+      if (isLit && turnedOnMinute === -1) turnedOnMinute = m;
+      if (!isLit && turnedOnMinute !== -1 && turnedOffMinute === -1) turnedOffMinute = m;
+    }
+    if (turnedOnMinute !== -1 && turnedOffMinute !== -1) {
+      assert.ok(turnedOffMinute - turnedOnMinute >= 30, `window must stay on >= 30 min, was ${turnedOffMinute - turnedOnMinute}`);
+    }
+  }
+});

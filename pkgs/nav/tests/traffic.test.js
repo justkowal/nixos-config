@@ -75,3 +75,33 @@ test("simulating a city's worth of lanes is cheap", () => {
   console.log(`# traffic: ${ms.toFixed(3)} ms per step, ${t.n} vehicles`);
   assert.ok(ms < 2.5, `${ms} ms`);  // 3400 vehicles is about ten times a real view
 });
+
+test("vehicles transfer smoothly between connected lanes instead of disappearing", () => {
+  const f1 = { properties: { class: "primary", oneway: 1 }, geometry: { type: "LineString", coordinates: [[19.9, 50.06], [19.9 + 200 / 71500, 50.06]] } };
+  const f2 = { properties: { class: "primary", oneway: 1 }, geometry: { type: "LineString", coordinates: [[19.9 + 200 / 71500, 50.06], [19.9 + 400 / 71500, 50.06]] } };
+  const t = new T.Traffic(rng);
+  t.setLanes(T.lanesFromFeatures([f1, f2], anchor), anchor);
+  const lanes = [...t.lanes.values()];
+  const l1 = lanes.find((l) => l.hasNext);
+  const l2 = lanes.find((l) => l.hasPrev);
+  assert.ok(l1 && l2, "lanes are connected");
+  l1.veh.length = 0;
+  l2.veh.length = 0;
+
+  // Case 1: room on l2 -> vehicle transfers smoothly
+  l1.veh.push({ s: l1.len - 5, v: 10, type: "sedan", len: 4.75, v0f: 1, tint: [0, 0, 0], spawn: 1 });
+  t.step(1.0);
+  assert.equal(l1.veh.length, 0, "vehicle transferred out of l1");
+  assert.equal(l2.veh.length, 1, "vehicle transferred into l2");
+  assert.ok(l2.veh[0].s >= 0 && l2.veh[0].s <= 25, `vehicle is at start of l2: ${l2.veh[0].s}`);
+
+  // Case 2: l2 is congested -> vehicle waits at intersection without vanishing
+  l1.veh.push({ s: l1.len - 5, v: 10, type: "sedan", len: 4.75, v0f: 1, tint: [0, 0, 0], spawn: 1 });
+  l2.veh[0].s = 2.0; // car blocking start of l2
+  l2.veh[0].v = 0;
+  t.step(1.0);
+  assert.equal(l1.veh.length, 1, "vehicle still exists on l1");
+  assert.equal(l1.veh[0].s, l1.len, "vehicle holds at end of l1");
+  assert.equal(l1.veh[0].v, 0, "vehicle comes to a stop");
+});
+

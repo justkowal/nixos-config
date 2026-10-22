@@ -734,13 +734,32 @@ async function loadInfo() {
   const box = $("#info");
   let i = {};
   try { i = await api("info"); } catch { /* shown empty */ }
+  const liveCount = (p) => {
+    if (!i.live?.by_agency) return 0;
+    let n = 0;
+    for (const [ag, count] of Object.entries(i.live.by_agency)) {
+      if (ag && ag.includes(p.match)) n += count;
+    }
+    return n;
+  };
+  const modeBreakdown = i.live?.by_mode ? Object.entries(i.live.by_mode).map(([m, c]) => `${m}: ${c}`).join(" · ") : "";
   box.replaceChildren(
     h("section", {}, h("h3", {}, "Routing data"), h("div", {}, i.built_at ? `Graph built ${new Date(i.built_at).toLocaleString("en-GB", { timeZone: TZ })}` : "Unknown"), h("div", {}, i.osm_data ? `OpenStreetMap data from ${i.osm_data.slice(0, 10)}` : "")),
-    h("section", {}, h("h3", {}, "Operators"), h("ul", {}, providers.map((p) => h("li", {}, h("span", { class: "swatch", style: { "--c": p.color } }), p.name)))),
+    h("section", {},
+      h("h3", {}, `Live vehicles (${i.live?.total != null ? i.live.total : 0} active)`),
+      modeBreakdown ? h("div", { class: "meta", style: { marginBottom: "6px" } }, modeBreakdown) : "",
+      h("ul", {}, providers.map((p) => {
+        const c = liveCount(p);
+        return h("li", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+          h("span", {}, h("span", { class: "swatch", style: { "--c": p.color } }), p.name),
+          h("span", { class: "badge", style: { "--c": c > 0 ? p.color : "var(--dim)" } }, `${c} live`)
+        );
+      }))
+    ),
     h("section", {}, h("h3", {}, "This device"), h("ul", {}, [
       h("li", {}, `App build ${document.querySelector('meta[name="nav-build"]')?.content || "?"}`),
       h("li", {}, map ? "Map: WebGL on" : "Map: WebGL off, no map, no 3D"),
-      h("li", {}, (() => { const s = window.Vehicles?.stats?.(); return s ? `Vehicles: ${s.total} live, ${s.withShape} on their route, zoom ${s.zoom}, 3D ${s.threeD ? "on" : "off"}, layer ${s.on ? "on" : "off"}` : "Vehicles: not loaded"; })()),
+      h("li", {}, (() => { const s = window.Vehicles?.stats?.(); return s ? `Vehicles (local): ${s.total} tracked, ${s.withShape} on route, zoom ${s.zoom}, 3D ${s.threeD ? "on" : "off"}, layer ${s.on ? "on" : "off"}` : "Vehicles: not loaded"; })()),
       h("li", {}, "3D buildings and vehicle models show from zoom 15 (street level)")])),
     h("section", {}, h("h3", {}, "Camera & shortcuts"), h("ul", {}, [
       h("li", {}, "Pan: W A S D or Arrow keys"),

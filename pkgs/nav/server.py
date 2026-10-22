@@ -428,8 +428,25 @@ def api_info(_q):
         m = json.load(open(MANIFEST))
     except (OSError, ValueError):
         m = {}
-    return {"built_at": m.get("built_at"), "osm_data": m.get("osm_data_timestamp"), "feeds": [{"id": f["id"], "attribution": f.get("attribution")} for f in m.get("feeds", [])],
-            "attribution": m.get("attribution", "© OpenStreetMap contributors")}
+    snap = vehicles_snapshot()
+    by_agency = {}
+    by_mode = {}
+    for v in snap:
+        ag = v.get("ag") or "Unknown"
+        by_agency[ag] = by_agency.get(ag, 0) + 1
+        md = v.get("mode") or "OTHER"
+        by_mode[md] = by_mode.get(md, 0) + 1
+    return {
+        "built_at": m.get("built_at"),
+        "osm_data": m.get("osm_data_timestamp"),
+        "feeds": [{"id": f["id"], "attribution": f.get("attribution")} for f in m.get("feeds", [])],
+        "attribution": m.get("attribution", "© OpenStreetMap contributors"),
+        "live": {
+            "total": len(snap),
+            "by_agency": by_agency,
+            "by_mode": by_mode,
+        },
+    }
 
 
 # ---------------------------------------------------------------- live vehicles and trip shapes

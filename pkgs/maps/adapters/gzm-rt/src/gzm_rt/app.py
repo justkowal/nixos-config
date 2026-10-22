@@ -1,4 +1,4 @@
-"""Poll the two GZM realtime feeds, translate ids, serve the results. Static id tables refresh hourly with a conditional request."""
+import json
 import logging
 import os
 import threading
@@ -14,7 +14,7 @@ from . import translate as tr
 log = logging.getLogger("gzm.app")
 
 
-def rewrite(feed_bytes, services, trips, now, kind):
+def rewrite(feed_bytes, services, trips, now, kind, prefix_map=None):
     """-> (serialized feed, kept, dropped). Entities that cannot be placed are dropped, never guessed."""
     src = pb.FeedMessage()
     src.ParseFromString(feed_bytes)
@@ -23,7 +23,7 @@ def rewrite(feed_bytes, services, trips, now, kind):
     kept = dropped = 0
     for e in src.entity:
         trip = e.trip_update.trip if kind == "tu" else e.vehicle.trip
-        hit = tr.translate(trip.trip_id, services, trips, now) if trip.trip_id else None
+        hit = tr.translate(trip.trip_id, services, trips, now, prefix_map=prefix_map) if trip.trip_id else None
         if not hit:
             dropped += 1
             continue
@@ -42,10 +42,40 @@ class App:
         self.zip = os.path.join(self.dir, "ids.zip")
         self.etag = os.path.join(self.dir, "ids.etag")
         self.services, self.trips = {}, set()
+        self.prefix_map = {}
+        self.last_prefix_discovery = 0
+        self.otp_url = cfg.get("source", {}).get("otp_url", os.environ.get("OTP_URL", "http://mcp-otp:8080"))
         self.out = {"tu": b"", "vp": b""}
         self.h = {"ids": {}, "tu": {}, "vp": {}, "blocked_until": 0}
         self.errors = 0
         self.stop = threading.Event()
+
+    def discover_prefix_map(self):
+        """Query OTP for publication numbers in its graph, so we align with graph's prefixes."""
+        try:
+            query = '{ route(id: "gzm:219") { patterns { trips { gtfsId activeDates } } } }'
+            req = urllib.request.Request(
+                f"{self.otp_url}/otp/gtfs/v1",
+                method="POST",
+                data=json.dumps({"query": query}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as r:
+                data = json.loads(r.read())
+            mapping = {}
+            for p in (data.get("data") or {}).get("route", {}).get("patterns") or []:
+                for t in p.get("trips") or []:
+                    parts = t.get("gtfsId", "").split(":")
+                    if len(parts) >= 2:
+                        pub = parts[1]
+                        for d in t.get("activeDates") or []:
+                            mapping[d] = pub
+            if mapping:
+                self.prefix_map = mapping
+                self.last_prefix_discovery = self.clock()
+                log.info("discovered OTP prefix_map: %s", self.prefix_map)
+        except Exception as e:
+            log.debug("could not discover OTP prefix_map: %s", e)
 
     def get(self, url, headers=None):
         req = urllib.request.Request(url, headers={"User-Agent": self.cfg["source"]["user_agent"], **(headers or {})})
@@ -89,10 +119,12 @@ class App:
     def poll_once(self):
         if self.clock() < self.h["blocked_until"]:
             return
+        if self.clock() - self.last_prefix_discovery > 300 or not self.prefix_map:
+            self.discover_prefix_map()
         for kind, key in (("tu", "trip_updates"), ("vp", "vehicle_positions")):
             try:
                 _, body, _ = self.get(self.cfg["source"][key])
-                data, kept, dropped = rewrite(body, self.services, self.trips, self.clock(), kind)
+                data, kept, dropped = rewrite(body, self.services, self.trips, self.clock(), kind, prefix_map=self.prefix_map)
                 self.out[kind] = data
                 self.h[kind] = {"kept": kept, "dropped": dropped, "at": int(self.clock())}
                 self.errors = 0

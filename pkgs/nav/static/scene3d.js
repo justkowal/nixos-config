@@ -205,18 +205,38 @@ void main() {
   vec3 n = normalize(vec3(f * a_nrm.x + l * a_nrm.y, a_nrm.z));
   int liv = int(i_meta.x + 0.5), part = int(a_part + 0.5);
   vec3 base = part < 4 ? u_liv[liv * 4 + part] : part == 4 ? vec3(0.012, 0.02, 0.035) : part == 5 ? vec3(0.015, 0.017, 0.02) : part == 6 ? vec3(0.9, 0.85, 0.6) : vec3(0.7, 0.02, 0.02);
-  if (part == 1) base = mix(base, pow(i_tint.rgb, vec3(2.2)), i_tint.a);
+  if (liv == 0 && i_tint.a > 0.0) {
+    vec3 tc = pow(i_tint.rgb, vec3(2.2));
+    if (part == 1 || part == 3) base = tc;
+    else if (part == 2) base = tc * 1.25;
+    else if (part == 5) base = tc * 0.65;
+  } else if (part == 1) {
+    base = mix(base, pow(i_tint.rgb, vec3(2.2)), i_tint.a);
+  }
   float diff = max(dot(n, u_sun), 0.0), hemi = 0.55 + 0.45 * n.z;
   vec3 lit = base * (u_ambient * hemi + u_sunColor * diff);
   vec3 glow = part == 6 ? vec3(1.0, 0.92, 0.7) * 2.2 : part == 7 ? vec3(1.0, 0.1, 0.05) * 1.6 : part == 4 ? vec3(1.0, 0.8, 0.45) * 0.22 : vec3(0.0);
   vec3 c = lit + glow * u_night;
-  float a = i_meta.y / 255.0;
-  v_col = mix(u_bg, c, a);
+  v_col = c;
+  v_alpha = i_meta.y / 255.0;
 }`;
   const FS_MESH = `#version 300 es
 precision mediump float;
-in vec3 v_col; out vec4 o;
-void main() { o = vec4(pow(v_col, vec3(1.0 / 2.2)), 1.0); }`;
+const float bayer4[16] = float[16](
+   0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
+  12.0/16.0,  4.0/16.0, 14.0/16.0,  6.0/16.0,
+   3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0,
+  15.0/16.0,  7.0/16.0, 13.0/16.0,  5.0/16.0
+);
+in vec3 v_col; in float v_alpha; out vec4 o;
+void main() {
+  if (v_alpha < 0.98) {
+    int x = int(gl_FragCoord.x) & 3;
+    int y = int(gl_FragCoord.y) & 3;
+    if (bayer4[y * 4 + x] >= v_alpha) discard;
+  }
+  o = vec4(pow(v_col, vec3(1.0 / 2.2)), 1.0);
+}`;
   // light cones: additive, no lighting, intensity comes from the vertex (a_part), colour and strength from the instance
   const VS_BEAM = `#version 300 es
 precision highp float;
@@ -364,6 +384,7 @@ void main() {
     } else {
       t_off = 1470.0 + ((r3 - 0.93) / 0.07) * 180.0;
     }
+    t_off = max(t_off, t_on + 30.0 + r3 * 60.0);
 
     float t_eval = (u_timeMin < u_sunriseMin) ? (u_timeMin + 1440.0) : u_timeMin;
     if (t_eval >= (u_sunsetMin - 15.0) && t_eval < (u_sunriseMin + 1440.0)) {
@@ -373,7 +394,7 @@ void main() {
     }
   }
 
-  vec3 wallBase = mix(getWallLight(palIdx), getWallDark(palIdx), u_night);
+  vec3 wallBase = mix(getWallLight(palIdx), getWallLight(palIdx) * vec3(0.88, 0.90, 0.95), u_night);
   if (inFrame || inMullion) wallBase *= 0.35;
   else if (inSill) wallBase *= 0.80;
   else if (inBand) wallBase *= 0.88;
@@ -381,7 +402,8 @@ void main() {
 
   float diff = max(dot(n, u_sun), 0.0);
   float hemi = 0.55 + 0.45 * n.z;
-  vec3 wallLit = wallBase * (u_ambient * hemi + u_sunColor * diff);
+  vec3 cityGlow = vec3(0.035, 0.032, 0.028) * u_night;
+  vec3 wallLit = wallBase * (u_ambient * hemi + u_sunColor * diff + cityGlow);
 
   vec3 col;
   if (inGlass) {
@@ -392,12 +414,12 @@ void main() {
       float interiorFade = clamp(1.0 - (cx * cx + cy * cy) * 0.4, 0.5, 1.0);
       float blindH = fract(r2 * 5.7);
       float blindMask = (blindH > 0.5 && fy > 0.65) ? 0.35 : 1.0;
-      vec3 emission = warmColor * interiorFade * blindMask * 2.2 * u_night;
-      col = wallLit * 0.15 + emission;
+      vec3 emission = warmColor * interiorFade * blindMask * (1.1 + 0.6 * u_night);
+      col = wallLit * 0.35 + emission;
     } else {
-      vec3 glassBase = mix(vec3(0.012, 0.016, 0.024), vec3(0.035, 0.05, 0.075), u_ambient.z);
+      vec3 glassBase = mix(vec3(0.015, 0.020, 0.028), vec3(0.040, 0.055, 0.080), u_ambient.z);
       float spec = pow(max(dot(reflect(-u_sun, n), vec3(0.0, 0.0, 1.0)), 0.0), 12.0);
-      col = glassBase * u_ambient + u_sunColor * spec * 0.25 * (1.0 - u_night);
+      col = glassBase * (u_ambient + cityGlow * 1.5) + u_sunColor * spec * 0.25 * (1.0 - u_night);
     }
   } else {
     col = wallLit;
@@ -463,7 +485,7 @@ void main() {
         const l = attr(S.progMesh, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, type, norm, STRIDE, off); gl.vertexAttribDivisor(l, 1);
       }
       gl.bindVertexArray(null);
-      b.gpu = { vao, vb, ib, inst, triangles: mesh.triangles };
+      b.gpu = { vao, vb, ib, inst, triangles: mesh.triangles, use32: mesh.index instanceof Uint32Array };
     }
     // a mesh whose geometry changes at runtime (world details streamed from data); it has one instance, so its vertices carry the placement
     S.setDynamicMesh = (name, mesh) => {
@@ -549,6 +571,7 @@ void main() {
         }
         if (S.showMeshes && fr.zoom >= 14.5 && S.facadeGpu && S.facadeGpu.triangles) {
           gl.useProgram(S.progFacade);
+          gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.depthFunc(gl.LEQUAL);
           const L = S.light;
           gl.uniformMatrix4fv(S.uFacade.u_matrix, false, m32);
           gl.uniform2f(S.uFacade.u_anchorOffset, S.facadeAnchorOffset[0], S.facadeAnchorOffset[1]);
@@ -565,6 +588,7 @@ void main() {
         }
         if (S.showMeshes && fr.zoom >= S.meshZoom) {
           gl.useProgram(S.progMesh);
+          gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.depthFunc(gl.LEQUAL);
           const L = S.light;
           gl.uniformMatrix4fv(S.uMesh.u_matrix, false, m32); gl.uniform3fv(S.uMesh.u_sun, L.sun); gl.uniform3fv(S.uMesh.u_sunColor, L.sunColor); gl.uniform3fv(S.uMesh.u_ambient, L.ambient);
           gl.uniform1f(S.uMesh.u_night, L.night); gl.uniform3fv(S.uMesh.u_bg, L.bg); gl.uniform3fv(S.uMesh.u_liv, S.palette.colors);
@@ -573,32 +597,40 @@ void main() {
             if (b.beam || !b.batch.count || !b.gpu) continue;
             gl.bindVertexArray(b.gpu.vao);
             gl.bindBuffer(gl.ARRAY_BUFFER, b.gpu.inst); gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.batch.view());
-            gl.drawElementsInstanced(gl.TRIANGLES, b.gpu.triangles * 3, gl.UNSIGNED_SHORT, 0, b.batch.count);
+            gl.drawElementsInstanced(gl.TRIANGLES, b.gpu.triangles * 3, b.gpu.use32 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0, b.batch.count);
             draws++; tris += b.gpu.triangles * b.batch.count; inst += b.batch.count;
           }
           gl.disable(gl.CULL_FACE);
           if (L.night > 0.03) {  // light cones over the lit scene: additive, hidden by buildings but not hiding anything behind them
             gl.useProgram(S.progBeam);
             gl.uniformMatrix4fv(S.uBeam.u_matrix, false, m32); gl.uniform1f(S.uBeam.u_night, Math.min(1, L.night));
-            gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false);
+            gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+            gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.depthFunc(gl.LEQUAL);
             for (const b of S.batches.values()) {
               if (!b.beam || !b.batch.count || !b.gpu) continue;
               gl.bindVertexArray(b.gpu.vao);
               gl.bindBuffer(gl.ARRAY_BUFFER, b.gpu.inst); gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.batch.view());
-              gl.drawElementsInstanced(gl.TRIANGLES, b.gpu.triangles * 3, gl.UNSIGNED_SHORT, 0, b.batch.count);
+              gl.drawElementsInstanced(gl.TRIANGLES, b.gpu.triangles * 3, b.gpu.use32 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0, b.batch.count);
               draws++; inst += b.batch.count;
             }
             gl.depthMask(true); gl.disable(gl.BLEND);
           }
         }
         if (S.showDots && S.dots.count) {
-          gl.useProgram(S.progDot); gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.useProgram(S.progDot);
+          if (fr.zoom >= 14.5) { gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.depthFunc(gl.LEQUAL); }
+          else { gl.disable(gl.DEPTH_TEST); }
+          gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
           gl.uniformMatrix4fv(S.uDot.u_matrix, false, m32); gl.uniform1f(S.uDot.u_dpr, fr.dpr);
           gl.bindVertexArray(S.dotVao); gl.bindBuffer(gl.ARRAY_BUFFER, S.dotBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, S.dots.view());
           gl.drawArraysInstanced(gl.POINTS, 0, 1, S.dots.count); draws++;
+          gl.depthMask(true);
         }
         if (S.showLabels && S.labelCount) {
-          gl.useProgram(S.progLabel); gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+          gl.useProgram(S.progLabel);
+          if (fr.zoom >= 14.5) { gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.depthFunc(gl.LEQUAL); }
+          else { gl.disable(gl.DEPTH_TEST); }
+          gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
           gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, S.labTex);
           if (S.labels.dirty) { gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, S.labels.canvas); S.labels.dirty = false; }
           const cv = S.map.getCanvas();
@@ -606,6 +638,7 @@ void main() {
           gl.uniform2f(S.uLabel.u_cell, S.labels.cw, S.labels.ch); gl.uniform1f(S.uLabel.u_dpr, fr.dpr); gl.uniform1i(S.uLabel.u_tex, 0);
           gl.bindVertexArray(S.labVao); gl.bindBuffer(gl.ARRAY_BUFFER, S.labBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, S.labelInst.subarray(0, S.labelCount * 5));
           gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, S.labelCount); draws++;
+          gl.depthMask(true);
         }
         gl.bindVertexArray(null); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
         S.stats = { draws, triangles: tris, instances: inst, dots: S.dots.count };

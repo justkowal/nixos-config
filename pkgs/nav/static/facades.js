@@ -63,6 +63,7 @@
     } else {
       tOff = 1470 + ((r3 - 0.93) / 0.07) * 180;
     }
+    tOff = Math.max(tOff, tOn + 30 + r3 * 60);
 
     // Normalize minute across midnight:
     // If minute < sunrise, it is past midnight (00:00 to sunrise), evaluated as minute + 1440

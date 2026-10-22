@@ -97,3 +97,29 @@ test("tunnel features generate tunnel portals", () => {
   const res = R3D.build({ features: [roadFeat("primary", "tunnel", -1)], anchor });
   assert.ok(res.meshes.road_concrete.triangles > 10, "tunnel portals generated");
 });
+
+test("Roads3D.build supports positional arguments (features, anchor, groundFn)", () => {
+  const res = R3D.build([roadFeat("primary")], anchor, (x, y) => 5.0);
+  assert.equal(res.stats.roadCount, 1);
+  assert.ok(res.meshes.road_asphalt);
+  assert.ok(res.meshes.road_asphalt.vertex.length > 0);
+  // Check ground elevation offset is applied
+  const vz = res.meshes.road_asphalt.vertex[2];
+  assert.ok(vz >= 4.9, `ground offset applied: ${vz}`);
+});
+
+test("TriBuffer.toMesh creates Uint16Array for small meshes and Uint32Array for meshes > 65535 vertices", () => {
+  const tbSmall = new R3D.TriBuffer();
+  tbSmall.tri([0, 0, 0], [1, 0, 0], [0, 1, 0]);
+  const meshSmall = tbSmall.toMesh();
+  assert.ok(meshSmall.index instanceof Uint16Array, "small mesh uses Uint16Array");
+  assert.equal(meshSmall.triangles, 1);
+
+  const tbLarge = new R3D.TriBuffer();
+  // Simulate large vertex buffer with 66000 vertices (66000 * 7 floats)
+  tbLarge.v = new Array(66000 * 7).fill(0);
+  const meshLarge = tbLarge.toMesh();
+  assert.ok(meshLarge.index instanceof Uint32Array, "large mesh uses Uint32Array");
+  assert.equal(meshLarge.triangles, 22000);
+  assert.equal(meshLarge.index[65536], 65536);
+});

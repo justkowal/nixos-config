@@ -89,17 +89,66 @@
       const next = new Map();
       for (const l of lanes) {
         const old = this.lanes.get(l.key);
-        if (old && this.sameAnchor(anchor)) { next.set(l.key, old); continue; }
-        next.set(l.key, l); this.populate(l);
+        if (old) {
+          l.veh = old.veh;
+          l.acc = old.acc;
+          next.set(l.key, l);
+          continue;
+        }
+        next.set(l.key, l);
+        this.populate(l);
       }
       this.anchor = { ...anchor, mx: mercX(anchor.lon), my: mercY(anchor.lat), k: 1 / mPerMerc(anchor.lat) };
-      this.lanes = next; this.recount();
+      this.lanes = next;
+      this.connectLanes();
+      this.recount();
     }
     sameAnchor(a) { return a.lon === this.anchor.lon && a.lat === this.anchor.lat; }
+    connectLanes() {
+      const grid = new Map();
+      const cell = (x, y) => `${Math.round(x / 10)},${Math.round(y / 10)}`;
+      for (const l of this.lanes.values()) {
+        l.nextLanes = [];
+        l.hasPrev = false;
+        const key = cell(l.X[0], l.Y[0]);
+        let bucket = grid.get(key);
+        if (!bucket) { bucket = []; grid.set(key, bucket); }
+        bucket.push(l);
+      }
+      for (const l of this.lanes.values()) {
+        const n = l.X.length;
+        const ex = l.X[n - 1], ey = l.Y[n - 1];
+        const cx = Math.round(ex / 10), cy = Math.round(ey / 10);
+        const p1 = Math.max(0, n - 2);
+        const ldx = ex - l.X[p1], ldy = ey - l.Y[p1];
+        const llen = Math.hypot(ldx, ldy) || 1;
+        const ux1 = ldx / llen, uy1 = ldy / llen;
+
+        for (let gx = cx - 1; gx <= cx + 1; gx++) {
+          for (let gy = cy - 1; gy <= cy + 1; gy++) {
+            const bucket = grid.get(`${gx},${gy}`);
+            if (!bucket) continue;
+            for (const cand of bucket) {
+              if (cand === l) continue;
+              const d = Math.hypot(cand.X[0] - ex, cand.Y[0] - ey);
+              if (d > 7.0) continue;
+              const cdx = cand.X[Math.min(1, cand.X.length - 1)] - cand.X[0];
+              const cdy = cand.Y[Math.min(1, cand.Y.length - 1)] - cand.Y[0];
+              const clen = Math.hypot(cdx, cdy) || 1;
+              const dot = ux1 * (cdx / clen) + uy1 * (cdy / clen);
+              if (dot < -0.4) continue;
+              l.nextLanes.push(cand);
+              cand.hasPrev = true;
+            }
+          }
+        }
+        l.hasNext = l.nextLanes.length > 0;
+      }
+    }
     recount() { let n = 0; for (const l of this.lanes.values()) n += l.veh.length; this.n = n; }
     newVehicle(lane, s, v) {
       const type = pickType(this.rng(), lane.cls), id = "t" + this.serial++;
-      return { s, v, type, len: LENGTH[type], v0f: 0.85 + this.rng() * 0.3, tint: window.Fleet ? window.Fleet.randomColor(id) : [128, 128, 128], fade: 0 };
+      return { s, v, type, len: LENGTH[type], v0f: 0.85 + this.rng() * 0.3, tint: window.Fleet ? window.Fleet.randomColor(id) : [128, 128, 128], fade: 0, spawn: 0 };
     }
     // steady state: roughly the right number of vehicles at believable gaps
     populate(l) {
@@ -107,7 +156,13 @@
       const slots = []; for (let i = 0; i < target; i++) slots.push(this.rng() * l.len);
       slots.sort((a, b) => b - a);
       let lastS = Infinity;
-      for (const s of slots) { if (lastS - s < 9) continue; l.veh.push(this.newVehicle(l, s, v0 * 0.8)); lastS = s; }
+      for (const s of slots) {
+        if (lastS - s < 9) continue;
+        const v = this.newVehicle(l, s, v0 * 0.8);
+        v.spawn = 1;
+        l.veh.push(v);
+        lastS = s;
+      }
     }
     // front of the array is the vehicle furthest ahead
     step(dt) {
@@ -116,6 +171,7 @@
         const veh = l.veh, vFree = freeSpeed(l.cls, this.hour);
         for (let i = 0; i < veh.length; i++) {
           const c = veh[i], lead = i > 0 ? veh[i - 1] : null;
+          c.spawn = Math.min(1, (c.spawn == null ? 1 : c.spawn) + dt * 2.5);
           const gap = lead ? lead.s - lead.len - c.s : 1e3, dv = lead ? c.v - lead.v : 0;
           let a = idm(c.v, vFree * c.v0f, gap, dv);
           if (a < -9) a = -9;
@@ -123,13 +179,37 @@
           c.s += c.v * dt;
           if (lead && c.s > lead.s - lead.len - 0.3) { c.s = lead.s - lead.len - 0.3; c.v = Math.min(c.v, lead.v); }  // hard stop: never overlap
         }
-        while (veh.length && veh[0].s > l.len) veh.shift();
-        // inflow at the start of the lane
-        l.acc += (density(l.cls, this.hour) * vFree * dt) / 1000;
-        if (l.acc >= 1 && this.n < this.max) {
-          const last = veh[veh.length - 1];
-          if (!last || last.s - last.len > IDM.s0 + 3) { veh.push(this.newVehicle(l, 0, vFree * 0.7)); l.acc -= 1; this.n++; } else l.acc = Math.min(l.acc, 1);
-        } else if (l.acc >= 1) l.acc = 1;
+        while (veh.length && veh[0].s > l.len) {
+          const lead = veh[0];
+          let transferred = false;
+          if (l.nextLanes && l.nextLanes.length > 0) {
+            const nxt = l.nextLanes.length === 1 ? l.nextLanes[0] : l.nextLanes[Math.floor(this.rng() * l.nextLanes.length)];
+            const lastOnNxt = nxt.veh.length ? nxt.veh[nxt.veh.length - 1] : null;
+            if (!lastOnNxt || lastOnNxt.s - lastOnNxt.len > IDM.s0 + lead.len + 1) {
+              veh.shift();
+              lead.s = Math.max(0, lead.s - l.len);
+              lead.spawn = 1;
+              nxt.veh.push(lead);
+              if (nxt.veh.length > 1 && nxt.veh[nxt.veh.length - 2].s < lead.s) {
+                nxt.veh.sort((a, b) => b.s - a.s);
+              }
+              transferred = true;
+            } else {
+              lead.s = l.len;
+              lead.v = 0;
+              break;
+            }
+          }
+          if (!transferred) veh.shift();
+        }
+        // inflow at the start of the lane: only for entry lanes into the network (no predecessor)
+        if (!l.hasPrev) {
+          l.acc += (density(l.cls, this.hour) * vFree * dt) / 1000;
+          if (l.acc >= 1 && this.n < this.max) {
+            const last = veh[veh.length - 1];
+            if (!last || last.s - last.len > IDM.s0 + 3) { veh.push(this.newVehicle(l, 0, vFree * 0.7)); l.acc -= 1; this.n++; } else l.acc = Math.min(l.acc, 1);
+          } else if (l.acc >= 1) l.acc = 1;
+        }
         total += veh.length;
       }
       this.n = total;
@@ -147,7 +227,12 @@
           const px = X[seg] + (X[seg + 1] - X[seg]) * t - ux * c.len * 0.5, py = Y[seg] + (Y[seg + 1] - Y[seg]) * t - uy * c.len * 0.5;  // s is the front bumper
           const mx = A.mx + px * kA, my = A.my - py * kA;
           if (mx < x0 || mx > x1 || my < y0 || my > y1) continue;
-          const edge = Math.min(s, l.len - s), alpha = edge < 12 ? Math.max(0, edge / 12) : 1;  // fade in and out at lane ends
+          const fadeStart = l.hasPrev ? 0 : 20;
+          const fadeEnd = l.hasNext ? 0 : 20;
+          let alpha = 1;
+          if (s < fadeStart) alpha = Math.max(0, s / fadeStart);
+          else if (l.len - s < fadeEnd) alpha = Math.max(0, (l.len - s) / fadeEnd);
+          if (c.spawn != null) alpha *= c.spawn;
           if (alpha <= 0.02) continue;
           emit(c.type, (mx - ox) / k, (oy - my) / k, ux, uy, alpha, c.tint, c.len);
         }
