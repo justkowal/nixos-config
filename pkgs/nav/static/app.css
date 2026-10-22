@@ -217,10 +217,21 @@ button { background: none; border: 0; padding: 0; cursor: pointer; touch-action:
 .stops .next { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .stops .next .badge { height: 26px; font-weight: 650; }
 .stops .next .badge i { font-style: normal; font-weight: 600; opacity: 0.95; }
-.deps .dep { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; min-height: 52px; border-bottom: 1px solid var(--line); padding: 6px 4px; }
+.deps .dep { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; min-height: 52px; border-bottom: 1px solid var(--line); padding: 6px 4px; cursor: pointer; transition: background 0.15s ease; }
+.deps .dep:hover { background: var(--accent-soft); border-radius: 10px; }
 .deps .dep .to { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deps .dep .t { text-align: right; font-weight: 700; font-size: 1.0625rem; }
 .deps .dep .t small { display: block; }
+
+.trip-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 4px 14px; border-bottom: 1px solid var(--line); margin-bottom: 8px; flex-wrap: wrap; }
+.trip-header .meta { display: flex; align-items: center; gap: 8px; }
+.trip-header .to { font-weight: 700; font-size: 1.0625rem; }
+.trip-header .agency { font-size: 0.875rem; color: var(--ink-2); }
+.trip-stops .trip-stop-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; min-height: 44px; border-bottom: 1px solid var(--line); padding: 6px 4px; }
+.trip-stops .trip-stop-row .stop-name { font-weight: 600; text-align: left; background: none; border: none; padding: 0; color: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-stops .trip-stop-row .stop-name:hover { color: var(--accent); }
+.trip-stops .trip-stop-row .t { text-align: right; font-weight: 700; font-size: 0.9375rem; }
+.trip-stops .trip-stop-row .t small { display: block; font-weight: 500; font-size: 0.8125rem; color: var(--ink-2); }
 
 /* ---- about */
 .info { display: grid; gap: 16px; padding-top: 4px; color: var(--ink-2); font-size: 0.9375rem; }

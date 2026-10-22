@@ -317,6 +317,14 @@ function pane(view, name) {
 $$("[data-back]").forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.back === "plan") { clearFocus(); pane("plan", "main"); S.sel = -1; if (S.results[0]) drawRoute(S.results[0]); }
   else if (b.dataset.back === "explore") window.Explore?.back();
+  else if (b.dataset.back === "near-detail") {
+    clearRoute();
+    pane("near", "detail");
+    if (S.stop && S.stop.lat && map) {
+      pin("to", [S.stop.lon, S.stop.lat]);
+      map.flyTo({ center: [S.stop.lon, S.stop.lat], zoom: Math.max(map.getZoom(), 15), padding: mapPad() });
+    }
+  }
   else { stopTimer(); S.stop = null; pane("near", "main"); }
 }));
 
@@ -631,8 +639,12 @@ async function showStop(s) {
     try {
       const r = await api("departures", { stop: s.id, n: 14 });
       $("#stop-status").textContent = r.departures.length ? "" : "No departures soon.";
-      $("#stop-list").replaceChildren(...r.departures.map((d) => h("li", { class: "dep" + (d.realtime ? " live" : ""), title: d.realtime ? "Show the vehicle on the map" : "", onclick: d.realtime && d.trip ? () => window.Vehicles?.followTrip(d.trip) : null },
-        badge(d.line, providerOf(d.agency)?.color || "#44505c", "BUS"),
+      $("#stop-list").replaceChildren(...r.departures.map((d) => h("li", {
+        class: "dep" + (d.realtime ? " live" : ""),
+        title: d.trip ? "Show route and stop times" : (d.realtime ? "Show the vehicle on the map" : ""),
+        onclick: d.trip ? () => showTrip(d) : (d.realtime ? () => window.Vehicles?.followTrip(d.trip) : null)
+      },
+        badge(d.line, providerOf(d.agency)?.color || "#44505c", d.mode || "BUS"),
         h("span", { class: "to" }, d.to || ""),
         h("span", { class: "t" }, h("time", {}, d.time), h("small", {}, rtTag(d.delay_s, d.realtime))))));
     } catch (e) { $("#stop-status").textContent = e.message; }
@@ -640,6 +652,81 @@ async function showStop(s) {
   await load();
   stopTimer();
   depTimer = setInterval(() => (document.hidden ? 0 : load()), 30000);
+}
+
+async function showTrip(d) {
+  if (!d.trip) return;
+  pane("near", "trip");
+  $("#trip-title").textContent = `${d.line} to ${d.to || "Destination"}`;
+  $("#trip-status").textContent = "Loading trip details...";
+  $("#trip-header").replaceChildren();
+  $("#trip-stops").replaceChildren();
+
+  try {
+    const t = await api("trip", { id: d.trip });
+    $("#trip-status").textContent = "";
+    $("#trip-title").textContent = `${t.line || d.line} to ${t.to || d.to || "Destination"}`;
+
+    const c = t.color || providerOf(t.agency || d.agency)?.color || "#0984e3";
+    const followBtn = d.realtime ? h("button", {
+      class: "rt-btn",
+      title: "Follow this vehicle on the map",
+      onclick: () => window.Vehicles?.followTrip(d.trip)
+    }, rtTag(d.delay_s, d.realtime), h("span", {}, "Follow")) : null;
+
+    $("#trip-header").replaceChildren(
+      h("div", { class: "meta" },
+        badge(t.line || d.line, c, t.mode || d.mode || "BUS"),
+        h("div", {},
+          h("div", { class: "to" }, t.to || d.to || ""),
+          h("div", { class: "agency" }, providerOf(t.agency || d.agency)?.name || t.agency || d.agency || "")
+        )
+      ),
+      followBtn
+    );
+
+    if (t.geometry && map) {
+      clearMarkers();
+      const pts = decode(t.geometry);
+      if (pts.length >= 2) {
+        const bounds = new maplibregl.LngLatBounds();
+        pts.forEach((p) => bounds.extend(p));
+        routeData = {
+          type: "FeatureCollection",
+          features: [{
+            type: "Feature",
+            properties: { color: c, dashed: false },
+            geometry: { type: "LineString", coordinates: pts }
+          }]
+        };
+        map.getSource("route")?.setData(routeData);
+        pin("", pts[0]);
+        pin("to", pts[pts.length - 1]);
+        map.fitBounds(bounds, { padding: mapPad(), maxZoom: 16, duration: 600 });
+      }
+    }
+
+    $("#trip-stops").replaceChildren(...(t.stops || []).map((s) => {
+      const late = s.realtime && s.delay_s ? mins(s.delay_s) : 0;
+      return h("li", { class: "trip-stop-row" },
+        h("div", { class: "t" },
+          h("time", {}, s.time || s.scheduled),
+          s.realtime && late ? h("small", {}, `sched ${s.scheduled}`) : null
+        ),
+        h("button", {
+          class: "stop-name",
+          onclick: () => {
+            if (s.lon != null && s.lat != null && map) {
+              focusPoint(s.lon, s.lat, s.stop);
+            }
+          }
+        }, s.stop),
+        rtTag(s.delay_s, s.realtime)
+      );
+    }));
+  } catch (e) {
+    $("#trip-status").textContent = e.message || "Failed to load trip";
+  }
 }
 
 // ---------------------------------------------------------------- about
