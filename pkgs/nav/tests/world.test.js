@@ -90,3 +90,37 @@ test("light cones are well formed: intensity falls from the source to the edge, 
   const head = W.BEAMS.head(); let far = 0; for (let i = 0; i < head.vertex.length / 7; i++) far = Math.max(far, head.vertex[i * 7]);
   assert.ok(far > 15 && far < 25, `headlights reach ${far} m`);
 });
+
+test("placement is deterministic per lane and does not shuffle when other lanes change", () => {
+  const lane1 = T.lanesFromFeatures([street("secondary", 800, 0)], anchor)[0];
+  const lane2 = T.lanesFromFeatures([street("residential", 800, 50)], anchor)[0];
+
+  // Run with only lane1
+  const r1 = W.place({ lanes: [lane1], month: 6 });
+  // Run with lane1 AND lane2
+  const rBoth = W.place({ lanes: [lane1, lane2], month: 6 });
+
+  // Filter rBoth for objects near lane1 (y near 0)
+  const lane1TreesBoth = rBoth.trees.filter((t) => Math.abs(t.y) < 15);
+  const lane1LampsBoth = rBoth.lamps.filter((l) => Math.abs(l.y) < 15);
+
+  assert.equal(r1.trees.length, lane1TreesBoth.length, "trees on lane 1 are exactly preserved");
+  assert.equal(r1.lamps.length, lane1LampsBoth.length, "lamps on lane 1 are exactly preserved");
+  for (let i = 0; i < r1.trees.length; i++) {
+    assert.equal(r1.trees[i].x, lane1TreesBoth[i].x);
+    assert.equal(r1.trees[i].y, lane1TreesBoth[i].y);
+    assert.equal(r1.trees[i].kind, lane1TreesBoth[i].kind);
+  }
+});
+
+test("higher zoom levels produce higher tree and lamp density", () => {
+  const lanes = T.lanesFromFeatures([street("secondary", 800, 0), street("residential", 800, 40)], anchor);
+  const park = [[0, 100], [100, 100], [100, 200], [0, 200]];
+
+  const z16 = W.place({ lanes, parks: [park], zoom: 16, month: 6 });
+  const z18 = W.place({ lanes, parks: [park], zoom: 18, month: 6 });
+
+  assert.ok(z18.trees.length > z16.trees.length, `z18 trees (${z18.trees.length}) > z16 trees (${z16.trees.length})`);
+  assert.ok(z18.lamps.length > z16.lamps.length, `z18 lamps (${z18.lamps.length}) > z16 lamps (${z16.lamps.length})`);
+});
+

@@ -491,7 +491,7 @@ def api_sched(q):
         raise Bad("bbox must be minLon,minLat,maxLon,maxLat")
     if box[2] - box[0] > 0.2 or box[3] - box[1] > 0.14:
         return {"now": time.time(), "trips": [], "note": "zoom in"}
-    at = int(num((q.get("at") or [str(int(time.time()))])[0], time.time() - 3 * 86400, time.time() + 3 * 86400, "at"))
+    at = int(num((q.get("at") or [str(int(time.time()))])[0], time.time() - 365 * 86400, time.time() + 365 * 86400, "at"))
     everything = (q.get("all") or [""])[0] == "1"  # a time other than now: the live feed says nothing about it
     gap = (q.get("gap") or [""])[0] == "1"  # only operators with no live positions at all (trains, trams without a feed): their vehicles are estimated from schedule and delay
     key = (round(box[0], 3), round(box[1], 3), round(box[2], 3), round(box[3], 3), at // 30, everything, gap)
@@ -528,7 +528,9 @@ def api_sched(q):
             continue
         if gap and (tr["route"].get("agency") or {}).get("name") in live_agencies:
             continue
-        a0, a1 = d + times[0]["realtimeDeparture"], d + times[-1]["realtimeArrival"]
+        dep0 = times[0]["realtimeDeparture"] if times[0].get("realtimeDeparture") is not None else times[0].get("scheduledDeparture", 0)
+        arr1 = times[-1]["realtimeArrival"] if times[-1].get("realtimeArrival") is not None else times[-1].get("scheduledArrival", 0)
+        a0, a1 = d + dep0, d + arr1
         if a1 < at - 30 or a0 > at + 300:
             continue
         try:
@@ -538,8 +540,13 @@ def api_sched(q):
         along = sh.get("all") or []
         if len(along) != len(times):
             continue
+        st_list = []
+        for j, x in enumerate(times):
+            arr = x.get("realtimeArrival") if x.get("realtimeArrival") is not None else x.get("scheduledArrival", 0)
+            dep = x.get("realtimeDeparture") if x.get("realtimeDeparture") is not None else x.get("scheduledDeparture", 0)
+            st_list.append([along[j], arr, dep])
         out["trips"].append({"trip": t, "line": tr["route"]["shortName"], "mode": tr["route"]["mode"], "ag": (tr["route"].get("agency") or {}).get("name"), "to": tr["tripHeadsign"], "sd": d,
-                             "st": [[along[j], x["realtimeArrival"], x["realtimeDeparture"]] for j, x in enumerate(times)]})
+                             "st": st_list})
     if len(_sched) > 60:
         _sched.clear()
     _sched[key] = (time.time(), out)
@@ -758,8 +765,78 @@ def api_note_set(device, b):
     return {"ok": True}
 
 
+_weather = {}
+
+
+def wmo_to_condition(code, cloud=0):
+    if code == 0:
+        return "clear"
+    elif code in (1, 2):
+        return "cloudy" if cloud > 50 else "clear"
+    elif code == 3:
+        return "cloudy"
+    elif code in (45, 48):
+        return "fog"
+    elif (51 <= code <= 67) or (80 <= code <= 82):
+        return "rain"
+    elif (71 <= code <= 77) or (85 <= code <= 86):
+        return "snow"
+    elif code in (95, 96, 99):
+        return "thunderstorm"
+    return "clear"
+
+
+def api_weather(q):
+    if "lat" not in q or "lon" not in q:
+        raise Bad("lat and lon are required")
+    try:
+        lat = float((q.get("lat") or [""])[0])
+        lon = float((q.get("lon") or [""])[0])
+    except (ValueError, TypeError):
+        raise Bad("lat and lon must be numbers")
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise Bad("lat or lon out of range")
+    key = (round(lat, 2), round(lon, 2))
+    hit = _weather.get(key)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat:.4f}&longitude={lon:.4f}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,cloud_cover,wind_speed_10m"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "KowalNav/1.0"})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode())
+        cur = data.get("current") or {}
+        code = cur.get("weather_code", 0)
+        cloud = cur.get("cloud_cover", 0)
+        cond = wmo_to_condition(code, cloud)
+        res = {
+            "ok": True,
+            "condition": cond,
+            "code": code,
+            "wmo": code,
+            "temp": cur.get("temperature_2m", 15.0),
+            "cloud": cloud,
+            "precip": cur.get("precipitation", 0),
+            "wind": cur.get("wind_speed_10m", 0),
+        }
+    except Exception:
+        res = {
+            "ok": True,
+            "condition": "clear",
+            "code": 0,
+            "wmo": 0,
+            "temp": 16.0,
+            "cloud": 20,
+            "precip": 0,
+            "wind": 5.0,
+            "simulated": True,
+        }
+    _weather[key] = (time.time(), res)
+    return res
+
+
 ROUTES = {"/api/explore": api_explore, "/api/place/more": api_place_more, "/api/vehicles": api_vehicles, "/api/shape": api_shape, "/api/sched": api_sched, "/api/roofs": api_roofs, "/api/geocode": api_geocode, "/api/reverse": api_reverse, "/api/plan": api_plan, "/api/nearby": api_nearby,
-          "/api/departures": api_departures, "/api/trip": api_trip, "/api/info": api_info}
+          "/api/departures": api_departures, "/api/trip": api_trip, "/api/info": api_info, "/api/weather": api_weather}
 
 
 # ---------------------------------------------------------------- watched trips (groundwork for push and native clients)
@@ -845,7 +922,7 @@ _build_cache = {"key": None, "id": ""}
 
 def build_id():
     """content hash of the shipped files; recomputed when one of them changes on disk (matters in development, deploys replace the store path)."""
-    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js", "app.css", "providers.json", "sw.js")
+    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js", "roads3d.js", "app.css", "providers.json", "sw.js")
     key = []
     for n in names:
         try:
@@ -989,7 +1066,7 @@ class H(BaseHTTPRequestHandler):
         BUILD = build_id()
         with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
             html = f.read()
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js", "roads3d.js"):
             html = html.replace(f'"/{n}"', f'"/{n}?v={BUILD}"')
         return html.replace('content="dev"', f'content="{BUILD}"').encode()
 

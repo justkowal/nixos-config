@@ -236,7 +236,7 @@ class Serving(unittest.TestCase):
         import re
         ids = set(re.findall(r"\?v=([0-9a-f]{10})", html))
         self.assertEqual(len(ids), 1)
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "roads3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js"):
             self.assertIn(f"/{n}?v=", html)
         self.assertIn(f'content="{ids.pop()}"', html)
 
@@ -245,6 +245,70 @@ class Serving(unittest.TestCase):
         self.assertEqual([v["id"] for v in s.api_vehicles({"trip": ["t:1"]})["vehicles"]], ["a"])
         with self.assertRaises(s.Bad):
             s.api_vehicles({"trip": ["bad id"]})
+
+
+class Weather(unittest.TestCase):
+    def test_wmo_code_mapping(self):
+        self.assertEqual(s.wmo_to_condition(0), "clear")
+        self.assertEqual(s.wmo_to_condition(2, cloud=70), "cloudy")
+        self.assertEqual(s.wmo_to_condition(2, cloud=20), "clear")
+        self.assertEqual(s.wmo_to_condition(3), "cloudy")
+        self.assertEqual(s.wmo_to_condition(45), "fog")
+        self.assertEqual(s.wmo_to_condition(61), "rain")
+        self.assertEqual(s.wmo_to_condition(71), "snow")
+        self.assertEqual(s.wmo_to_condition(95), "thunderstorm")
+        self.assertEqual(s.wmo_to_condition(999), "clear")
+
+    def test_api_weather_validation(self):
+        for bad in ({}, {"lat": ["abc"]}, {"lat": ["95"], "lon": ["20"]}, {"lat": ["50"], "lon": ["200"]}):
+            with self.assertRaises(s.Bad):
+                s.api_weather(bad)
+
+    def test_api_weather_mock_and_cache(self):
+        calls = []
+        class MockResp:
+            def __init__(self, data): self.data = data
+            def read(self, n=-1): return self.data
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        orig = s.urllib.request.urlopen
+        mock_payload = json.dumps({
+            "current": {"weather_code": 61, "temperature_2m": 14.5, "cloud_cover": 85, "precipitation": 1.2}
+        }).encode()
+        s.urllib.request.urlopen = lambda req, timeout=0: (calls.append(req.full_url), MockResp(mock_payload))[1]
+        try:
+            s._weather.clear()
+            res = s.api_weather({"lat": ["50.0614"], "lon": ["19.9372"]})
+            self.assertEqual(res["condition"], "rain")
+            self.assertEqual(res["wmo"], 61)
+            self.assertEqual(res["temp"], 14.5)
+            self.assertEqual(len(calls), 1)
+
+            # Second request within 10 minutes hits cache
+            res2 = s.api_weather({"lat": ["50.0614"], "lon": ["19.9372"]})
+            self.assertEqual(res2["condition"], "rain")
+            self.assertEqual(len(calls), 1, "Cached weather does not invoke upstream")
+        finally:
+            s.urllib.request.urlopen = orig
+
+
+class Schedule(unittest.TestCase):
+    def test_api_sched_timestamp_range(self):
+        now = time.time()
+        for good_dt in (now - 30 * 86400, now + 60 * 86400):
+            orig_gql = s.gql
+            s.gql = lambda query, vars=None: {"stopsByBbox": []}
+            try:
+                out = s.api_sched({"bbox": ["19.0,50.0,19.1,50.1"], "at": [str(int(good_dt))]})
+                self.assertEqual(out["at"], int(good_dt))
+            finally:
+                s.gql = orig_gql
+
+    def test_api_sched_rejects_extreme_timestamp(self):
+        now = time.time()
+        with self.assertRaises(s.Bad):
+            s.api_sched({"bbox": ["19.0,50.0,19.1,50.1"], "at": [str(int(now + 400 * 86400))]})
 
 
 if __name__ == "__main__":

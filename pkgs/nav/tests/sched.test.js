@@ -26,3 +26,25 @@ test("the stop index hint gives the same answers going forward and back", () => 
   const h = { i: 0 };
   for (const t of [50, 140, 205, 300, 140, 60, 500]) assert.deepEqual(P(st, t, h), P(st, t));
 });
+
+test("replaying schedule at 1x realtime pace progresses smoothly with clock time", () => {
+  const h = { i: 0 };
+  let t = 130; // departure from stop 0
+  const p0 = P(st, t, h);
+  assert.equal(p0.s, 0);
+  // Replaying 1 second per second for 30s reaches halfway
+  for (let s = 1; s <= 30; s++) {
+    t += 1.0;
+    P(st, t, h);
+  }
+  const pMid = P(st, t, h);
+  assert.ok(Math.abs(pMid.s - 250) < 1, "30s of 1x pace replay reaches halfway point");
+  // Advance another 30s to arrival at stop 1
+  for (let s = 1; s <= 30; s++) {
+    t += 1.0;
+    P(st, t, h);
+  }
+  const p1 = P(st, t, h);
+  assert.ok(Math.abs(p1.s - 500) < 1, "60s of 1x pace replay arrives at stop 1");
+  assert.equal(p1.phase, "dwell");
+});

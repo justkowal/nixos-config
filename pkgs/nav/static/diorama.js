@@ -8,6 +8,8 @@
   let terrainAt = 2;
   try { const raw = localStorage.getItem("dio-terrain"); if (raw !== null && LEVELS.includes(+raw)) terrainAt = +raw; } catch { /* private mode */ }
   let on = false, idleTimer = 0, orbitFrame = 0, orbitLast = 0, clockTimer = 0, saved = null;
+  const TILT_LEVELS = [45, 60, 75, 85];
+  const WEATHER_MODES = ["auto", "clear", "cloudy", "rain", "fog", "snow"];
 
   const poke = () => {
     if (!on) return;
@@ -15,15 +17,48 @@
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => $("#diorama")?.classList.add("idle"), 4000);
   };
+  function syncTilt() {
+    const map = A.getMap();
+    if (!map) return;
+    const p = Math.round(map.getPitch());
+    const btn = $("#dio-tilt");
+    if (btn) {
+      btn.textContent = `Tilt ${p}°`;
+      btn.setAttribute("aria-pressed", p >= 60);
+    }
+  }
+  function syncWeather() {
+    const b = $("#dio-weather");
+    if (!b) return;
+    const D = window.Daylight;
+    if (!D) return;
+    const cond = D.weather?.condition || "clear";
+    const label = cond.charAt(0).toUpperCase() + cond.slice(1);
+    if (D.weather?.auto) {
+      b.textContent = `Weather: Auto (${label})`;
+      b.setAttribute("aria-pressed", "true");
+    } else {
+      b.textContent = `Weather: ${label}`;
+      b.setAttribute("aria-pressed", "false");
+    }
+  }
   function syncClock() {
     const D = window.Daylight;
-    $("#dio-clock").textContent = D.clockText() + (D.mode === "live" ? "" : "");
-    if (D.mode !== "fixed") { const m = Math.floor(D.mode === "live" ? D.localMinutes() : D.minutes); if (+$("#dio-slider").value !== m && document.activeElement !== $("#dio-slider")) $("#dio-slider").value = m; }
+    const isPlaying = D.mode === "replay" || D.mode === "cycle";
+    $("#dio-clock").textContent = isPlaying || D.mode === "live" ? D.clockTextWithSeconds() : D.clockText();
+    if (D.mode !== "fixed") {
+      const m = Math.floor(D.mode === "live" ? D.localMinutes() : D.minutes);
+      if (+$("#dio-slider").value !== m && document.activeElement !== $("#dio-slider")) $("#dio-slider").value = m;
+    }
     $("#dio-live").setAttribute("aria-pressed", D.mode === "live" && !D.day);
     $("#dio-sun").textContent = D.sunText();
-    const t = D.sunTimes(); $("#dio-slider").style.setProperty("--rise", (t.sunrise / 14.4) + "%"); $("#dio-slider").style.setProperty("--set", (t.sunset / 14.4) + "%");
-    $("#dio-play").setAttribute("aria-pressed", D.mode === "cycle");
-    $("#dio-play").textContent = D.mode === "cycle" ? "Pause" : "Play";
+    const t = D.sunTimes();
+    $("#dio-slider").style.setProperty("--rise", (t.sunrise / 14.4) + "%");
+    $("#dio-slider").style.setProperty("--set", (t.sunset / 14.4) + "%");
+    $("#dio-play").setAttribute("aria-pressed", isPlaying);
+    $("#dio-play").textContent = isPlaying ? "Pause" : "Play";
+    syncWeather();
+    syncTilt();
   }
   function orbit(t) {
     orbitFrame = requestAnimationFrame(orbit);
@@ -45,6 +80,14 @@
     saved = { three: V.is3d(), pitch: map.getPitch(), zoom: map.getZoom(), bearing: map.getBearing() };
     document.body.classList.add("dio-on");
     $("#diorama").hidden = false;
+    map.setMaxPitch(85);
+    map.dragRotate?.enable();
+    map.touchPitch?.enable();
+    map.touchZoomRotate?.enableRotation();
+    map.on("pitch", syncTilt);
+    const c = map.getCenter();
+    if (c) { D.lat = c.lat; D.lon = c.lng; }
+    if (D.weather.auto) D.fetchWeather?.();
     D.syncTheme(); D.enable(true); V.setForce(true); V.setAmbient(true); V.setTerrain(terrainAt); syncTerrain();
     if (!V.is3d()) V.set3d(true);
     map.easeTo({ pitch: Math.max(map.getPitch(), 60), zoom: Math.max(map.getZoom(), 16), duration: 1000 });
@@ -58,9 +101,12 @@
     if (!on) return;
     on = false;
     const map = A.getMap(), V = window.Vehicles, D = window.Daylight;
+    map.off("pitch", syncTilt);
     setOrbit(false); clearInterval(clockTimer); clearTimeout(idleTimer);
     document.body.classList.remove("dio-on");
     $("#diorama").hidden = true;
+    const dioTrack = $("#dio-track");
+    if (dioTrack) dioTrack.hidden = true;
     D.enable(false); D.setDay(null); D.setLive(); V.setForce(false); V.setAmbient(false); V.setTerrain(0);
     if (!saved?.three && V.is3d()) V.set3d(false);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -71,13 +117,63 @@
 
   $("#btn-dio").addEventListener("click", enter);
   $("#dio-exit").addEventListener("click", exit);
-  $("#dio-live").addEventListener("click", () => { window.Daylight.setDay(null); window.Daylight.setLive(); $("#dio-date").value = ""; syncClock(); poke(); });
-  const jump = (k) => () => { const D = window.Daylight, t = D.sunTimes(); D.setMinutes(k === "noon" ? t.noon : t[k]); syncClock(); poke(); };
+  $("#dio-live").addEventListener("click", () => {
+    window.Daylight.setDay(null);
+    window.Daylight.setLive();
+    $("#dio-date").value = "";
+    window.Vehicles.refreshSched?.();
+    syncClock();
+    poke();
+  });
+  const jump = (k) => () => {
+    const D = window.Daylight, t = D.sunTimes();
+    D.setMinutes(k === "noon" ? t.noon : t[k]);
+    window.Vehicles.refreshSched?.();
+    syncClock();
+    poke();
+  };
   $("#dio-rise").addEventListener("click", jump("sunrise"));
   $("#dio-noon").addEventListener("click", jump("noon"));
   $("#dio-set").addEventListener("click", jump("sunset"));
-  $("#dio-date").addEventListener("change", (e) => { const D = window.Daylight; D.setDay(e.target.value || null); if (!e.target.value) D.setLive(); syncClock(); poke(); });
-  $("#dio-play").addEventListener("click", () => { const D = window.Daylight; if (D.mode === "cycle") D.pause(); else D.play(16); syncClock(); poke(); });
+  $("#dio-date").addEventListener("change", (e) => {
+    const D = window.Daylight;
+    D.setDay(e.target.value || null);
+    if (!e.target.value) D.setLive();
+    window.Vehicles.refreshSched?.();
+    syncClock();
+    poke();
+  });
+  $("#dio-play").addEventListener("click", () => {
+    const D = window.Daylight;
+    if (D.mode === "replay" || D.mode === "cycle") {
+      D.pause();
+    } else {
+      D.play(1.0, "replay");
+    }
+    window.Vehicles.refreshSched?.();
+    syncClock();
+    poke();
+  });
+  $("#dio-tilt")?.addEventListener("click", () => {
+    const map = A.getMap();
+    if (!map) return;
+    const cur = map.getPitch();
+    let next = TILT_LEVELS[0];
+    for (const l of TILT_LEVELS) {
+      if (l > cur + 3) { next = l; break; }
+    }
+    map.easeTo({ pitch: next, duration: 400 });
+    poke();
+  });
+  $("#dio-weather")?.addEventListener("click", () => {
+    const D = window.Daylight;
+    if (!D) return;
+    const cur = D.weather.auto ? "auto" : D.weather.condition;
+    const next = WEATHER_MODES[(WEATHER_MODES.indexOf(cur) + 1) % WEATHER_MODES.length];
+    D.setWeather(next);
+    syncWeather();
+    poke();
+  });
   function syncTerrain() { const b = $("#dio-terrain"); b.setAttribute("aria-pressed", terrainAt > 0); b.textContent = terrainAt ? `Terrain ${terrainAt}x` : "Terrain off"; }
   $("#dio-terrain").addEventListener("click", () => {
     terrainAt = LEVELS[(LEVELS.indexOf(terrainAt) + 1) % LEVELS.length];
@@ -85,7 +181,14 @@
     window.Vehicles.setTerrain(terrainAt); syncTerrain(); poke();
   });
   $("#dio-orbit").addEventListener("click", () => { setOrbit($("#dio-orbit").getAttribute("aria-pressed") !== "true"); poke(); });
-  $("#dio-slider").addEventListener("input", (e) => { window.Daylight.setMinutes(+e.target.value); syncClock(); poke(); });
+  let sliderDeb = 0;
+  $("#dio-slider").addEventListener("input", (e) => {
+    window.Daylight.setMinutes(+e.target.value);
+    clearTimeout(sliderDeb);
+    sliderDeb = setTimeout(() => window.Vehicles.refreshSched?.(), 250);
+    syncClock();
+    poke();
+  });
   for (const ev of ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"]) document.addEventListener(ev, poke, { passive: true });
   document.addEventListener("keydown", (e) => { if (on && e.key === "Escape" && !document.fullscreenElement) exit(); });
   document.addEventListener("fullscreenchange", () => { if (on && !document.fullscreenElement) { /* leaving fullscreen keeps the mode, Escape or Exit leaves it */ } });
