@@ -846,7 +846,7 @@ _build_cache = {"key": None, "id": ""}
 
 def build_id():
     """content hash of the shipped files; recomputed when one of them changes on disk (matters in development, deploys replace the store path)."""
-    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js", "app.css", "providers.json", "sw.js")
+    names = ("index.html", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js", "facades.js", "app.css", "providers.json", "sw.js")
     key = []
     for n in names:
         try:
@@ -990,7 +990,7 @@ class H(BaseHTTPRequestHandler):
         BUILD = build_id()
         with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
             html = f.read()
-        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js"):
+        for n in ("app.css", "app.js", "vehicles.js", "guide.js", "explore.js", "scene3d.js", "daylight.js", "diorama.js", "fleet.js", "traffic.js", "world.js", "dem.js", "sched.js", "roofs.js", "facades.js"):
             html = html.replace(f'"/{n}"', f'"/{n}?v={BUILD}"')
         return html.replace('content="dev"', f'content="{BUILD}"').encode()
 
