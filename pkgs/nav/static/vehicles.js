@@ -1018,4 +1018,7 @@
     // exposed for tests
     _ingest: ingest, _attach: attachShape, _step: step, _V: V, _project: project, _build: buildShape, _red: (sh, j) => { wall = Date.now() / 1000; return redAt(sh, j); }, _model: modelFor, _livery: livery, _pose: (sh, s) => { poseAt(sh, s); return Array.from(pose); },
   };
+  if (typeof window !== "undefined" && window.App?.getMap?.()) {
+    init(window.App.getMap());
+  }
 })();

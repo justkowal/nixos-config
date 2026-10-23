@@ -256,4 +256,7 @@
   $("#ex-clear").addEventListener("click", () => { $("#ex-q").value = ""; $("#ex-clear").hidden = true; $("#ex-suggest").hidden = true; $("#ex-q").focus(); });
 
   window.Explore = { init, back, onShow, fromHash, openPlace, openCoords };
+  if (typeof window !== "undefined" && window.App?.getMap?.()) {
+    init(window.App.getMap());
+  }
 })();
