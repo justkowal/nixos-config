@@ -329,4 +329,35 @@ test("showProvider queries agency vehicles, fits bounds, and clearHighlight rese
   delete window.App._api;
 });
 
+test("init registers map handlers and moveend/sourcedata run cleanly", () => {
+  const handlers = {};
+  const fakeMap = {
+    getZoom: () => 10,
+    getCenter: () => ({ lng: 19.1, lat: 50.1 }),
+    getBounds: () => ({ getEast: () => 19.2, getWest: () => 19.0, getNorth: () => 50.2, getSouth: () => 50.0 }),
+    fitBounds: () => {},
+    flyTo: () => {},
+    easeTo: () => {},
+    triggerRepaint: () => {},
+    getContainer: () => ({ clientWidth: 800, clientHeight: 600 }),
+    getSource: () => null,
+    addSource: () => {},
+    getLayer: () => null,
+    addLayer: () => {},
+    getStyle: () => ({ layers: [] }),
+    setLayoutProperty: () => {},
+    touchPitch: { disable: () => {}, enable: () => {} },
+    on: (evt, fn) => { handlers[evt] = fn; },
+    isStyleLoaded: () => true,
+    setMaxPitch: () => {},
+    dragRotate: { enable: () => {} },
+  };
+  Veh.init(fakeMap);
+  assert.ok(handlers.moveend);
+  assert.doesNotThrow(() => handlers.moveend());
+  assert.ok(handlers.sourcedata);
+  assert.doesNotThrow(() => handlers.sourcedata({ sourceId: "openmaptiles", isSourceLoaded: true }));
+});
+
+
 

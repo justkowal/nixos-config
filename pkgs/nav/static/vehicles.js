@@ -649,7 +649,7 @@
   }
 
   // the dark base map is used by the OS theme, or at night in diorama mode
-  const isDark = () => (window.Daylight?.enabled ? window.Daylight.wantsDark() : matchMedia("(prefers-color-scheme: dark)").matches);
+  const isDark = () => (window.Daylight?.enabled ? window.Daylight.wantsDark() : (window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)").matches : false));
   // one of six colours per building, stable for a given building (hashed from its height and base)
   const pick6 = (list) => {
     const key = ["%", ["floor", ["*", ["+", ["to-number", ["get", "render_height"], 6], ["*", ["to-number", ["get", "render_min_height"], 0], 3.7]], 13.37]], 6];
@@ -1161,10 +1161,11 @@
         }
       }
     });
+    let deb = null, deb2 = null, debFacades = null;
     map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); loadRoofs(); ensureDem(); rebuildFacades(); }, 400); });
     map.on("sourcedata", (e) => {
       if ((ambient || threeD) && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); }
-      if (threeD && e.sourceId === "openmaptiles" && e.isSourceLoaded) { clearTimeout(deb); deb = setTimeout(rebuildFacades, 500); }
+      if (threeD && e.sourceId === "openmaptiles" && e.isSourceLoaded) { clearTimeout(debFacades); debFacades = setTimeout(rebuildFacades, 500); }
     });
     const tRefresh = setInterval(refresh, 5000);
     const tSched = setInterval(refreshSched, 15000);
