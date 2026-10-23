@@ -204,7 +204,7 @@ test("riding: the passenger's GPS pulls the vehicle under the dot, and a far-awa
   const rep = fresh("r1");
   const v = Veh._V.get("r1");
   Object.assign(v, { s: 1000, sRep: 1000, vel: 10, vRep: 10, tRep: performance.now() / 1000 - 12 });
-  global.window.App.api = () => Promise.resolve({ vehicles: [], now: 0 });
+  global.window.App._api = () => Promise.resolve({ vehicles: [], now: 0 });
   v.mx = (lonAt(1000) + 180) / 360; v.my = 0.5 - Math.log(Math.tan(Math.PI / 4 + (LAT * Math.PI) / 360)) / (2 * Math.PI);
   assert.equal(Veh.rideSync("t:1", { lat: LAT, lon: lonAt(1000 + 5000), acc: 10, speed: 9 }), false, "5 km away is not this vehicle");
   assert.equal(Veh.rideSync("t:1", { lat: LAT, lon: lonAt(1200), acc: 80, speed: 9 }), false, "a poor fix is not trusted");
@@ -299,8 +299,7 @@ test("showProvider queries agency vehicles, fits bounds, and clearHighlight rese
   };
   Veh.init(fakeMap);
 
-  const origApi = window.App.api;
-  window.App.api = async (endpoint, params) => {
+  window.App._api = async (endpoint, params) => {
     if (endpoint === "vehicles" && params?.agency === "Jurajska") {
       return {
         now: 1.7e9,
@@ -327,7 +326,7 @@ test("showProvider queries agency vehicles, fits bounds, and clearHighlight rese
     console.error("SHOW_PROVIDER_ERR:", err);
     throw err;
   }
-  window.App.api = origApi;
+  delete window.App._api;
 });
 
 

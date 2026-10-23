@@ -35,11 +35,12 @@ def wrap(d):
 
 
 class Rt:
-    def __init__(self, mapping, max_age_s=600, horizon_s=14 * 3600, min_match=0.8):
+    def __init__(self, mapping, max_age_s=600, horizon_s=14 * 3600, min_match=0.8, simulate_all=False):
         self.idx = None
         self.kp_stops = {}
         self.map = mapping
         self.max_age, self.horizon, self.min_match = max_age_s, horizon_s, min_match
+        self.simulate_all = simulate_all
         self.entries = {}  # (op trip id, start_date) -> {"stops": {seq: {...}}, "vehicle": {...}, "ts": int}
         self.lock = threading.Lock()
         self.last_poll_ok = None
@@ -145,7 +146,9 @@ class Rt:
                     if r.get("canceled"):
                         en["stops"][seq] = {"stop_id": sid, "skipped": True, "ts": now}
                     else:
-                        en["stops"][seq] = {"stop_id": sid, "delay": int(r["time_diff"]) * 60, "ts": now}
+                        diff = r.get("time_diff")
+                        delay_s = int(diff) * 60 if diff is not None else 0
+                        en["stops"][seq] = {"stop_id": sid, "delay": delay_s, "ts": now}
                         en["ts"] = now
                         if r.get("trip_execution_id"):
                             key = (ktid, r["trip_execution_id"])
@@ -202,6 +205,47 @@ class Rt:
         self.entries = {k: v for k, v in self.entries.items() if now - v["ts"] <= self.max_age}
         return self.entries
 
+    def _simulate_position(self, tid, sd, now, delay=0):
+        if not self.idx or tid not in self.idx.times:
+            return None
+        times = self.idx.times[tid]
+        if len(times) < 2:
+            return None
+        sorted_seqs = sorted(times.keys())
+        mid = local_midnight(sd)
+        first_dep = mid + times[sorted_seqs[0]][1] + delay
+        last_arr = mid + times[sorted_seqs[-1]][1] + delay
+        if not (first_dep - 120 <= now <= last_arr + 120):
+            return None
+
+        for i in range(len(sorted_seqs)):
+            seq = sorted_seqs[i]
+            sid, dep_s = times[seq]
+            s_time = mid + dep_s + delay
+            stop_obj = self.idx.stops.get(sid)
+            if not stop_obj:
+                continue
+            lat, lon = float(stop_obj["stop_lat"]), float(stop_obj["stop_lon"])
+
+            if (i == 0 and now <= s_time) or (i == len(sorted_seqs) - 1 and now >= s_time) or abs(now - s_time) <= 15:
+                return {"lat": lat, "lon": lon, "seq": seq, "stop_id": sid, "stopped": True, "ts": now}
+
+            if i + 1 < len(sorted_seqs):
+                next_seq = sorted_seqs[i + 1]
+                next_sid, next_dep_s = times[next_seq]
+                next_time = mid + next_dep_s + delay
+                if s_time < now < next_time:
+                    next_stop = self.idx.stops.get(next_sid)
+                    if next_stop:
+                        next_lat, next_lon = float(next_stop["stop_lat"]), float(next_stop["stop_lon"])
+                        dur = next_time - s_time
+                        frac = max(0.0, min(1.0, (now - s_time) / dur)) if dur > 0 else 0.5
+                        interp_lat = lat + frac * (next_lat - lat)
+                        interp_lon = lon + frac * (next_lon - lon)
+                        return {"lat": interp_lat, "lon": interp_lon, "seq": next_seq, "stop_id": next_sid,
+                                "stopped": False, "ts": now}
+        return None
+
     def build(self, now):
         """Returns (trip_updates_bytes, vehicle_positions_bytes) or None before the first successful poll."""
         with self.lock:
@@ -214,9 +258,11 @@ class Rt:
                 f.header.gtfs_realtime_version = "2.0"
                 f.header.incrementality = pb.FeedHeader.FULL_DATASET
                 f.header.timestamp = int(self.last_poll_ok)
-                for (tid, sd), e in sorted(live.items()):
-                    trip_row = self.idx.trips[tid]
-                    if kind == "tu" and e["stops"]:
+                if kind == "tu":
+                    for (tid, sd), e in sorted(live.items()):
+                        trip_row = self.idx.trips.get(tid)
+                        if not trip_row or not e["stops"]:
+                            continue
                         ent = f.entity.add()
                         ent.id = f"tu-{tid}-{sd}"
                         tu = ent.trip_update
@@ -231,21 +277,65 @@ class Rt:
                             else:
                                 u.arrival.delay = s["delay"]
                                 u.departure.delay = s.get("dep_delay", s["delay"])
-                    elif kind == "vp" and e["vehicle"]:
-                        v = e["vehicle"]
-                        ent = f.entity.add()
-                        ent.id = f"vp-{tid}-{sd}"
-                        self._trip(ent.vehicle.trip, tid, trip_row, sd)
-                        ent.vehicle.position.latitude = v["lat"]
-                        ent.vehicle.position.longitude = v["lon"]
-                        if v.get("seq") is not None:
-                            ent.vehicle.current_stop_sequence = v["seq"]
-                            ent.vehicle.stop_id = self.idx.stop_at(tid, v["seq"])
-                        ent.vehicle.current_status = (pb.VehiclePosition.STOPPED_AT if v["stopped"]
-                                                      else pb.VehiclePosition.IN_TRANSIT_TO)
-                        ent.vehicle.timestamp = int(v["ts"])
-                        ent.vehicle.vehicle.id = f"kj-{tid}"
-                        ent.vehicle.vehicle.label = trip_row.get("route_short_name") or trip_row.get("trip_short_name") or "KJ"
+                elif kind == "vp":
+                    emitted = set()
+                    for (tid, sd), e in sorted(live.items()):
+                        trip_row = self.idx.trips.get(tid)
+                        if not trip_row:
+                            continue
+                        v = e.get("vehicle")
+                        if not v:
+                            latest_delay = 0
+                            if e.get("stops"):
+                                latest_delay = e["stops"][max(e["stops"])].get("delay", 0)
+                            v = self._simulate_position(tid, sd, now, delay=latest_delay)
+                        if v:
+                            ent = f.entity.add()
+                            ent.id = f"vp-{tid}-{sd}"
+                            self._trip(ent.vehicle.trip, tid, trip_row, sd)
+                            ent.vehicle.position.latitude = v["lat"]
+                            ent.vehicle.position.longitude = v["lon"]
+                            if v.get("seq") is not None:
+                                ent.vehicle.current_stop_sequence = v["seq"]
+                            if v.get("stop_id") is not None:
+                                ent.vehicle.stop_id = str(v["stop_id"])
+                            elif v.get("seq") is not None:
+                                sid = self.idx.stop_at(tid, v["seq"])
+                                if sid:
+                                    ent.vehicle.stop_id = str(sid)
+                            ent.vehicle.current_status = (pb.VehiclePosition.STOPPED_AT if v["stopped"]
+                                                          else pb.VehiclePosition.IN_TRANSIT_TO)
+                            ent.vehicle.timestamp = int(v.get("ts", now))
+                            ent.vehicle.vehicle.id = f"kj-{tid}"
+                            ent.vehicle.vehicle.label = trip_row.get("route_short_name") or trip_row.get("trip_short_name") or "KJ"
+                            emitted.add((tid, sd))
+
+                    if self.simulate_all:
+                        today_d = datetime.fromtimestamp(now, WAW).date()
+                        for back in (0, 1):
+                            sd = (today_d - timedelta(days=back)).strftime("%Y%m%d")
+                            for tid, trip_row in self.idx.trips.items():
+                                if (tid, sd) in emitted:
+                                    continue
+                                if not self.idx.active(tid, sd):
+                                    continue
+                                v = self._simulate_position(tid, sd, now, delay=0)
+                                if v:
+                                    ent = f.entity.add()
+                                    ent.id = f"vp-{tid}-{sd}"
+                                    self._trip(ent.vehicle.trip, tid, trip_row, sd)
+                                    ent.vehicle.position.latitude = v["lat"]
+                                    ent.vehicle.position.longitude = v["lon"]
+                                    if v.get("seq") is not None:
+                                        ent.vehicle.current_stop_sequence = v["seq"]
+                                    if v.get("stop_id") is not None:
+                                        ent.vehicle.stop_id = str(v["stop_id"])
+                                    ent.vehicle.current_status = (pb.VehiclePosition.STOPPED_AT if v["stopped"]
+                                                                  else pb.VehiclePosition.IN_TRANSIT_TO)
+                                    ent.vehicle.timestamp = int(v.get("ts", now))
+                                    ent.vehicle.vehicle.id = f"kj-{tid}"
+                                    ent.vehicle.vehicle.label = trip_row.get("route_short_name") or trip_row.get("trip_short_name") or "KJ"
+                                    emitted.add((tid, sd))
                 out.append(f.SerializeToString())
             return tuple(out)
 

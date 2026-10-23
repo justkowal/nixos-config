@@ -41,7 +41,8 @@ class App:
         self.store = Store(os.path.join(data_dir, "state.json"))
         self.crawler = crawl.Crawler(cfg, self.store, self.kp, self.op, clock)
         r = cfg["realtime"]
-        self.rt = Rt(self.store.s["map"], max_age_s=r["max_age_s"], horizon_s=r["match_horizon_s"])
+        self.rt = Rt(self.store.s["map"], max_age_s=r["max_age_s"], horizon_s=r["match_horizon_s"],
+                     simulate_all=r.get("simulate_all", True))
         self.zip_path = os.path.join(data_dir, "gtfs.zip")
         self.zip_etag = None
         self.build_stats = {}

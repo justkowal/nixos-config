@@ -129,8 +129,8 @@ class GuardTests(unittest.TestCase):
         return Guard(**base)
 
     def test_floors_cannot_be_lowered(self):
-        g = self.mk(spacing_s=0.1, hourly_budget=5000, cooldown_s=60, lanes={"static": 900})
-        self.assertEqual((g.spacing, g.budget, g.cooldown, g.lanes["static"]), (1.0, 1200, 21600, 900))
+        g = self.mk(spacing_s=0.01, hourly_budget=200000, cooldown_s=60, lanes={"static": 900})
+        self.assertEqual((g.spacing, g.budget, g.cooldown, g.lanes["static"]), (0.05, 100000, 21600, 900))
 
     def test_spacing_enforced(self):
         g = self.mk()
