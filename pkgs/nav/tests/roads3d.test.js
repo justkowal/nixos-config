@@ -123,3 +123,12 @@ test("TriBuffer.toMesh creates Uint16Array for small meshes and Uint32Array for 
   assert.equal(meshLarge.triangles, 22000);
   assert.equal(meshLarge.index[65536], 65536);
 });
+
+test("road geometry generates road markings and street lighting", () => {
+  const res = R3D.build({ features: [roadFeat("primary")], anchor });
+  assert.ok(res.meshes.road_marking, "road markings mesh generated");
+  assert.ok(res.meshes.road_marking.triangles > 0, "lane dashes / markings present");
+  assert.ok(res.meshes.road_lights, "street lights mesh generated");
+  assert.ok(res.meshes.road_lights.triangles > 0, "street lamp poles present");
+});
+

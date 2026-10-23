@@ -528,18 +528,25 @@ def api_vehicles(q):
         if not ID.fullmatch(trip):
             raise Bad("bad trip id")
         return {"now": time.time(), "vehicles": [v for v in vehicles_snapshot() if v["trip"] == trip][:3]}
+    ag = (q.get("agency") or [""])[0]
     raw = (q.get("bbox") or [""])[0]
     box = [float(x) for x in raw.split(",")] if raw else []
+    if ag and not box:
+        matches = [v for v in vehicles_snapshot() if ag.lower() in (v.get("ag") or "").lower()]
+        return {"now": time.time(), "vehicles": matches[:1000]}
     if len(box) != 4 or not (-180 <= box[0] < box[2] <= 180 and -90 <= box[1] < box[3] <= 90):
         raise Bad("bbox must be minLon,minLat,maxLon,maxLat")
-    inside = [v for v in vehicles_snapshot() if box[0] <= v["lon"] <= box[2] and box[1] <= v["lat"] <= box[3]]
+    all_v = vehicles_snapshot()
+    if ag:
+        all_v = [v for v in all_v if ag.lower() in (v.get("ag") or "").lower()]
+    inside = [v for v in all_v if box[0] <= v["lon"] <= box[2] and box[1] <= v["lat"] <= box[3]]
     if (q.get("lod") or [""])[0] == "heat":  # far zoom: positions only, any extent
         return {"now": time.time(), "heat": [[round(v["lon"], 4), round(v["lat"], 4)] for v in inside[:6000]]}
-    if (box[2] - box[0]) > 1.5 or (box[3] - box[1]) > 1.0:
+    if not ag and ((box[2] - box[0]) > 1.5 or (box[3] - box[1]) > 1.0):
         return {"now": time.time(), "vehicles": [], "note": "zoom in to see vehicles"}
     cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
     inside.sort(key=lambda v: (v["lon"] - cx) ** 2 + (v["lat"] - cy) ** 2)
-    return {"now": time.time(), "vehicles": inside[:700]}
+    return {"now": time.time(), "vehicles": inside[:1000] if ag else inside[:700]}
 
 
 def seg_proj(px, py, ax, ay, bx, by):

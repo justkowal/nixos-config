@@ -216,6 +216,109 @@
       if (dark !== D._dark) { D._dark = dark; D.onThemeChange?.(); }
     }
   };
+  D.groundIllumination = (st) => {
+    const s = st || D._state || D.state();
+    if (!s) return [1.0, 1.0, 1.0];
+    const alt = s.alt * RAD;
+    // Direct sunlight has vertical incidence (sin) plus grazing atmospheric wash at low sun
+    const sunIncidence = s.alt > 0 ? Math.sin(alt) * 0.75 + 0.35 * smooth(-1, 14, s.alt) : 0;
+    const sunC = s.alt > 0 ? s.sunColor : [0, 0, 0];
+    const ambC = s.ambient;
+    const moonC = s.moon || [0, 0, 0];
+
+    // Direct sun on ground + ambient diffuse + moonlight
+    const r = ambC[0] + sunC[0] * sunIncidence + moonC[0] * 1.2;
+    const g = ambC[1] + sunC[1] * sunIncidence + moonC[1] * 1.2;
+    const b = ambC[2] + sunC[2] * sunIncidence + moonC[2] * 1.2;
+
+    const maxMidday = 1.15;
+    return [
+      clamp(r / maxMidday, 0.16, 1.15),
+      clamp(g / maxMidday, 0.17, 1.15),
+      clamp(b / maxMidday, 0.18, 1.15)
+    ];
+  };
+
+  D.createIlluminationLayer = () => {
+    let prog = null, vbo = null, uMatrix = null, uLight = null;
+
+    const VS = `#version 300 es
+    precision highp float;
+    uniform mat4 u_matrix;
+    in vec2 a_pos;
+    void main() {
+      gl_Position = u_matrix * vec4(a_pos, 0.0, 1.0);
+    }`;
+
+    const FS = `#version 300 es
+    precision mediump float;
+    uniform vec3 u_light;
+    out vec4 fragColor;
+    void main() {
+      fragColor = vec4(u_light, 1.0);
+    }`;
+
+    return {
+      id: "base-map-illumination",
+      type: "custom",
+      renderingMode: "3d",
+      onAdd(map, gl) {
+        const vs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vs, VS);
+        gl.compileShader(vs);
+        const fs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, FS);
+        gl.compileShader(fs);
+        prog = gl.createProgram();
+        gl.attachShader(prog, vs);
+        gl.attachShader(prog, fs);
+        gl.linkProgram(prog);
+
+        uMatrix = gl.getUniformLocation(prog, "u_matrix");
+        uLight = gl.getUniformLocation(prog, "u_light");
+
+        const verts = [];
+        const STEPS = 8;
+        for (let i = 0; i < STEPS; i++) {
+          for (let j = 0; j < STEPS; j++) {
+            const x0 = i / STEPS, x1 = (i + 1) / STEPS;
+            const y0 = j / STEPS, y1 = (j + 1) / STEPS;
+            verts.push(
+              x0, y0,  x1, y0,  x0, y1,
+              x0, y1,  x1, y0,  x1, y1
+            );
+          }
+        }
+        vbo = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+      },
+      render(gl, matrix) {
+        if (!D.enabled) return;
+        const [lr, lg, lb] = D.groundIllumination();
+
+        gl.useProgram(prog);
+        gl.uniformMatrix4fv(uMatrix, false, matrix);
+        gl.uniform3f(uLight, lr, lg, lb);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        const aPos = gl.getAttribLocation(prog, "a_pos");
+        gl.enableVertexAttribArray(aPos);
+        gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+        gl.enable(gl.BLEND);
+        gl.blendFuncSeparate(gl.DST_COLOR, gl.ZERO, gl.ZERO, gl.ONE);
+        gl.colorMask(true, true, true, false);
+        gl.disable(gl.DEPTH_TEST);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 8 * 8 * 6);
+
+        gl.colorMask(true, true, true, true);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      }
+    };
+  };
+
   D.clear = () => { try { window.App?.getMap?.()?.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.5, position: [1.15, 210, 30] }); window.App?.getMap?.()?.setSky(null); } catch { /* none */ } D._dark = false; D.onThemeChange?.(); };
   D.syncTheme = (dark) => { D.bg = dark ? [0.1, 0.11, 0.13] : [0.86, 0.87, 0.89]; };  // what dimmed vehicles fade toward: the ground colour of the current base map
 

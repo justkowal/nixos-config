@@ -600,8 +600,19 @@ function stepFor(l, idx) {
     return h("div", { class: "step", style: { "--c": c } }, left,
       h("div", { class: "body" },
         h("h3", {}, badge(l.line, c, l.mode), l.headsign ? `to ${l.headsign}` : "", showBtn(idx)),
-        h("div", { class: "meta" }, "Board at ", board, l.transfer_headroom_s != null ? h("span", { class: "headroom-tag", title: "Transfer buffer at platform" }, `${mins(l.transfer_headroom_s)} min transfer`) : null),
-        h("div", { class: "meta" }, liveBadge(l), ` · ${dur(l.duration_s)} · ${providerOf(l.agency)?.name || l.agency || ""}`),
+        h("div", { class: "meta" }, liveBadge(l), " · ", dur(l.duration_s), " · ",
+          providerOf(l.agency)
+            ? h("button", {
+                class: "provider-link-btn",
+                title: `Show all live ${providerOf(l.agency).name} vehicles on map`,
+                onclick: async (e) => {
+                  e.stopPropagation();
+                  await window.Vehicles?.showProvider(providerOf(l.agency));
+                  if (!wide.matches) setDetent("peek");
+                }
+              }, providerOf(l.agency).name)
+            : (l.agency || "")
+        ),
         stops.length ? h("details", {}, h("summary", {}, `${stops.length + 1} stop${stops.length ? "s" : ""}`), h("ul", {}, stops.map((s) => h("li", {}, h("button", { class: "link", onclick: () => focusPoint(s.lon, s.lat, s.name) }, s.name))), h("li", {}, h("button", { class: "link", onclick: () => focusPoint(l.to.lon, l.to.lat, l.to.name) }, `${l.to.name}, ${hm(l.end)}`)))) : null));
   }
   const name = { WALK: "Walk", BICYCLE: "Cycle", CAR: "Drive" }[l.mode] || l.mode;
@@ -679,7 +690,19 @@ async function showTrip(d) {
         badge(t.line || d.line, c, t.mode || d.mode || "BUS"),
         h("div", {},
           h("div", { class: "to" }, t.to || d.to || ""),
-          h("div", { class: "agency" }, providerOf(t.agency || d.agency)?.name || t.agency || d.agency || "")
+          h("div", { class: "agency" },
+            providerOf(t.agency || d.agency)
+              ? h("button", {
+                  class: "provider-link-btn",
+                  title: `Show all live ${providerOf(t.agency || d.agency).name} vehicles on map`,
+                  onclick: async (e) => {
+                    e.stopPropagation();
+                    await window.Vehicles?.showProvider(providerOf(t.agency || d.agency));
+                    if (!wide.matches) setDetent("peek");
+                  }
+                }, providerOf(t.agency || d.agency).name)
+              : (t.agency || d.agency || "")
+          )
         )
       ),
       followBtn
@@ -750,9 +773,21 @@ async function loadInfo() {
       modeBreakdown ? h("div", { class: "meta", style: { marginBottom: "6px" } }, modeBreakdown) : "",
       h("ul", {}, providers.map((p) => {
         const c = liveCount(p);
+        const isLive = c > 0;
         return h("li", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
           h("span", {}, h("span", { class: "swatch", style: { "--c": p.color } }), p.name),
-          h("span", { class: "badge", style: { "--c": c > 0 ? p.color : "var(--dim)" } }, `${c} live`)
+          isLive
+            ? h("button", {
+                class: "badge live-badge-btn",
+                style: { "--c": p.color, cursor: "pointer" },
+                title: `Show all ${c} live ${p.name} vehicles on map`,
+                onclick: async (e) => {
+                  e.stopPropagation();
+                  await window.Vehicles?.showProvider(p);
+                  if (!wide.matches) setDetent("peek");
+                }
+              }, `${c} live`)
+            : h("span", { class: "badge", style: { "--c": "var(--dim)" } }, "0 live")
         );
       }))
     ),

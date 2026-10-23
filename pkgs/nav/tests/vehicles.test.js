@@ -36,9 +36,30 @@ function encode(pts) {
   }
   return out;
 }
-global.window = { App: { api() {}, h() {}, icon() {}, $() {}, store: { get: (k, d) => d, set() {} }, decode, providerOf: () => null } };
-global.document = {};
+global.document = {
+  createElement: () => ({
+    getContext: () => ({ clearRect() {}, fillText() {}, strokeText() {}, measureText: () => ({ width: 10 }) }),
+    width: 256,
+    height: 256
+  }),
+  body: { append() {} },
+  querySelector: () => null
+};
+global.getComputedStyle = () => ({ getPropertyValue: () => "" });
+global.matchMedia = () => ({ matches: false });
+global.window = {
+  App: {
+    api: (...args) => (window.App._api ? window.App._api(...args) : Promise.resolve({})),
+    h: (t, p, ...k) => ({ style: { setProperty() {} }, setAttribute() {}, addEventListener() {}, append() {} }),
+    icon: () => ({}),
+    $: (sel) => ({ style: { setProperty() {} }, setAttribute() {}, addEventListener() {}, append() {}, textContent: "" }),
+    store: { get: (k, d) => d, set() {} },
+    decode,
+    providerOf: () => null
+  }
+};
 global.requestAnimationFrame = () => {};
+eval(fs.readFileSync(path.join(__dirname, "../static/scene3d.js"), "utf8"));
 eval(fs.readFileSync(path.join(__dirname, "../static/fleet.js"), "utf8"));
 eval(fs.readFileSync(path.join(__dirname, "../static/sched.js"), "utf8"));
 eval(fs.readFileSync(path.join(__dirname, "../static/vehicles.js"), "utf8"));
@@ -252,4 +273,61 @@ test("stale vehicles fade smoothly toward STALE_DROP without popping", () => {
   let a900 = Veh._step(v, 0.05, t0 + 900);
   assert.ok(a900 <= 1e-6, "completely faded out at STALE_DROP");
 });
+
+test("showProvider queries agency vehicles, fits bounds, and clearHighlight resets", async () => {
+  let fitArgs = null;
+  const fakeMap = {
+    getZoom: () => 10,
+    getCenter: () => ({ lng: 19.1, lat: 50.1 }),
+    fitBounds: (b, opts) => { fitArgs = { b, opts }; },
+    flyTo: () => {},
+    easeTo: () => {},
+    triggerRepaint: () => {},
+    getContainer: () => ({ clientWidth: 800, clientHeight: 600 }),
+    getSource: () => null,
+    addSource: () => {},
+    getLayer: () => null,
+    addLayer: () => {},
+    getStyle: () => ({ layers: [] }),
+    setLayoutProperty: () => {},
+    touchPitch: { disable: () => {}, enable: () => {} },
+    on: () => {},
+    isStyleLoaded: () => true,
+    setMaxPitch: () => {},
+    dragRotate: { enable: () => {} },
+    easeTo: () => {},
+  };
+  Veh.init(fakeMap);
+
+  const origApi = window.App.api;
+  window.App.api = async (endpoint, params) => {
+    if (endpoint === "vehicles" && params?.agency === "Jurajska") {
+      return {
+        now: 1.7e9,
+        vehicles: [
+          { id: "kj-1", trip: "t1", line: "101", lat: 50.6, lon: 19.3, ag: "Komunikacja Jurajska" },
+          { id: "kj-2", trip: "t2", line: "102", lat: 50.8, lon: 19.5, ag: "Komunikacja Jurajska" }
+        ]
+      };
+    }
+    return { vehicles: [] };
+  };
+
+  try {
+    const prov = { match: "Jurajska", name: "Komunikacja Jurajska", color: "#2e7d32" };
+    const res = await Veh.showProvider(prov);
+    assert.equal(res.count, 2);
+    assert.ok(fitArgs, "fitBounds was called");
+    assert.deepEqual(fitArgs.b, [[19.3, 50.6], [19.5, 50.8]]);
+    assert.equal(Veh.getHighlightedProvider(), prov);
+
+    Veh.clearHighlight();
+    assert.equal(Veh.getHighlightedProvider(), null);
+  } catch (err) {
+    console.error("SHOW_PROVIDER_ERR:", err);
+    throw err;
+  }
+  window.App.api = origApi;
+});
+
 

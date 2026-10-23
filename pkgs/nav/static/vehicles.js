@@ -20,7 +20,7 @@
 
   const V = new Map();        // vehicle id -> state
   const SHAPES = new Map();   // trip id -> shape info | "pending" | { fail }
-  let map = null, scene = null, on = store.get("veh", true), threeD = store.get("3d", true), hi = new Set();
+  let map = null, scene = null, on = store.get("veh", true), threeD = store.get("3d", true), hi = new Set(), hiProv = null;
   let ambient = false, traffic = null;
   let ctx = false, force = false, followId = null, followBar = null, cam = null, lastTick = 0, nowSec = 0;
   const pose = new Float64Array(4);  // scratch: mx, my, ux, uy
@@ -294,16 +294,16 @@
       if (sh) { const i = cursor(sh, v, "seg0", v.s), t = (v.s - sh.cum[i]) / (sh.cum[i + 1] - sh.cum[i] || 1); v.mx = sh.MX[i] + (sh.MX[i + 1] - sh.MX[i]) * t; v.my = sh.MY[i] + (sh.MY[i + 1] - sh.MY[i]) * t; }
       if (v.mx < x0 || v.mx > x1 || v.my < y0 || v.my > y1) continue;
       v.visAlpha = Math.min(1, (v.visAlpha == null ? 0 : v.visAlpha) + dt * 2.5);
-      const mine = hi.has(v.trip) || v.id === followId, dx = (v.mx - ox) / k, dy = (oy - v.my) / k;
+      const mine = hi.has(v.trip) || hi.has(v.id) || (hiProv && v.ag && v.ag.toLowerCase().includes(hiProv.match.toLowerCase())) || v.id === followId, dx = (v.mx - ox) / k, dy = (oy - v.my) / k;
       const gz = zAt(v.mx, v.my);
       const ff = frustumFade(dx, dy, gz, mine);
       if (ff <= 0.01) continue;
       const alpha = a * ff * v.visAlpha * (routeOn && !mine ? 0.35 : 1);
       if (dotAlpha > 0.02) {
         const rSz = (v.mode === "RAIL" && z < 12) ? dotSize * 1.4 : dotSize;
-        if (mine) scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], 90, rSz * 2.1, -1, gz);
+        if (mine) scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], 110, rSz * 2.4, -1, gz);
         scene.dots.push(dx, dy, v.rgb[0], v.rgb[1], v.rgb[2], Math.round(255 * alpha * dotAlpha), rSz, -1, gz);
-        if ((labels || (v.mode === "RAIL" && z >= 10.5)) && v.line) scene.addLabel(v.line, dx, dy, gz);
+        if ((labels || (mine && z >= 8.5) || (v.mode === "RAIL" && z >= 10.5)) && v.line) scene.addLabel(v.line, dx, dy, gz);
       }
       if (meshes && sh) {
         if (!v.model) { v.model = modelFor(v); const L = livery(v); v.liv = scene.palette.id(L); v.tint = window.Fleet.jitter(L.body, v.id); }
@@ -402,7 +402,7 @@
   function tick() {
     requestAnimationFrame(tick);
     const t = performance.now();
-    if (!scene || !map || document.hidden || (!shown() && !threeD) || map.getZoom() < (threeD ? 14 : Z_DOTS)) { lastTick = t; return; }
+    if (!scene || !map || document.hidden || (!shown() && !threeD) || map.getZoom() < (threeD ? 14 : (hiProv ? 7.0 : Z_DOTS))) { lastTick = t; return; }
     const dt = Math.min(0.05, (t - lastTick) / 1000);
     lastTick = t;
     nowSec = T();
@@ -431,7 +431,10 @@
               )
             )
           ),
-          h("button", { class: "icon-btn small", id: "dt-stop", "aria-label": "Stop tracking", onclick: () => stopFollow() }, icon("x"))
+          h("div", { class: "dt-actions", style: "display:flex;align-items:center;gap:6px;" },
+            h("button", { class: "chip small", id: "dt-recenter", style: "display:none", onclick: () => recenterFollow() }, "Recenter"),
+            h("button", { class: "icon-btn small", id: "dt-stop", "aria-label": "Stop tracking", onclick: () => stopFollow() }, icon("x"))
+          )
         ),
         h("div", { id: "dt-timeline", class: "dt-timeline" })
       );
@@ -512,7 +515,7 @@
     }
   }
 
-  // chase camera: glides to the vehicle, and in 3D turns to look along its direction of travel
+  // chase camera: follows vehicle with smooth gliding, allows interactive camera zoom, pan offsets, and angle adjustments
   function chase(v, dt) {
     if (!v) {
       if (followBar) $("#follow-status").textContent = "No position for this vehicle right now";
@@ -520,19 +523,66 @@
       return;
     }
     const lon = lonOf(v.mx), lat = latOf(v.my), c = map.getCenter(), k = 1 - Math.exp(-dt / 0.4);
-    cam = cam || { lon: c.lng, lat: c.lat, zoom: map.getZoom(), target: Math.max(map.getZoom(), 17.8) };
-    cam.lon += (lon - cam.lon) * k; cam.lat += (lat - cam.lat) * k;
-    if (cam.free) cam.zoom = map.getZoom(); else cam.zoom += (cam.target - cam.zoom) * (1 - Math.exp(-dt / 0.6));
-    const opts = { center: [cam.lon, cam.lat], zoom: cam.zoom, animate: false };
-    if (threeD) { const hd = (Math.atan2(v.hx, v.hy) * 180) / Math.PI, bear = map.getBearing(); opts.bearing = bear + (((hd - bear + 540) % 360) - 180) * (1 - Math.exp(-dt / 0.8)); }
+    cam = cam || {
+      lon: c.lng,
+      lat: c.lat,
+      zoom: map.getZoom(),
+      targetZoom: Math.max(map.getZoom(), 17.8),
+      initialZoom: true,
+      offLon: 0,
+      offLat: 0,
+      bearOffset: 0,
+      dragging: false,
+      rotating: false
+    };
+
+    const targetLon = lon + (cam.offLon || 0);
+    const targetLat = lat + (cam.offLat || 0);
+    if (!cam.dragging) {
+      cam.lon += (targetLon - cam.lon) * k;
+      cam.lat += (targetLat - cam.lat) * k;
+    }
+
+    const opts = { center: [cam.lon, cam.lat], animate: false };
+    if (cam.initialZoom) {
+      cam.zoom = cam.zoom || map.getZoom();
+      cam.zoom += (cam.targetZoom - cam.zoom) * (1 - Math.exp(-dt / 0.6));
+      if (Math.abs(cam.zoom - cam.targetZoom) < 0.05) cam.initialZoom = false;
+      opts.zoom = cam.zoom;
+    }
+    if (threeD && !cam.rotating) {
+      const hd = (Math.atan2(v.hx, v.hy) * 180) / Math.PI;
+      const targetBear = hd + (cam.bearOffset || 0);
+      const bear = map.getBearing();
+      opts.bearing = bear + (((targetBear - bear + 540) % 360) - 180) * (1 - Math.exp(-dt / 0.8));
+    }
     map.jumpTo(opts);
     $("#follow-status").textContent = v.sched ? (v.vel > 0.5 ? "Estimated from the timetable and its delay" : "Standing, by the timetable") : v.st === "STOPPED_AT" ? `At ${v.sn || "a stop"}` : v.sn ? `Next stop: ${v.sn}` : v.vel > 0.5 ? "Moving" : "Standing";
     updateDioTrackBar(v);
+    updateRecenterBtn();
   }
+
+  function recenterFollow() {
+    if (!cam) return;
+    cam.offLon = 0;
+    cam.offLat = 0;
+    cam.bearOffset = 0;
+    updateRecenterBtn();
+  }
+
+  function updateRecenterBtn() {
+    const isOff = cam && (Math.hypot(cam.offLon || 0, cam.offLat || 0) > 0.00005 || Math.abs(cam.bearOffset || 0) > 3);
+    const fbRec = $("#follow-recenter");
+    if (fbRec) fbRec.style.display = isOff ? "" : "none";
+    const dtRec = $("#dt-recenter");
+    if (dtRec) dtRec.style.display = isOff ? "" : "none";
+  }
+
   function showBar(v) {
     if (!followBar) {
       followBar = h("section", { id: "follow", class: "follow glass", "aria-label": "Following a vehicle" },
         h("div", { class: "f-main" }, h("div", { id: "follow-title", class: "f-title" }), h("div", { id: "follow-sub", class: "f-sub" }), h("div", { id: "follow-status", class: "f-status", role: "status", "aria-live": "polite" })),
+        h("button", { class: "chip", id: "follow-recenter", style: "display:none", onclick: () => recenterFollow() }, "Recenter"),
         h("button", { class: "chip", id: "follow-stop", onclick: () => stopFollow() }, "Stop"));
       document.body.append(followBar);
     }
@@ -540,19 +590,43 @@
     $("#follow-title").replaceChildren(A.badge(v.line || "?", v.color, v.mode), v.to ? ` to ${v.to}` : "");
     $("#follow-sub").textContent = A.providerOf(v.ag)?.name || v.ag || "";
     updateDioTrackBar(v);
+    updateRecenterBtn();
   }
   function follow(id) {
     const v = V.get(id);
     if (!v) return false;
-    followId = id; cam = null; syncVisibility(); refresh();
+    const c = map.getCenter();
+    followId = id;
+    cam = {
+      lon: c.lng,
+      lat: c.lat,
+      zoom: map.getZoom(),
+      targetZoom: Math.max(map.getZoom(), 17.8),
+      initialZoom: true,
+      offLon: 0,
+      offLat: 0,
+      bearOffset: 0,
+      dragging: false,
+      rotating: false
+    };
+    syncVisibility();
+    refresh();
     showBar(v);
     ensureShape(v);
     return true;
   }
   function stopFollow() {
     followId = null; cam = null;
-    if (followBar) followBar.hidden = true;
-    if (dioTrackBar) dioTrackBar.hidden = true;
+    if (followBar) {
+      followBar.hidden = true;
+      const fbRec = $("#follow-recenter");
+      if (fbRec) fbRec.style.display = "none";
+    }
+    if (dioTrackBar) {
+      dioTrackBar.hidden = true;
+      const dtRec = $("#dt-recenter");
+      if (dtRec) dtRec.style.display = "none";
+    }
     syncVisibility();
     map.easeTo({ bearing: threeD ? map.getBearing() : 0, duration: 400 });
   }
@@ -591,6 +665,11 @@
     const css = (n, d) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d;
     if (!map.getSource("veh-heat")) map.addSource("veh-heat", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     const firstSymbol = (map.getStyle().layers.find((l) => l.type === "symbol") || {}).id;
+    if (!map.getLayer("base-map-illumination") && window.Daylight?.createIlluminationLayer) {
+      const illum = window.Daylight.createIlluminationLayer();
+      const beforeId = map.getLayer("buildings-3d") ? "buildings-3d" : firstSymbol;
+      map.addLayer(illum, beforeId);
+    }
     if (!map.getLayer("buildings-3d") && map.getSource("openmaptiles")) {
       const P = buildingPalettes(isDark()), H = ["to-number", ["get", "render_height"], 6], B = ["to-number", ["get", "render_min_height"], 0];
       map.addLayer({ id: "buildings-3d", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 14,
@@ -643,12 +722,16 @@
     try {
       const b = map.getBounds(), w = (b.getEast() - b.getWest()) * 0.2, hh = (b.getNorth() - b.getSouth()) * 0.2;
       const box = [b.getWest() - w, b.getSouth() - hh, b.getEast() + w, b.getNorth() + hh].map((x) => x.toFixed(5)).join(",");
-      if (z < Z_HEAT_OUT) {
+      if (z < Z_HEAT_OUT && !hiProv) {
         const r = await api("vehicles", { bbox: box, lod: "heat" });
         map.getSource("veh-heat")?.setData({ type: "FeatureCollection", features: r.heat.map((c) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } })) });
+      } else if (hiProv) {
+        map.getSource("veh-heat")?.setData({ type: "FeatureCollection", features: [] });
       }
-      if (z >= Z_DOTS) {
-        const r = await api("vehicles", { bbox: box });
+      if (z >= Z_DOTS || hiProv) {
+        const q = { bbox: box };
+        if (hiProv) q.agency = hiProv.match;
+        const r = await api("vehicles", q);
         ingest(r.vehicles, r.now);
         let budget = 30;
         for (const v of V.values()) {
@@ -693,6 +776,7 @@
       map.touchPitch?.enable();
       map.touchZoomRotate?.enableRotation();
       map.easeTo({ pitch: 58, duration: 600 });
+      window.Daylight?.enable(true);
       laneKey = "";
       loadLanes();
       loadRoofs();
@@ -702,6 +786,9 @@
       map.dragRotate?.disable();
       map.touchPitch?.disable();
       map.touchZoomRotate?.disableRotation();
+      if (!window.Diorama?.active?.()) {
+        window.Daylight?.enable(false);
+      }
       if (scene) {
         for (const name of infra.meshes.keys()) scene.dropMesh("infra:" + name);
         infra.meshes.clear();
@@ -990,29 +1077,192 @@
     if (map.isStyleLoaded()) layers();
     const move = { t: 0 };
     map.on("click", (e) => { if (!shown()) return; const v = pick(e.point); if (v) follow(v.id); });
-    map.on("mousemove", (e) => { const n = performance.now(); if (n - move.t < 90 || !shown()) return; move.t = n; map.getCanvas().style.cursor = pick(e.point) ? "pointer" : ""; });
-    map.on("dragstart", (e) => { if (followId && e.originalEvent) stopFollow(); });
-    map.on("zoomstart", (e) => { if (followId && cam && e.originalEvent) cam.free = true; });
-    let deb = 0, deb2 = 0;
+    map.on("dragstart", (e) => {
+      if (followId && cam) {
+        cam.dragging = true;
+      }
+    });
+    map.on("drag", (e) => {
+      if (followId && cam && cam.dragging) {
+        const v = V.get(followId);
+        if (v) {
+          const cur = map.getCenter();
+          const vLon = lonOf(v.mx), vLat = latOf(v.my);
+          cam.offLon = cur.lng - vLon;
+          cam.offLat = cur.lat - vLat;
+          cam.lon = cur.lng;
+          cam.lat = cur.lat;
+          updateRecenterBtn();
+        }
+      }
+    });
+    map.on("dragend", (e) => {
+      if (followId && cam) {
+        cam.dragging = false;
+        const v = V.get(followId);
+        if (v) {
+          const cur = map.getCenter();
+          const vLon = lonOf(v.mx), vLat = latOf(v.my);
+          cam.offLon = cur.lng - vLon;
+          cam.offLat = cur.lat - vLat;
+          cam.lon = cur.lng;
+          cam.lat = cur.lat;
+          updateRecenterBtn();
+        }
+      }
+    });
+    map.on("zoomstart", (e) => {
+      if (followId && cam && e.originalEvent) {
+        cam.initialZoom = false;
+      }
+    });
+    map.on("wheel", () => {
+      if (followId && cam) {
+        cam.initialZoom = false;
+      }
+    });
+    map.on("rotatestart", (e) => {
+      if (followId && cam) {
+        cam.rotating = true;
+      }
+    });
+    map.on("rotate", (e) => {
+      if (followId && cam && e.originalEvent) {
+        const v = V.get(followId);
+        if (v) {
+          const hd = (Math.atan2(v.hx, v.hy) * 180) / Math.PI;
+          cam.bearOffset = (((map.getBearing() - hd + 540) % 360) - 180);
+          updateRecenterBtn();
+        }
+      }
+    });
+    map.on("rotateend", (e) => {
+      if (followId && cam) {
+        cam.rotating = false;
+        const v = V.get(followId);
+        if (v) {
+          const hd = (Math.atan2(v.hx, v.hy) * 180) / Math.PI;
+          cam.bearOffset = (((map.getBearing() - hd + 540) % 360) - 180);
+          updateRecenterBtn();
+        }
+      }
+    });
+    map.on("move", (e) => {
+      if (followId && cam && e.originalEvent && !cam.dragging) {
+        const v = V.get(followId);
+        if (v) {
+          const cur = map.getCenter();
+          const vLon = lonOf(v.mx), vLat = latOf(v.my);
+          cam.offLon = cur.lng - vLon;
+          cam.offLat = cur.lat - vLat;
+          cam.lon = cur.lng;
+          cam.lat = cur.lat;
+          updateRecenterBtn();
+        }
+      }
+    });
     map.on("moveend", () => { clearTimeout(deb); deb = setTimeout(() => { refresh(); loadLanes(); refreshSched(); loadRoofs(); ensureDem(); rebuildFacades(); }, 400); });
     map.on("sourcedata", (e) => {
       if ((ambient || threeD) && e.sourceId === "openmaptiles" && e.isSourceLoaded) { laneKey = ""; clearTimeout(deb2); deb2 = setTimeout(loadLanes, 600); }
       if (threeD && e.sourceId === "openmaptiles" && e.isSourceLoaded) { clearTimeout(deb); deb = setTimeout(rebuildFacades, 500); }
     });
-    setInterval(refresh, 5000);
-    setInterval(refreshSched, 15000);
+    const tRefresh = setInterval(refresh, 5000);
+    const tSched = setInterval(refreshSched, 15000);
+    if (tRefresh?.unref) tRefresh.unref();
+    if (tSched?.unref) tSched.unref();
     map.touchPitch?.disable();
     if (threeD) set3d(true);
     refresh();
     requestAnimationFrame(tick);
   }
 
+  let providerBar = null;
+  function updateProviderBanner(p, count) {
+    if (!p) {
+      if (providerBar) providerBar.hidden = true;
+      return;
+    }
+    if (!providerBar) {
+      providerBar = h("section", { id: "provider-banner", class: "provider-banner glass", "aria-label": "Provider filter" },
+        h("div", { class: "pb-info" },
+          h("span", { id: "pb-swatch", class: "swatch" }),
+          h("span", { id: "pb-text", class: "provider-banner-text" })
+        ),
+        h("button", { id: "pb-close", class: "icon-btn small provider-banner-close", "aria-label": "Clear provider highlight", onclick: () => clearHighlight() }, icon("x"))
+      );
+      document.body.append(providerBar);
+    }
+    providerBar.hidden = false;
+    const swatch = $("#pb-swatch");
+    if (swatch) swatch.style.setProperty("--c", p.color || "#0984e3");
+    const text = $("#pb-text");
+    if (text) text.textContent = `${p.name} · ${count} live vehicle${count === 1 ? "" : "s"}`;
+  }
+
+  function removeProviderBanner() {
+    if (providerBar) providerBar.hidden = true;
+  }
+
+  async function showProvider(p) {
+    if (!p || !map) return null;
+    hiProv = p;
+    on = true;
+    store.set("veh", true);
+    $("#btn-veh")?.setAttribute("aria-pressed", true);
+    syncVisibility();
+    updateProviderBanner(p, "…");
+
+    let r;
+    try {
+      r = await (A.api || api)("vehicles", { agency: p.match });
+    } catch {
+      updateProviderBanner(p, 0);
+      return null;
+    }
+    const list = r?.vehicles || [];
+    if (!list.length) {
+      hi = new Set();
+      map.triggerRepaint();
+      updateProviderBanner(p, 0);
+      return { count: 0, vehicles: [] };
+    }
+    ingest(list, r.now || Date.now() / 1000);
+    hi = new Set(list.map((v) => v.trip || v.id).filter(Boolean));
+
+    let minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
+    for (const v of list) {
+      if (v.lon < minLon) minLon = v.lon;
+      if (v.lon > maxLon) maxLon = v.lon;
+      if (v.lat < minLat) minLat = v.lat;
+      if (v.lat > maxLat) maxLat = v.lat;
+    }
+
+    const isWide = A.sheetWide?.() || window.innerWidth >= 840;
+    const padding = { top: 90, bottom: 60, left: isWide ? 440 : 30, right: 30 };
+    if (list.length === 1 || (maxLon - minLon < 0.005 && maxLat - minLat < 0.005)) {
+      map.flyTo({ center: [list[0].lon, list[0].lat], zoom: 12.5, duration: 900 });
+    } else {
+      map.fitBounds([[minLon, minLat], [maxLon, maxLat]], { padding, maxZoom: 13, duration: 1100 });
+    }
+    map.triggerRepaint();
+    updateProviderBanner(p, list.length);
+    return { count: list.length, bounds: [[minLon, minLat], [maxLon, maxLat]], vehicles: list };
+  }
+
+  function clearHighlight() {
+    hi = new Set();
+    hiProv = null;
+    removeProviderBanner();
+    map?.triggerRepaint();
+  }
+
   window.Vehicles = {
     init, follow, followTrip, stopFollow, set3d, is3d: () => threeD, scene: () => scene,
+    showProvider, clearHighlight, getHighlightedProvider: () => hiProv,
     setTerrain, terrain: () => ({ ...terrain }), dem: () => dem, decor: () => decor, rideSync, loadRoofs, roofs: () => roofs, facades: () => facades, rebuildFacades, setAmbient, ambient: () => ambient, traffic: () => traffic,
     infra: () => infra, rebuildInfra, refreshSched,
     setContext: (c) => { ctx = !!c; syncVisibility(); if (shown()) refresh(); }, setForce: (f) => { force = !!f; syncVisibility(); if (shown()) refresh(); },
-    highlight: (ids) => { hi = new Set(ids || []); },
+    highlight: (ids, prov) => { hi = new Set(ids || []); if (prov !== undefined) hiProv = prov; },
     stats: () => ({ total: V.size, withShape: [...V.values()].filter((x) => x.shape).length, on: shown(), threeD, zoom: map ? +map.getZoom().toFixed(1) : null, render: scene?.stats }),
     // exposed for tests
     _ingest: ingest, _attach: attachShape, _step: step, _V: V, _project: project, _build: buildShape, _red: (sh, j) => { wall = Date.now() / 1000; return redAt(sh, j); }, _model: modelFor, _livery: livery, _pose: (sh, s) => { poseAt(sh, s); return Array.from(pose); },

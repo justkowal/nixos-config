@@ -107,8 +107,8 @@
     $("#diorama").hidden = true;
     const dioTrack = $("#dio-track");
     if (dioTrack) dioTrack.hidden = true;
-    toggleHelp(false);
-    D.enable(false); D.setDay(null); D.setLive(); V.setForce(false); V.setAmbient(false); V.setTerrain(0);
+    if (!saved?.three && !V.is3d?.()) D.enable(false);
+    D.setDay(null); D.setLive(); V.setForce(false); V.setAmbient(false); V.setTerrain(0);
     if (!saved?.three && V.is3d()) V.set3d(false);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     history.replaceState(null, "", location.pathname);

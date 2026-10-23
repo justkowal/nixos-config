@@ -110,3 +110,28 @@ test("realtime pace replay advances simulation time at 1x speed", () => {
   assert.equal(D.mode, "fixed");
 });
 
+test("base map ground illumination follows time of day, brightness, and sun color", () => {
+  // Midday: bright, balanced sun
+  const noonState = D.skyState(55, "clear");
+  const noonLight = D.groundIllumination(noonState);
+  assert.ok(noonLight[0] > 0.85 && noonLight[1] > 0.85 && noonLight[2] > 0.85, `Noon is bright: ${noonLight}`);
+  assert.ok(Math.abs(noonLight[0] - noonLight[1]) < 0.1, "Noon is balanced in tint");
+
+  // Sunset: warm amber / red dominance
+  const sunsetState = D.skyState(2, "clear");
+  const sunsetLight = D.groundIllumination(sunsetState);
+  assert.ok(sunsetLight[0] > sunsetLight[2] * 1.25, `Sunset has warm amber/red glow: ${sunsetLight}`);
+
+  // Night: dimmed, cool blueish tint
+  const nightState = D.skyState(-25, "clear");
+  const nightLight = D.groundIllumination(nightState);
+  assert.ok(nightLight[0] < 0.35 && nightLight[1] < 0.35, `Night is dark: ${nightLight}`);
+  assert.ok(nightLight[2] > nightLight[0], `Night has cool moonlight tone: ${nightLight}`);
+
+  // Custom layer definition is exposed
+  assert.ok(typeof D.createIlluminationLayer === "function");
+  const layer = D.createIlluminationLayer();
+  assert.equal(layer.id, "base-map-illumination");
+  assert.equal(layer.type, "custom");
+});
+

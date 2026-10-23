@@ -157,7 +157,26 @@
   }
 
   // ---------------------------------------------------------------- Road Builder
-  function buildRoadGeometry(bufAsphalt, bufConcrete, pts, cls, brunnel, layer, groundFn) {
+  function buildRoadGeometry(bufAsphalt, bufConcrete, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
+    let bufMarking, bufLights, pts, cls, brunnel, layer, groundFn;
+    if (arg3 && typeof arg3 === "object" && typeof arg3.tri === "function") {
+      bufMarking = arg3;
+      bufLights = arg4;
+      pts = arg5;
+      cls = arg6;
+      brunnel = arg7;
+      layer = arg8;
+      groundFn = arg9;
+    } else {
+      bufMarking = new TriBuffer();
+      bufLights = new TriBuffer();
+      pts = arg3;
+      cls = arg4;
+      brunnel = arg5;
+      layer = arg6;
+      groundFn = arg7;
+    }
+
     const n = pts.length;
     if (n < 2) return;
     const m = lineMetrics(pts);
@@ -174,13 +193,13 @@
     const zAt = (i) => {
       const g = groundFn ? groundFn(pts[i][0], pts[i][1]) : 0;
       if (!isBridge) {
-        return g + (isTunnel ? -0.1 : 0.1);
+        return g + (isTunnel ? -0.1 : 0.14);
       }
       const s = m.cum[i];
       let ramp = 1;
       if (s < rampLen) ramp = s / rampLen;
       else if (s > m.total - rampLen) ramp = (m.total - s) / rampLen;
-      return g + bridgeHeight * ramp + 0.1;
+      return g + bridgeHeight * ramp + 0.14;
     };
 
     // 1. Asphalt road surface
@@ -193,54 +212,124 @@
       bufAsphalt.quad(r0, l0, l1, r1, PART.BODY);
     }
 
-    // 2. Curbs or Bridge parapets
-    const curbW = isBridge ? 0.4 : 0.22;
-    const curbH = isBridge ? 0.9 : 0.14;
-    for (let i = 0; i < n - 1; i++) {
-      const z0 = zAt(i), z1 = zAt(i + 1);
-      // Left curb
-      const l0In = [pts[i][0] + px[i] * hw, pts[i][1] + py[i] * hw, z0];
-      const l0Out = [pts[i][0] + px[i] * (hw + curbW), pts[i][1] + py[i] * (hw + curbW), z0 + curbH];
-      const l1In = [pts[i + 1][0] + px[i + 1] * hw, pts[i + 1][1] + py[i + 1] * hw, z1];
-      const l1Out = [pts[i + 1][0] + px[i + 1] * (hw + curbW), pts[i + 1][1] + py[i + 1] * (hw + curbW), z1 + curbH];
-      bufConcrete.quad(l0In, l0Out, l1Out, l1In, PART.ROOF);
+    // Helper to sample point & perpendicular along road centerline at distance s
+    const sampleCenter = (s, off = 0, zOff = 0.025) => {
+      let idx = 0;
+      while (idx < n - 2 && m.cum[idx + 1] < s) idx++;
+      const segLen = m.len[idx] || 1;
+      const t = Math.max(0, Math.min(1, (s - m.cum[idx]) / segLen));
+      const bx = pts[idx][0] + (pts[idx + 1][0] - pts[idx][0]) * t;
+      const by = pts[idx][1] + (pts[idx + 1][1] - pts[idx][1]) * t;
+      const pxx = px[idx] + (px[idx + 1] - px[idx]) * t;
+      const pyy = py[idx] + (py[idx + 1] - py[idx]) * t;
+      const pl = Math.hypot(pxx, pyy) || 1;
+      const upx = pxx / pl, upy = pyy / pl;
+      const z = zAt(idx) + (zAt(idx + 1) - zAt(idx)) * t + zOff;
+      return { x: bx + upx * off, y: by + upy * off, z, px: upx, py: upy };
+    };
 
-      // Right curb
-      const r0In = [pts[i][0] - px[i] * hw, pts[i][1] - py[i] * hw, z0];
-      const r0Out = [pts[i][0] - px[i] * (hw + curbW), pts[i][1] - py[i] * (hw + curbW), z0 + curbH];
-      const r1In = [pts[i + 1][0] - px[i + 1] * hw, pts[i + 1][1] - py[i + 1] * hw, z1];
-      const r1Out = [pts[i + 1][0] - px[i + 1] * (hw + curbW), pts[i + 1][1] - py[i + 1] * (hw + curbW), z1 + curbH];
-      bufConcrete.quad(r0Out, r0In, r1In, r1Out, PART.ROOF);
+    const drawStripeSeg = (s0, s1, off, hwMark) => {
+      if (s1 <= s0 + 0.1) return;
+      const p0 = sampleCenter(s0, off);
+      const p1 = sampleCenter(s1, off);
+      const l0 = [p0.x + p0.px * hwMark, p0.y + p0.py * hwMark, p0.z];
+      const r0 = [p0.x - p0.px * hwMark, p0.y - p0.py * hwMark, p0.z];
+      const l1 = [p1.x + p1.px * hwMark, p1.y + p1.py * hwMark, p1.z];
+      const r1 = [p1.x - p1.px * hwMark, p1.y - p1.py * hwMark, p1.z];
+      bufMarking.quad(r0, l0, l1, r1, PART.STRIPE);
+    };
+
+    const drawStripeRange = (sStart, sEnd, off, hwMark) => {
+      let cur = sStart;
+      while (cur < sEnd) {
+        const next = Math.min(sEnd, cur + 8.0);
+        drawStripeSeg(cur, next, off, hwMark);
+        cur = next;
+      }
+    };
+
+    // 2. Road Markings (Dashed lane dividers, solid edge lines, stop bars)
+    if (!isTunnel && m.total >= 8.0) {
+      const isMultiLane = cls === "motorway" || cls === "trunk";
+      if (isMultiLane) {
+        // Multi-lane highway: dashed lane dividers and continuous outer edge lines
+        const laneOff = hw * 0.45;
+        const dash = 4.0, gap = 4.0, period = dash + gap;
+        for (let s = 2.0; s + dash <= m.total - 2.0; s += period) {
+          drawStripeRange(s, s + dash, laneOff, 0.08);
+          drawStripeRange(s, s + dash, -laneOff, 0.08);
+        }
+        drawStripeRange(1.5, m.total - 1.5, hw - 0.35, 0.075);
+        drawStripeRange(1.5, m.total - 1.5, -(hw - 0.35), 0.075);
+      } else {
+        // Standard roads: dashed center line
+        const dash = 3.5, gap = 3.5, period = dash + gap;
+        for (let s = 1.5; s + dash <= m.total - 1.5; s += period) {
+          drawStripeRange(s, s + dash, 0, 0.08);
+        }
+        if (cls === "primary" && hw >= 3.5) {
+          drawStripeRange(1.5, m.total - 1.5, hw - 0.3, 0.065);
+          drawStripeRange(1.5, m.total - 1.5, -(hw - 0.3), 0.065);
+        }
+      }
+      // Stop bars near road extremities for primary & secondary streets
+      if (!isMultiLane && m.total >= 16 && (cls === "primary" || cls === "secondary" || cls === "tertiary")) {
+        for (const dist of [2.5, m.total - 2.5]) {
+          const p = sampleCenter(dist, 0, 0.026);
+          const barW = hw * 0.82;
+          const ux = p.py, uy = -p.px;
+          bufMarking.box(p.x, p.y, p.z, 0.22, barW, 0.005, ux, uy, PART.STRIPE);
+        }
+      }
     }
 
-    // 3. Bridge structure (deck thickness, underside and vertical support piers)
-    if (isBridge && m.total >= rampLen * 2) {
+    // 3. 3D Curbs & Sidewalks / Bridge Parapets
+    if (isBridge) {
+      const parapetH = 0.9;
+      const parapetW = 0.38;
       const deckThick = 0.7;
-      // Deck slab sides and underside
+
       for (let i = 0; i < n - 1; i++) {
-        const s = (m.cum[i] + m.cum[i + 1]) * 0.5;
-        if (s < rampLen || s > m.total - rampLen) continue;
         const z0 = zAt(i), z1 = zAt(i + 1);
-        const wTotal = hw + curbW;
-        // Underside quad
-        const u0L = [pts[i][0] + px[i] * wTotal, pts[i][1] + py[i] * wTotal, z0 - deckThick];
-        const u0R = [pts[i][0] - px[i] * wTotal, pts[i][1] - py[i] * wTotal, z0 - deckThick];
-        const u1L = [pts[i + 1][0] + px[i + 1] * wTotal, pts[i + 1][1] + py[i + 1] * wTotal, z1 - deckThick];
-        const u1R = [pts[i + 1][0] - px[i + 1] * wTotal, pts[i + 1][1] - py[i + 1] * wTotal, z1 - deckThick];
-        bufConcrete.quad(u0R, u1R, u1L, u0L, PART.DARK);
 
-        // Outer slab left vertical face
-        const o0L = [pts[i][0] + px[i] * wTotal, pts[i][1] + py[i] * wTotal, z0 + curbH];
-        const o1L = [pts[i + 1][0] + px[i + 1] * wTotal, pts[i + 1][1] + py[i + 1] * wTotal, z1 + curbH];
-        bufConcrete.quad(u0L, u1L, o1L, o0L, PART.ROOF);
+        // Left parapet
+        const l0In = [pts[i][0] + px[i] * hw, pts[i][1] + py[i] * hw, z0];
+        const l0Top = [pts[i][0] + px[i] * hw, pts[i][1] + py[i] * hw, z0 + parapetH];
+        const l1In = [pts[i + 1][0] + px[i + 1] * hw, pts[i + 1][1] + py[i + 1] * hw, z1];
+        const l1Top = [pts[i + 1][0] + px[i + 1] * hw, pts[i + 1][1] + py[i + 1] * hw, z1 + parapetH];
+        bufConcrete.quad(l0In, l0Top, l1Top, l1In, PART.ROOF);
 
-        // Outer slab right vertical face
-        const o0R = [pts[i][0] - px[i] * wTotal, pts[i][1] - py[i] * wTotal, z0 + curbH];
-        const o1R = [pts[i + 1][0] - px[i + 1] * wTotal, pts[i + 1][1] - py[i + 1] * wTotal, z1 + curbH];
-        bufConcrete.quad(o0R, o1R, u1R, u0R, PART.ROOF);
+        const l0OutTop = [pts[i][0] + px[i] * (hw + parapetW), pts[i][1] + py[i] * (hw + parapetW), z0 + parapetH];
+        const l1OutTop = [pts[i + 1][0] + px[i + 1] * (hw + parapetW), pts[i + 1][1] + py[i + 1] * (hw + parapetW), z1 + parapetH];
+        bufConcrete.quad(l0Top, l0OutTop, l1OutTop, l1Top, PART.ROOF);
+
+        const l0OutBot = [pts[i][0] + px[i] * (hw + parapetW), pts[i][1] + py[i] * (hw + parapetW), z0 - deckThick];
+        const l1OutBot = [pts[i + 1][0] + px[i + 1] * (hw + parapetW), pts[i + 1][1] + py[i + 1] * (hw + parapetW), z1 - deckThick];
+        bufConcrete.quad(l0OutBot, l0OutTop, l1OutTop, l1OutBot, PART.ROOF);
+
+        // Right parapet
+        const r0In = [pts[i][0] - px[i] * hw, pts[i][1] - py[i] * hw, z0];
+        const r0Top = [pts[i][0] - px[i] * hw, pts[i][1] - py[i] * hw, z0 + parapetH];
+        const r1In = [pts[i + 1][0] - px[i + 1] * hw, pts[i + 1][1] - py[i + 1] * hw, z1];
+        const r1Top = [pts[i + 1][0] - px[i + 1] * hw, pts[i + 1][1] - py[i + 1] * hw, z1 + parapetH];
+        bufConcrete.quad(r0Top, r0In, r1In, r1Top, PART.ROOF);
+
+        const r0OutTop = [pts[i][0] - px[i] * (hw + parapetW), pts[i][1] - py[i] * (hw + parapetW), z0 + parapetH];
+        const r1OutTop = [pts[i + 1][0] - px[i + 1] * (hw + parapetW), pts[i + 1][1] - py[i + 1] * (hw + parapetW), z1 + parapetH];
+        bufConcrete.quad(r0OutTop, r0Top, r1Top, r1OutTop, PART.ROOF);
+
+        const r0OutBot = [pts[i][0] - px[i] * (hw + parapetW), pts[i][1] - py[i] * (hw + parapetW), z0 - deckThick];
+        const r1OutBot = [pts[i + 1][0] - px[i + 1] * (hw + parapetW), pts[i + 1][1] - py[i + 1] * (hw + parapetW), z1 - deckThick];
+        bufConcrete.quad(r0OutTop, r0OutBot, r1OutBot, r1OutTop, PART.ROOF);
+
+        // Deck underside (between ramp transitions)
+        const s = (m.cum[i] + m.cum[i + 1]) * 0.5;
+        if (s >= rampLen && s <= m.total - rampLen) {
+          bufConcrete.quad(r0OutBot, r1OutBot, l1OutBot, l0OutBot, PART.DARK);
+        }
       }
 
-      // Vertical Support Piers placed every ~28m along the span
+      // Vertical Support Piers placed every ~28m along span
       const pierSpan = 28;
       for (let s = rampLen + 10; s <= m.total - rampLen - 5; s += pierSpan) {
         let idx = 0;
@@ -249,17 +338,94 @@
         const cx = pts[idx][0] + (pts[idx + 1][0] - pts[idx][0]) * t;
         const cy = pts[idx][1] + (pts[idx + 1][1] - pts[idx][1]) * t;
         const ground = groundFn ? groundFn(cx, cy) : 0;
-        const deckZ = ground + bridgeHeight + 0.1 - deckThick;
+        const deckZ = ground + bridgeHeight + 0.14 - deckThick;
         if (deckZ > ground + 1.2) {
-          // Concrete column pier
           bufConcrete.cylinder(cx, cy, ground, deckZ, 0.75, PART.ROOF, 8);
-          // Column capital/head
-          bufConcrete.box(cx, cy, deckZ - 0.2, 1.2, hw * 0.9, 0.25, m.ux[idx], m.uy[idx], PART.ROOF);
+          bufConcrete.box(cx, cy, deckZ - 0.2, 1.2, (hw + parapetW) * 0.85, 0.25, m.ux[idx], m.uy[idx], PART.ROOF);
         }
+      }
+    } else if (!isTunnel) {
+      // Non-bridge road: true 3D curb riser, horizontal sidewalk slab, and outer ground anchor
+      const curbH = 0.14;
+      const isHighway = cls === "motorway" || cls === "trunk";
+      const isNarrow = cls === "service" || cls === "track";
+      const swW = isHighway ? 0.4 : isNarrow ? 0.3 : 1.4;
+
+      for (let i = 0; i < n - 1; i++) {
+        const z0 = zAt(i), z1 = zAt(i + 1);
+
+        // Left curb riser (vertical step up from asphalt to sidewalk)
+        const l0In = [pts[i][0] + px[i] * hw, pts[i][1] + py[i] * hw, z0];
+        const l0Top = [pts[i][0] + px[i] * hw, pts[i][1] + py[i] * hw, z0 + curbH];
+        const l1In = [pts[i + 1][0] + px[i + 1] * hw, pts[i + 1][1] + py[i + 1] * hw, z1];
+        const l1Top = [pts[i + 1][0] + px[i + 1] * hw, pts[i + 1][1] + py[i + 1] * hw, z1 + curbH];
+        bufConcrete.quad(l0In, l0Top, l1Top, l1In, PART.ROOF);
+
+        // Left sidewalk horizontal slab
+        const l0Out = [pts[i][0] + px[i] * (hw + swW), pts[i][1] + py[i] * (hw + swW), z0 + curbH];
+        const l1Out = [pts[i + 1][0] + px[i + 1] * (hw + swW), pts[i + 1][1] + py[i + 1] * (hw + swW), z1 + curbH];
+        bufConcrete.quad(l0Top, l0Out, l1Out, l1Top, PART.ROOF);
+
+        // Left outer edge anchoring into ground
+        const g0L = groundFn ? groundFn(l0Out[0], l0Out[1]) : z0 - 0.14;
+        const g1L = groundFn ? groundFn(l1Out[0], l1Out[1]) : z1 - 0.14;
+        const l0G = [l0Out[0], l0Out[1], Math.min(z0, g0L)];
+        const l1G = [l1Out[0], l1Out[1], Math.min(z1, g1L)];
+        bufConcrete.quad(l0Out, l0G, l1G, l1Out, PART.DARK);
+
+        // Right curb riser (vertical step up from asphalt to sidewalk)
+        const r0In = [pts[i][0] - px[i] * hw, pts[i][1] - py[i] * hw, z0];
+        const r0Top = [pts[i][0] - px[i] * hw, pts[i][1] - py[i] * hw, z0 + curbH];
+        const r1In = [pts[i + 1][0] - px[i + 1] * hw, pts[i + 1][1] - py[i + 1] * hw, z1];
+        const r1Top = [pts[i + 1][0] - px[i + 1] * hw, pts[i + 1][1] - py[i + 1] * hw, z1 + curbH];
+        bufConcrete.quad(r0Top, r0In, r1In, r1Top, PART.ROOF);
+
+        // Right sidewalk horizontal slab
+        const r0Out = [pts[i][0] - px[i] * (hw + swW), pts[i][1] - py[i] * (hw + swW), z0 + curbH];
+        const r1Out = [pts[i + 1][0] - px[i + 1] * (hw + swW), pts[i + 1][1] - py[i + 1] * (hw + swW), z1 + curbH];
+        bufConcrete.quad(r0Out, r0Top, r1Top, r1Out, PART.ROOF);
+
+        // Right outer edge anchoring into ground
+        const g0R = groundFn ? groundFn(r0Out[0], r0Out[1]) : z0 - 0.14;
+        const g1R = groundFn ? groundFn(r1Out[0], r1Out[1]) : z1 - 0.14;
+        const r0G = [r0Out[0], r0Out[1], Math.min(z0, g0R)];
+        const r1G = [r1Out[0], r1Out[1], Math.min(z1, g1R)];
+        bufConcrete.quad(r0G, r0Out, r1Out, r1G, PART.DARK);
       }
     }
 
-    // 4. Tunnel portals
+    // 4. Street Light Lamp Posts (Glowing luminaires along major roads)
+    const hasLights = (cls === "motorway" || cls === "trunk" || cls === "primary" || cls === "secondary" || isBridge) && !isTunnel && m.total >= 32;
+    if (hasLights) {
+      const poleSpan = 38.0;
+      const poleH = 7.4;
+      const swOff = isBridge ? hw + 0.2 : hw + 0.55;
+      for (let s = 14.0; s <= m.total - 14.0; s += poleSpan) {
+        let idx = 0;
+        while (idx < n - 2 && m.cum[idx + 1] < s) idx++;
+        const t = (s - m.cum[idx]) / (m.len[idx] || 1);
+        const tx = pts[idx][0] + (pts[idx + 1][0] - pts[idx][0]) * t;
+        const ty = pts[idx][1] + (pts[idx + 1][1] - pts[idx][1]) * t;
+        const uxx = m.ux[idx], uyy = m.uy[idx];
+        const pxx = -uyy, pyy = uxx;
+        const baseZ = zAt(idx) + (zAt(idx + 1) - zAt(idx)) * t + (isBridge ? 0.9 : 0.14);
+
+        const mx = tx - pxx * swOff;
+        const my = ty - pyy * swOff;
+        bufLights.cylinder(mx, my, baseZ, baseZ + poleH, 0.09, PART.DARK, 6);
+
+        const armLen = 1.6;
+        const armMidX = mx + pxx * (armLen * 0.5);
+        const armMidY = my + pyy * (armLen * 0.5);
+        bufLights.box(armMidX, armMidY, baseZ + poleH - 0.05, 0.05, armLen * 0.5, 0.04, uxx, uyy, PART.DARK);
+
+        const tipX = mx + pxx * armLen;
+        const tipY = my + pyy * armLen;
+        bufLights.box(tipX, tipY, baseZ + poleH - 0.14, 0.20, 0.14, 0.06, uxx, uyy, PART.HEAD);
+      }
+    }
+
+    // 5. Tunnel portals
     if (isTunnel && n >= 2) {
       for (const endIdx of [0, n - 1]) {
         const isStart = endIdx === 0;
@@ -447,6 +613,8 @@
     }
     const bufAsphalt = new TriBuffer();
     const bufConcrete = new TriBuffer();
+    const bufMarking = new TriBuffer();
+    const bufLights = new TriBuffer();
     const bufBallast = new TriBuffer();
     const bufSteel = new TriBuffer();
     const bufTraction = new TriBuffer();
@@ -482,7 +650,7 @@
           buildRailGeometry(bufBallast, bufSteel, bufTraction, pts, brunnel, layer, elec, groundFn);
         } else {
           roadCount++;
-          buildRoadGeometry(bufAsphalt, bufConcrete, pts, cls, brunnel, layer, groundFn);
+          buildRoadGeometry(bufAsphalt, bufConcrete, bufMarking, bufLights, pts, cls, brunnel, layer, groundFn);
         }
       }
     }
@@ -491,6 +659,8 @@
       meshes: {
         road_asphalt: bufAsphalt.toMesh(),
         road_concrete: bufConcrete.toMesh(),
+        road_marking: bufMarking.toMesh(),
+        road_lights: bufLights.toMesh(),
         rail_ballast: bufBallast.toMesh(),
         rail_steel: bufSteel.toMesh(),
         rail_traction: bufTraction.toMesh(),
@@ -501,8 +671,10 @@
 
   // Material RGB tints for rendering with standard shader
   const COLORS = {
-    road_asphalt: [52, 55, 60],
-    road_concrete: [142, 146, 154],
+    road_asphalt: [72, 75, 82],
+    road_concrete: [186, 189, 196],
+    road_marking: [242, 244, 248],
+    road_lights: [92, 98, 106],
     rail_ballast: [78, 74, 70],
     rail_steel: [165, 172, 182],
     rail_traction: [82, 88, 96],
