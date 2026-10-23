@@ -135,3 +135,82 @@ test("base map ground illumination follows time of day, brightness, and sun colo
   assert.equal(layer.type, "custom");
 });
 
+test("createIlluminationLayer renders cleanly with MapLibre args object", () => {
+  const layer = D.createIlluminationLayer();
+  let uniformMatrixVal = null;
+  const fakeGl = {
+    VERTEX_SHADER: 1,
+    FRAGMENT_SHADER: 2,
+    ARRAY_BUFFER: 3,
+    STATIC_DRAW: 4,
+    FLOAT: 5,
+    BLEND: 6,
+    DST_COLOR: 7,
+    ZERO: 8,
+    ONE: 9,
+    DEPTH_TEST: 10,
+    TRIANGLES: 11,
+    SRC_ALPHA: 12,
+    ONE_MINUS_SRC_ALPHA: 13,
+    createShader: () => ({}),
+    shaderSource: () => {},
+    compileShader: () => {},
+    createProgram: () => ({}),
+    attachShader: () => {},
+    linkProgram: () => {},
+    getUniformLocation: (p, name) => name,
+    getAttribLocation: (p, name) => 0,
+    createBuffer: () => ({}),
+    bindBuffer: () => {},
+    bufferData: () => {},
+    useProgram: () => {},
+    uniformMatrix4fv: (loc, transpose, val) => { uniformMatrixVal = val; },
+    uniform3f: () => {},
+    enableVertexAttribArray: () => {},
+    disableVertexAttribArray: () => {},
+    vertexAttribPointer: () => {},
+    enable: () => {},
+    disable: () => {},
+    blendFuncSeparate: () => {},
+    blendFunc: () => {},
+    colorMask: () => {},
+    drawArrays: () => {},
+    deleteBuffer: () => {},
+    deleteProgram: () => {},
+  };
+
+  layer.onAdd(null, fakeGl);
+
+  // When disabled, render does nothing
+  D.enabled = false;
+  layer.render(fakeGl, { defaultProjectionData: { mainMatrix: new Float64Array(16) } });
+  assert.equal(uniformMatrixVal, null);
+
+  // When enabled, render accepts MapLibre args object and passes Float32Array to uniformMatrix4fv
+  D.enabled = true;
+  layer.render(fakeGl, { defaultProjectionData: { mainMatrix: new Float64Array(16) } });
+  assert.ok(uniformMatrixVal instanceof Float32Array, "uniformMatrix4fv received Float32Array");
+  assert.equal(uniformMatrixVal.length, 16);
+
+  // Test fallback modelViewProjectionMatrix
+  uniformMatrixVal = null;
+  layer.render(fakeGl, { modelViewProjectionMatrix: new Array(16).fill(1) });
+  assert.ok(uniformMatrixVal instanceof Float32Array, "fallback modelViewProjectionMatrix converted to Float32Array");
+
+  // onRemove cleans up
+  assert.doesNotThrow(() => layer.onRemove(null, fakeGl));
+  D.enabled = false;
+});
+
+test("Daylight.clear safely resets sky with validate: false", () => {
+  let skyArgs = null;
+  window.App = {
+    getMap: () => ({
+      setLight: () => {},
+      setSky: (...args) => { skyArgs = args; }
+    })
+  };
+  D.clear();
+  assert.deepEqual(skyArgs, [undefined, { validate: false }]);
+});
+

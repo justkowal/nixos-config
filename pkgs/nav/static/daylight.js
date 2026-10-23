@@ -293,12 +293,16 @@
         gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
       },
-      render(gl, matrix) {
-        if (!D.enabled) return;
+      render(gl, args) {
+        if (!D.enabled || !prog) return;
+        const mat = (args && (args.defaultProjectionData?.mainMatrix || args.modelViewProjectionMatrix)) || args;
+        if (!mat) return;
+        const m32 = mat instanceof Float32Array ? mat : new Float32Array(mat);
+        if (m32.length < 16) return;
         const [lr, lg, lb] = D.groundIllumination();
 
         gl.useProgram(prog);
-        gl.uniformMatrix4fv(uMatrix, false, matrix);
+        gl.uniformMatrix4fv(uMatrix, false, m32);
         gl.uniform3f(uLight, lr, lg, lb);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
@@ -315,11 +319,16 @@
 
         gl.colorMask(true, true, true, true);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.disableVertexAttribArray(aPos);
+      },
+      onRemove(map, gl) {
+        if (vbo) { gl.deleteBuffer(vbo); vbo = null; }
+        if (prog) { gl.deleteProgram(prog); prog = null; }
       }
     };
   };
 
-  D.clear = () => { try { window.App?.getMap?.()?.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.5, position: [1.15, 210, 30] }); window.App?.getMap?.()?.setSky(null); } catch { /* none */ } D._dark = false; D.onThemeChange?.(); };
+  D.clear = () => { try { window.App?.getMap?.()?.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.5, position: [1.15, 210, 30] }); window.App?.getMap?.()?.setSky?.(undefined, { validate: false }); } catch { /* none */ } D._dark = false; D.onThemeChange?.(); };
   D.syncTheme = (dark) => { D.bg = dark ? [0.1, 0.11, 0.13] : [0.86, 0.87, 0.89]; };  // what dimmed vehicles fade toward: the ground colour of the current base map
 
   window.Daylight = Object.assign(D, { sunPosition, skyState });
