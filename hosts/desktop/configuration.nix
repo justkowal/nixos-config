@@ -136,7 +136,18 @@ in {
     };
     script = ''
       STATE_FILE="/tmp/boot-state.cfg"
-      if ${pkgs.curl}/bin/curl -s --connect-timeout 2 http://nixos-rpi4.lab/boot-state.cfg -o "$STATE_FILE"; then
+      rm -f "$STATE_FILE"
+      for i in $(seq 1 15); do
+        if ${pkgs.curl}/bin/curl -s --connect-timeout 2 http://nixos-rpi4.lab/boot-state.cfg -o "$STATE_FILE" 2>/dev/null || \
+           ${pkgs.curl}/bin/curl -s --connect-timeout 2 http://192.168.1.22/boot-state.cfg -o "$STATE_FILE" 2>/dev/null; then
+          if [ -s "$STATE_FILE" ]; then
+            break
+          fi
+        fi
+        sleep 1
+      done
+
+      if [ -s "$STATE_FILE" ]; then
         if grep -q 'my_boot_target="server"' "$STATE_FILE"; then
           echo "Orchestrator requested worker specialisation. Switching..."
           /run/current-system/specialisation/worker/bin/switch-to-configuration switch
@@ -273,6 +284,39 @@ in {
     SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="0666"
   '';
 
+  # Allow wheel members passwordless switching to worker specialisation and scale-to-zero control
+  security.sudo.extraRules = [
+    {
+      groups = [ "wheel" ];
+      commands = [
+        {
+          command = "/run/current-system/specialisation/worker/bin/switch-to-configuration";
+          options = [ "NOPASSWD" ];
+        }
+        {
+          command = "/run/booted-system/specialisation/worker/bin/switch-to-configuration";
+          options = [ "NOPASSWD" ];
+        }
+        {
+          command = "/run/current-system/bin/switch-to-configuration";
+          options = [ "NOPASSWD" ];
+        }
+        {
+          command = "/run/booted-system/bin/switch-to-configuration";
+          options = [ "NOPASSWD" ];
+        }
+        {
+          command = "${pkgs.systemd}/bin/systemctl restart boot-target-router.service";
+          options = [ "NOPASSWD" ];
+        }
+        {
+          command = "${pkgs.systemd}/bin/systemctl poweroff";
+          options = [ "NOPASSWD" ];
+        }
+      ];
+    }
+  ];
+
   # ── Ephemeral SSH Sandbox (available in both desktop & worker modes) ───
   users.users.sandbox = {
     isNormalUser = true;
@@ -383,22 +427,24 @@ in {
           IDLE_COUNT=0
           IDLE_THRESHOLD=20  # 20 × 30s = 10 minutes
           while true; do
-            containers=$(docker ps -q 2>/dev/null | wc -l)
+            # Count active worker / CI / build containers, excluding persistent background daemon services
+            containers=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -v -E '^(immich_|immich|valkey)' | wc -l)
             ssh_sessions=$(who 2>/dev/null | grep -c "sandbox" || true)
             renders=$(pgrep -c "blender" 2>/dev/null || true)
-            # local-backend CI steps, offpeak jobs and Sunshine streams don't show up as containers or ssh
+            # local-backend CI steps, offpeak jobs, automaps and Sunshine streams don't show up as containers or ssh
             builds=$(pgrep -c -f '(^|/)nix (build|flake|copy|shell) ' 2>/dev/null || true)
             jobs=$(pgrep -c -u offpeak 2>/dev/null || true); jobs=''${jobs:-0}
+            automaps=$(pgrep -c -f 'automaps' 2>/dev/null || true); automaps=''${automaps:-0}
             stream=0
             if [ -x /run/current-system/sw/bin/stream-host-active ] && /run/current-system/sw/bin/stream-host-active; then stream=1; fi
 
             if [ "$containers" -eq 0 ] && [ "$ssh_sessions" -eq 0 ] && [ "$renders" -eq 0 ] \
-              && [ "$builds" -eq 0 ] && [ "$jobs" -eq 0 ] && [ "$stream" -eq 0 ]; then
+              && [ "$builds" -eq 0 ] && [ "$jobs" -eq 0 ] && [ "$automaps" -eq 0 ] && [ "$stream" -eq 0 ]; then
               IDLE_COUNT=$((IDLE_COUNT + 1))
-              echo "Idle $IDLE_COUNT/$IDLE_THRESHOLD (containers=$containers ssh=$ssh_sessions renders=$renders)"
+              echo "Idle $IDLE_COUNT/$IDLE_THRESHOLD (containers=$containers ssh=$ssh_sessions renders=$renders automaps=$automaps)"
             else
               IDLE_COUNT=0
-              echo "Activity detected (containers=$containers ssh=$ssh_sessions renders=$renders)"
+              echo "Activity detected (containers=$containers ssh=$ssh_sessions renders=$renders automaps=$automaps)"
             fi
 
             if [ "$IDLE_COUNT" -ge "$IDLE_THRESHOLD" ]; then
