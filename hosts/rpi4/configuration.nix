@@ -147,7 +147,6 @@ in {
     ./stream-wake.nix
     ./offpeak.nix
     ./focus.nix
-    ./fb-messenger-mcp.nix
   ];
 
   # roadmap features (docs/ROADMAP.md); the rest stay off until their secrets/hardware exist
@@ -162,7 +161,6 @@ in {
   # approved by the owner on 2026-10-21 for personal use at ordinary-user load (budgets are enforced in the adapter)
   lab.maps.adapters.komunikacja-jurajska.enable = true;
   lab.focus.enable = true;
-  lab.fbMessengerMcp.enable = true;
 
   # ── Hardware: Raspberry Pi 4 (4GB) ────────────────────────────────────
   # SD image builder module imported via flake.nix — build with:
