@@ -30,7 +30,7 @@
     const css = (n, d) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d;
     const font = (map.getStyle().layers.find((l) => l.layout && l.layout["text-font"]) || { layout: {} }).layout["text-font"] || ["Noto Sans Regular"];
     if (!map.getLayer("poi-dot")) map.addLayer({ id: "poi-dot", type: "circle", source: "poi", paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 5, 16, 9], "circle-color": css("--accent", "#0b6e5c"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
-    if (!map.getLayer("poi-label")) map.addLayer({ id: "poi-label", type: "symbol", source: "poi", minzoom: 14, layout: { "text-field": ["get", "title"], "text-font": font, "text-size": 12, "text-offset": [0, 1.2], "text-anchor": "top", "text-optional": true },
+    if (!map.getLayer("poi-label")) map.addLayer({ id: "poi-label", type: "symbol", source: "poi", minzoom: 14, layout: { "text-field": ["coalesce", ["get", "title"], ""], "text-font": font, "text-size": 12, "text-offset": [0, 1.2], "text-anchor": "top", "text-optional": true },
       paint: { "text-color": css("--ink", "#111"), "text-halo-color": css("--surface", "#fff"), "text-halo-width": 1.6 } });
     baseLayers = map.getStyle().layers.filter((l) => l["source-layer"] === "poi").map((l) => l.id);
   }

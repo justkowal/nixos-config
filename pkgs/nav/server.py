@@ -36,7 +36,7 @@ UA = f"kowal-lab-nav/0.1 (personal use; contact {os.environ.get('FEED_CONTACT', 
 TRANSIT = {"rail": "RAIL", "bus": "BUS", "tram": "TRAM"}
 DIRECT = {"walk": "WALK", "bike": "BICYCLE", "car": "CAR"}
 CSP = ("default-src 'self'; img-src 'self' data: blob: https://tiles.openfreemap.org; connect-src 'self' https://tiles.openfreemap.org; "
-       "style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; font-src 'self' data:; manifest-src 'self'; "
+       "style-src 'self' 'unsafe-inline'; script-src 'self' blob:; worker-src 'self' blob:; font-src 'self' data:; manifest-src 'self'; "
        "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
 _lock = threading.Lock()
@@ -1213,6 +1213,8 @@ class H(BaseHTTPRequestHandler):
         rel = path.lstrip("/")
         full = os.path.realpath(os.path.join(STATIC, rel))
         if not full.startswith(os.path.realpath(STATIC) + os.sep) or not os.path.isfile(full):
+            if "." in os.path.basename(path):
+                return self.send(404, b"Not found", "text/plain; charset=utf-8")
             full = os.path.join(STATIC, "index.html")  # single page app: unknown paths fall back to the shell
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
         if full.endswith(".webmanifest"):
@@ -1288,4 +1290,5 @@ if __name__ == "__main__":
     if DB:
         init_db()
         threading.Thread(target=watch_loop, daemon=True).start()
-    ThreadingHTTPServer(("0.0.0.0", 8080), H).serve_forever()
+    port = int(os.environ.get("PORT", "8080"))
+    ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()

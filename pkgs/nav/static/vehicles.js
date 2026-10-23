@@ -578,7 +578,7 @@
   const isDark = () => (window.Daylight?.enabled ? window.Daylight.wantsDark() : matchMedia("(prefers-color-scheme: dark)").matches);
   // one of six colours per building, stable for a given building (hashed from its height and base)
   const pick6 = (list) => {
-    const key = ["%", ["floor", ["*", ["+", ["coalesce", ["get", "render_height"], 6], ["*", ["coalesce", ["get", "render_min_height"], 0], 3.7]], 13.37]], 6];
+    const key = ["%", ["floor", ["*", ["+", ["to-number", ["get", "render_height"], 6], ["*", ["to-number", ["get", "render_min_height"], 0], 3.7]], 13.37]], 6];
     return ["match", key, 0, list[0], 1, list[1], 2, list[2], 3, list[3], 4, list[4], list[5]];
   };
   function buildingPalettes(dark) {
@@ -592,7 +592,7 @@
     if (!map.getSource("veh-heat")) map.addSource("veh-heat", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
     const firstSymbol = (map.getStyle().layers.find((l) => l.type === "symbol") || {}).id;
     if (!map.getLayer("buildings-3d") && map.getSource("openmaptiles")) {
-      const P = buildingPalettes(isDark()), H = ["coalesce", ["get", "render_height"], 6], B = ["coalesce", ["get", "render_min_height"], 0];
+      const P = buildingPalettes(isDark()), H = ["to-number", ["get", "render_height"], 6], B = ["to-number", ["get", "render_min_height"], 0];
       map.addLayer({ id: "buildings-3d", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 14,
         paint: { "fill-extrusion-color": pick6(P.walls), "fill-extrusion-height": H, "fill-extrusion-base": B, "fill-extrusion-opacity": 1, "fill-extrusion-vertical-gradient": true } }, firstSymbol);
       // vector tiles carry no roof shape, so the roof is a thin cap in its own colour: tiles on low buildings, bare concrete and tar on tall ones
@@ -630,7 +630,6 @@
     }
     const bt = $("#btn-veh");
     if (bt) bt.hidden = false;
-    if (threeD) rebuildFacades();
     map.triggerRepaint();
     refreshSched();
   }
